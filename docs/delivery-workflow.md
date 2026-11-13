@@ -32,4 +32,6 @@ CONSOLE-04 的 CORE `109b83f` 已推送并核对远端，对应 [Docker CI 43410
 
 CONSOLE-12-A 补齐[工具/规则创建与页面故障处理](console-operations.md)：固定逻辑提交、V14 规则可选幂等键、读取失败隐藏旧操作、独立审计/迟到响应门控，保留现有确认、启停、版本和入队语义。接口/隔离 PostgreSQL、实际 Vue 及完整构建分别核对；不扩大到自动化条件/动作或真实执行验收。
 
+CONSOLE-12-A 的 CORE `28793aa` / 04 `052851f` 均已推送并核对远端。[Docker CI 43414082430 第二次运行](https://github.com/liuyiwuqing/nexus-core/actions/runs/43414082430/attempts/2) 的 CLI 11 项、源码镜像与隔离 Compose 全部通过。第一次运行在 Maven 解析 Spring Boot 父 POM 时报告不存在；随后中央仓库直连 200、内容与本地缓存哈希一致，未改依赖/源码而重跑同一提交后通过，具体网络原因未确认。04 的 [43414283771](https://github.com/liuyiwuqing/ai-desktop-pet/actions/runs/43414283771) 七个 job success，含五种固件预设及 full 主机/协议/DSP/LVGL；74 通过/5 跳过的 Maven 与 349 项浏览器专项仍是本地证据。
+
 线上管理台采用独立 [Docker Compose 方案](docker-deployment.md)：源码构建 Vue/JAR 镜像、私有初始化、PostgreSQL/MQTT/Caddy、认证健康检查及隔离部署验证。根目录开发 Compose 保留。当前没有目标服务器，生产 DNS/证书、真实配置迁移、资源和恢复演练仍需另行验收；本地验证结果记入 04 台账 DEL-06。
