@@ -26,6 +26,14 @@ export interface DeviceManagement {
   deviceId: string; fresh: boolean; canConfigure: boolean; configBlock: string;
   telemetry: DeviceTelemetry | null; receivedAt: string | null; configRequests: ConfigRequest[];
 }
+export interface OtaTarget { releaseId: string; version: string; imageSha256: string; imageSize: number; releaseSequence: number }
+export interface OtaRelease { releaseId: string; target: OtaTarget; identity: Record<string, string | number>; createdAt: string }
+export interface OtaView {
+  enabled: boolean; deviceId: string; fresh: boolean; canInstall: boolean; installBlock: string; canReboot: boolean;
+  observation: { bootId: string; state: string; observedAt: number; available: boolean; requestId: string; rebootId: string; writtenBytes: number; reservedSequence: number; identity: Record<string, string | number>; target?: OtaTarget } | null;
+  deployments: { requestId: string; releaseId: string; target: OtaTarget; status: string; lastError: string; createdAt: string;
+    commands: { commandId: string; operation: string; status: string; attempts: number; expiresAt: string }[] }[];
+}
 export interface Connector { id: string; source: string; configured: boolean; enabled: boolean; state: string; lastSuccessAt?: string | null; lastError?: string | null; since?: string }
 export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; lastError: string | null; nextAttemptAt: string; readAt: string | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
@@ -92,6 +100,17 @@ export const errorNames: Record<string, string> = {
   config_not_sent: '有效期内未能下发', config_not_observed: '到期后回读未见此次修改',
   config_observed_conflict: '设备已保存其他设置', device_conflict_or_storage: '设备版本冲突或存储失败',
   device_expired: '设备拒绝了过期配置', device_rejected: '设备拒绝了配置', config_request_not_found: '配置记录不存在。',
-  device_not_found: '设备不存在，请刷新设备列表。',
+  ota_management_disabled: '远程升级尚未启用。', ota_readback_required: '等待设备回传最新升级状态。',
+  ota_device_unavailable: '设备正在忙碌或无法安全保存升级记录。', ota_deployment_in_progress: '已有升级进行中或等待结果核对。',
+  ota_device_busy: '设备当前状态不允许新安装。', ota_boot_changed: '设备已经重新启动，请刷新后重新选择。',
+  ota_release_immutable: '此发布目录已登记其他内容，请使用新目录。', ota_release_not_found: '发布版本不存在。',
+  ota_release_incompatible: '版本的板型、模型或存储身份与设备不一致。', ota_sequence_rejected: '版本序号必须高于设备已预留序号。',
+  ota_reboot_readback_required: '需要设备最新的待重启回读，才能再次确认重启。', ota_result_unconfirmed: '安装结果未确认，等待设备回读。',
+  ota_reboot_unconfirmed: '重启结果未确认，等待设备回读。', ota_not_sent: '有效期内未能下发安装命令。',
+  ota_reboot_not_sent: '有效期内未能下发重启命令，可核对状态后重新确认。', ota_not_observed: '到期后回读未发现此安装请求。',
+  ota_device_error: '设备报告升级异常，请查看设备诊断。', ota_reboot_rejected: '设备未接受重启，请核对状态。',
+  ota_device_expired: '设备拒绝了过期命令。', ota_device_conflict: '设备升级记录与请求冲突。',
+  ota_device_rejected: '设备拒绝了升级命令。',
+  ota_deployment_not_found: '升级记录不存在。', device_not_found: '设备不存在，请刷新设备列表。',
   device_name_conflict: '设备名称已被其他操作更新，请加载当前名称后重试。',
 };

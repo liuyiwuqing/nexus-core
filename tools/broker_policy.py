@@ -22,11 +22,16 @@ pattern write nexus/v1/devices/%u/config_acks
 pattern write nexus/v1/devices/%u/telemetry
 """
 
+# Preserve the former policy for recognized upgrades; existing custom ACLs require review.
+MANAGEMENT_V1_ACL=MANAGEMENT_ACL
+MANAGEMENT_ACL=MANAGEMENT_V1_ACL.replace("topic write nexus/v1/devices/+/config\n", "topic write nexus/v1/devices/+/config\ntopic write nexus/v1/devices/+/ota\n").replace(
+    "topic read nexus/v1/devices/+/telemetry\n", "topic read nexus/v1/devices/+/telemetry\ntopic read nexus/v1/devices/+/ota_acks\ntopic read nexus/v1/devices/+/ota_status\n")+"pattern read nexus/v1/devices/%u/ota\npattern write nexus/v1/devices/%u/ota_acks\npattern write nexus/v1/devices/%u/ota_status\n"
+
 def upgrade_acl(text):
     rules = lambda value: [line.strip() for line in value.splitlines() if line.strip() and not line.lstrip().startswith("#")]
     if rules(text) == rules(MANAGEMENT_ACL):
         return text
-    if rules(text) != rules(LEGACY_ACL):
+    if rules(text) not in (rules(LEGACY_ACL),rules(MANAGEMENT_V1_ACL)):
         raise ValueError("custom_acl_requires_manual_merge")
     return MANAGEMENT_ACL
 

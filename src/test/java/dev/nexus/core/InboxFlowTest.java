@@ -42,6 +42,14 @@ import tools.jackson.databind.ObjectMapper;
 class InboxFlowTest {
     @Autowired JdbcTemplate fixtureDb;
 
+    @Test void remoteOtaRequiresExplicitDeploymentOptIn()throws Exception {
+        var response=request("GET","/api/v1/ota/releases","",TOKEN);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(new ObjectMapper().readTree(response.body()).path("enabled").asBoolean()).isFalse();
+        assertThat(new ObjectMapper().readTree(response.body()).path("items").isEmpty()).isTrue();
+        assertThat(request("POST","/api/v1/ota/releases","{}",TOKEN).statusCode()).isEqualTo(404);
+    }
+
     @Test void retentionIsDisabledUnlessTheDeploymentOptsIn()throws Exception {
         var preview=request("GET","/api/v1/retention","",TOKEN);
         assertThat(preview.statusCode()).isEqualTo(200);

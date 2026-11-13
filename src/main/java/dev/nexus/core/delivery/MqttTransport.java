@@ -1,6 +1,7 @@
 package dev.nexus.core.delivery;
 
 import dev.nexus.core.device.DeviceManagementService;
+import dev.nexus.core.device.RemoteOtaService;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
 import java.nio.file.Files;
@@ -24,15 +25,17 @@ public class MqttTransport {
     private final MqttAsyncClient client;
     private final MqttConnectOptions options = new MqttConnectOptions();
     private volatile boolean ready;
+    private final boolean otaEnabled;
     private volatile String lastError = "not_connected";
 
-    public MqttTransport(DeliveryService delivery, DeviceManagementService management, ObjectMapper json,
+    public MqttTransport(DeliveryService delivery, DeviceManagementService management, RemoteOtaService ota, ObjectMapper json,
         @Value("${nexus.mqtt.uri}") String uri,
         @Value("${nexus.mqtt.username}") String username,
         @Value("${nexus.mqtt.password}") String password,
         @Value("${nexus.mqtt.client-id}") String clientId,
         @Value("${nexus.mqtt.allow-insecure}") boolean allowInsecure,
         @Value("${nexus.mqtt.ca-cert:}") String caCert) throws Exception {
+        otaEnabled=ota.enabled();
         URI parsed = URI.create(uri);
         if ((!"ssl".equals(parsed.getScheme()) && !(allowInsecure && "tcp".equals(parsed.getScheme())))
             || parsed.getHost() == null || parsed.getUserInfo() != null || username.isBlank() || password.isBlank())
@@ -68,6 +71,8 @@ public class MqttTransport {
                 if (parts.length != 5 || !parts[0].equals("nexus") || !parts[1].equals("v1") || !parts[2].equals("devices")
                     || !parts[3].matches("[a-zA-Z0-9_-]{1,40}")) return;
                 try {
+                    if(parts[4].equals("ota_status")) { ota.observation(parts[3],message.getPayload(),message.isRetained());return; }
+                    if(parts[4].equals("ota_acks")) { ota.acknowledge(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("telemetry")) { management.telemetry(parts[3],message.getPayload());return; }
                     if(parts[4].equals("config_acks")) { management.acknowledge(parts[3],message.getPayload(),message.isRetained());return; }
                     if(message.getPayload().length>1024)return;
@@ -87,7 +92,10 @@ public class MqttTransport {
         if (ready) return;
         try {
             if (!client.isConnected()) client.connect(options).waitForCompletion(4000);
-            var token = client.subscribe(new String[]{"nexus/v1/devices/+/acks", "nexus/v1/devices/+/state", "nexus/v1/devices/+/telemetry", "nexus/v1/devices/+/config_acks"}, new int[]{1,1,1,1});
+            var topics=new java.util.ArrayList<>(java.util.List.of("nexus/v1/devices/+/acks","nexus/v1/devices/+/state","nexus/v1/devices/+/telemetry","nexus/v1/devices/+/config_acks"));
+            if(otaEnabled)topics.addAll(java.util.List.of("nexus/v1/devices/+/ota_acks","nexus/v1/devices/+/ota_status"));
+            int[] qosValues=new int[topics.size()];java.util.Arrays.fill(qosValues,1);
+            var token=client.subscribe(topics.toArray(String[]::new),qosValues);
             token.waitForCompletion(3000);
             for (int qos : token.getGrantedQos()) if (qos == 128) throw new MqttException(MqttException.REASON_CODE_NOT_AUTHORIZED);
             ready = true;
@@ -109,6 +117,12 @@ public class MqttTransport {
             throw new IllegalArgumentException("invalid_config_envelope");
         if(!ready())throw new MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED);
         client.publish("nexus/v1/devices/"+device+"/config",payload,1,false).waitForCompletion(3000);
+    }
+
+    public void publishOta(String device,byte[] payload) throws MqttException {
+        if(!otaEnabled||!device.matches("[a-zA-Z0-9_-]{1,40}")||payload.length>1024)throw new IllegalArgumentException("invalid_ota_envelope");
+        if(!ready())throw new MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED);
+        client.publish("nexus/v1/devices/"+device+"/ota",payload,1,false).waitForCompletion(3000);
     }
 
     @PreDestroy

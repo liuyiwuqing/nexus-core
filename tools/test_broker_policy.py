@@ -42,6 +42,8 @@ class BrokerPolicyTest(unittest.TestCase):
             self.assertIn("pattern read nexus/v1/devices/%u/config\n", updated)
             self.assertIn("pattern write nexus/v1/devices/%u/config_acks\n", updated)
             self.assertIn("topic write nexus/v1/devices/+/config\n", updated)
+            self.assertIn("pattern read nexus/v1/devices/%u/ota\n", updated)
+            self.assertIn("pattern write nexus/v1/devices/%u/ota_status\n", updated)
             self.assertNotIn("topic read #", updated)
             updated_conf = (directory / "mosquitto.conf").read_text()
             self.assertIn("message_size_limit 2048\n", updated_conf)
@@ -51,6 +53,17 @@ class BrokerPolicyTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(json.loads(result.stdout)["changed"])
             self.assertEqual((backup / "acl").read_text(), LEGACY)
+
+    def test_management_policy_upgrade_preserves_the_earlier_backup(self):
+        from broker_policy import MANAGEMENT_V1_ACL
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp);(directory/'acl').write_text(MANAGEMENT_V1_ACL)
+            (directory/'mosquitto.conf').write_text('listener 8883\nallow_anonymous false\nmessage_size_limit 2048\nmax_packet_size 4096\n')
+            original_backup=directory/'.management-v1-backup';original_backup.mkdir();(original_backup/'acl').write_text(LEGACY)
+            result=self.command(directory,'--apply');self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual((original_backup/'acl').read_text(),LEGACY)
+            self.assertEqual((directory/'.remote-ota-v1-backup/acl').read_text(),MANAGEMENT_V1_ACL)
+            self.assertIn('pattern write nexus/v1/devices/%u/ota_acks\n',(directory/'acl').read_text())
 
     def test_custom_acl_is_left_untouched(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,7 +77,7 @@ class BrokerPolicyTest(unittest.TestCase):
             self.assertIn("custom_acl_requires_manual_merge", result.stderr)
             self.assertEqual((directory / "acl").read_text(), custom)
             self.assertEqual((directory / "mosquitto.conf").read_text(), conf)
-            self.assertFalse((directory / ".management-v1-backup").exists())
+            self.assertFalse((directory / ".remote-ota-v1-backup").exists())
 
 if __name__ == "__main__":
     unittest.main()

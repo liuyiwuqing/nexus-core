@@ -182,3 +182,23 @@ PostgreSQL 数据在 Compose 卷中，设备密钥/证书在 `data/`；两处均
 `NEXUS_RETENTION_ENABLED=true` 启用按接收时间计算的 7 天正文清理、30 天消息/投递元数据删除。升级已有实例前先备份，再用管理员令牌 `GET /api/v1/retention` 核对只读预览；手工执行 `POST /api/v1/retention/runs` 必须提交 `{"confirm":"DELETE_EXPIRED_MESSAGES"}`。单事务最多删除 200 条元数据、再清除 200 条正文；积压需多次执行。并发占用返回 409，失败整体回滚。UTC 04:00 定时，可用 `NEXUS_RETENTION_CRON=-` 关闭定时。
 
 超期内容不再接受分析/重试/记忆外发，后台领取检查同一期限；清理使旧分析 lease 失效。Halo 自动轮询启用 30 天批准时间窗口以避免历史重入，明确的单条补录仍保留。已发给模型的内容不能通过本地清理撤回。已确认的 OpenViking 副本跟随源评论状态管理；在途写入的补偿及失效删除见 [15](../04-ai-desktop-pet/docs/15-memory-lifecycle.md)。V9 仅在隔离测试库验证，当前运行实例未迁移或清理。完整运维步骤见同级 `04-ai-desktop-pet/docs/13-operational-software.md`。
+
+## 远程固件升级
+
+默认 `NEXUS_OTA_ENABLED=false`；设备远程开关也默认关闭。配套启用需 V11、OTA 专用 ACL、已配置生产 OTA 根/公钥的固件。登记版本只保存签名 manifest 的元数据，设备安装时才验签；CORE 不托管固件文件。
+
+- `GET/POST /api/v1/ota/releases` 读取/登记 `{releaseId,manifest}`，同目录不可换包。
+- `GET /api/v1/devices/<deviceId>/ota` 返回新鲜回读、动作门控及最近部署/命令。
+- `POST .../ota/deployments` 提交 `{requestId,releaseId,bootId}`，安装完成后等待独立重启确认。
+- `POST .../ota/deployments/<requestId>/reboot` 提交 `{requestId:独立命令ID,bootId,confirm:"REBOOT_DEVICE"}`。
+- `GET .../ota/deployments/<requestId>/audit` 查询状态审计。以上均沿用管理员鉴权。
+
+命令持久化后发布，结果未知时保留 ID、阻止新部署；设备 ACK 不等于镜像健康。完整回读绑定随机启动标识、目标与序号，旧启动不能覆盖新状态。`devices.enabled` 继续仅控制消息。
+
+`python3 tools/upgrade_broker_policy.py` 默认只预览；显式 `--apply` 才备份为 `.remote-ota-v1-backup` 并写已知模板，不覆盖旧 `.management-v1-backup`，不自动重启 Broker，自定义 ACL 拒绝自动修改。未对真实数据库/Broker 执行本轮迁移。
+
+管理台设备卡片提供“固件升级”，可选已兼容版本、查看记录、单独确认重启；提交断线可重试原请求。细节、契约与成套启用步骤见配套 [04 项目远程 OTA 文档](../04-ai-desktop-pet/docs/19-remote-ota.md)。
+
+验证：`python3 tools/run_local.py build`、`python3 tools/test_broker_policy.py`；配套 04 的 `tools/ci/test_remote_ota_contract.py` 运行实际 Java/数据库/MQTT 与 C 事务回环，Flash/SDK/重启为托管边界，不等于实机 OTA。
+
+本项本地完整构建为 50 条测试（46 通过、4 条环境条件跳过），随后新增的默认关闭 HTTP 用例单独通过并重新打包。OTA 专项实际 PostgreSQL/MQTT 5 条通过，配套实际 C peer 另行通过；浏览器 OTA 22 项及既有管理 38 项通过。完整验收边界在配套文档，真实部署与实机升级仍未执行。
