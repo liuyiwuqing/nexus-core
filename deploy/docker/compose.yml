@@ -1,0 +1,102 @@
+name: nexus-production
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    env_file:
+      - path: ${NEXUS_DOCKER_DATA:?Initialize private deployment first}/postgres.env
+        format: raw
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+    logging: &bounded-logs
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+  mqtt:
+    image: eclipse-mosquitto:2.0.22@sha256:81a6193ae693942a3231cd3ac52875b02b7e3a19da671b2fb4b55cc874c5b279
+    user: "1883:1883"
+    read_only: true
+    ports:
+      - "${NEXUS_MQTT_BIND_ADDRESS:-0.0.0.0}:${NEXUS_MQTT_PORT:-8883}:8883"
+    volumes:
+      - type: bind
+        source: ${NEXUS_DOCKER_DATA}/mosquitto/config
+        target: /mosquitto/config
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${NEXUS_DOCKER_DATA}/mosquitto/certs
+        target: /mosquitto/certs
+        read_only: true
+        bind: {create_host_path: false}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *bounded-logs
+    networks: [backend, edge]
+  core:
+    image: ${NEXUS_CORE_IMAGE:-nexus-core:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    env_file:
+      - path: ${NEXUS_DOCKER_DATA}/core.env
+        format: raw
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0 -XX:+ExitOnOutOfMemoryError"
+    user: "65534:65534"
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    mem_limit: 1g
+    volumes:
+      - type: bind
+        source: ${NEXUS_DOCKER_DATA}/mosquitto/certs/ca.crt
+        target: /etc/nexus/mqtt-ca.crt
+        read_only: true
+        bind: {create_host_path: false}
+    depends_on:
+      postgres: {condition: service_healthy}
+      mqtt: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "java", "-Dloader.main=dev.nexus.core.runtime.ContainerHealthcheck", "-cp", "/app/core.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+      interval: 15s
+      timeout: 10s
+      start_period: 45s
+      retries: 4
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *bounded-logs
+    networks: [backend, edge]
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    environment:
+      NEXUS_CONSOLE_DOMAIN: ${NEXUS_CONSOLE_DOMAIN:?Set the public console domain}
+    ports:
+      - "${NEXUS_HTTP_BIND_ADDRESS:-0.0.0.0}:${NEXUS_HTTP_PORT:-80}:80"
+      - "${NEXUS_HTTP_BIND_ADDRESS:-0.0.0.0}:${NEXUS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      core: {condition: service_healthy}
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *bounded-logs
+    networks: [edge]
+networks:
+  backend:
+    internal: true
+  edge:
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

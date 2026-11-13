@@ -19,6 +19,10 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 
 此版本没有接管小智 ASR/聊天/TTS，也没有接入邮件、私信、录音、iPhone、Home Assistant 或社交平台私有 API。
 
+## Docker 线上部署
+
+管理台与 API 共用 CORE 容器，配套 PostgreSQL、MQTT/TLS 和 Caddy。使用根目录 `Dockerfile` 与 `deploy/docker/compose.yml`，初始化私有配置后构建、启动；宿主不依赖 Java/Node。完整命令、HTTPS、持久化、备份与升级见 [Docker 部署](docs/docker-deployment.md)。当前只交付部署方案和本地验证，尚未上线目标服务器。
+
 ## 本机安装
 
 需要 Python 3.11+、Java 21+、Maven、Node/npm、Docker Compose。首次安装在本目录执行：

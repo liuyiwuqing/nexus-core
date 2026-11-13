@@ -1,0 +1,16 @@
+# Explicit source allowlist: private data, env, keys and host build outputs stay out.
+**
+!Dockerfile
+!pom.xml
+!.mvn/
+!.mvn/settings.xml
+!src/
+!src/**
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/src/
+!frontend/src/**

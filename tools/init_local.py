@@ -26,13 +26,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="localhost", help="Broker hostname/IP reachable from the ESP32; included in its certificate")
     parser.add_argument("--device", default="dodo-1")
+    parser.add_argument("--data-dir", type=Path, default=ROOT / "data", help="Private output directory; default keeps local development unchanged")
+    parser.add_argument("--broker-dns", action="append", default=[], help="Additional broker DNS SAN, e.g. the Compose service name")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", args.device) or args.device == "nexus-core":
         parser.error("invalid device id")
     if not re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", args.host):
         parser.error("invalid host")
+    if any(not re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", name) for name in args.broker_dns):
+        parser.error("invalid broker DNS alias")
     os.umask(0o077)
-    data = ROOT / "data"
+    data = args.data_dir.expanduser().resolve()
     data.mkdir(exist_ok=True, mode=0o700)
     env_file = data / "local.env"
     if env_file.exists():
@@ -51,11 +55,15 @@ def main():
     except ValueError:
         extra_san = "DNS:" + args.host
     run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "3650",
+        "-addext", "basicConstraints=critical,CA:true,pathlen:0", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
         "-subj", "/CN=NEXUS Local CA", "-keyout", str(pki / "ca.key"), "-out", str(pki / "ca.crt"))
     run("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + args.host,
         "-keyout", str(certs / "server.key"), "-out", str(pki / "server.csr"))
     extensions = pki / "server.ext"
-    write(extensions, "subjectAltName=DNS:localhost,IP:127.0.0.1," + extra_san + "\nextendedKeyUsage=serverAuth\n")
+    aliases = "".join(",DNS:" + name for name in args.broker_dns)
+    write(extensions, "subjectAltName=DNS:localhost,IP:127.0.0.1," + extra_san + aliases +
+          "\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
+          "extendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n")
     run("openssl", "x509", "-req", "-in", str(pki / "server.csr"), "-CA", str(pki / "ca.crt"),
         "-CAkey", str(pki / "ca.key"), "-CAcreateserial", "-days", "825", "-sha256",
         "-extfile", str(extensions), "-out", str(certs / "server.crt"))
@@ -105,8 +113,9 @@ persistence false
         "NEXUS_AI_CONFIG_FILE": "", "NEXUS_AI_CONFIG_FORMAT": "openviking", "NEXUS_AI_PROXY": "",
     }
     write(env_file, "# 本机私有配置；不要提交或复制到聊天。\n" + "\n".join(k + "=" + v for k,v in env.items()) + "\n")
-    print("已生成 data/local.env、TLS 证书、Broker ACL 和 data/device.json；未输出任何凭据。")
-    print("启动依赖：docker compose --env-file data/local.env up -d")
+    print("已生成私有 local.env、TLS 证书、Broker ACL 和 device.json；未输出任何凭据。")
+    if data == ROOT / "data":
+        print("启动依赖：docker compose --env-file data/local.env up -d")
 
 
 if __name__ == "__main__":

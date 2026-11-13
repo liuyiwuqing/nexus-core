@@ -1,0 +1,44 @@
+name: Docker deployment
+on:
+  push:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .mvn/**
+      - pom.xml
+      - src/**
+      - frontend/**
+      - deploy/docker/**
+      - tools/**
+      - .github/workflows/docker-deployment.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .mvn/**
+      - pom.xml
+      - src/**
+      - frontend/**
+      - deploy/docker/**
+      - tools/**
+      - .github/workflows/docker-deployment.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  docker-compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check deployment initialization CLI
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - name: Build console and CORE from source
+        run: docker build -t nexus-core:ci .
+      - name: Verify real isolated Compose deployment
+        run: python3 tools/test_docker_deployment.py --image nexus-core:ci --report target/docker-smoke.json
