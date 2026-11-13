@@ -2,6 +2,8 @@
 
 Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状态，Mosquitto TLS 连接设备，Vue 管理台随 JAR 一起发布。平台令牌和 AI 密钥只留在服务端。
 
+需求范围、已验证基线和逐项交付约定见 [交付文档](docs/delivery-workflow.md)。每项同步实现与文档、验证、提交并推送后继续；生产部署与真实设备验收独立记录。
+
 ## 当前能力
 
 | 模块 | 已实现的行为 | 验证边界 |
