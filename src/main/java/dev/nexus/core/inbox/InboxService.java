@@ -78,19 +78,21 @@ public class InboxService {
         return new IngestResult(id, true);
     }
 
-    public Map<String,Object> list(int page, int size) {
+    public Map<String,Object> list(int page, int size, String readStatus) {
+        // HTTP 已校验枚举；这里只拼接固定谓词，列表和总数必须使用同一条件。
+        String filter=readStatus==null?"":" WHERE read_at IS "+("read".equals(readStatus)?"NOT NULL":"NULL");
         List<Map<String,Object>> items = db.queryForList("""
             SELECT message_id AS "messageId",connector_id AS "connectorId",source,upstream_event_id AS "eventId",
                    event_type AS "eventType",title,content,summary,sender,original_url AS "originalUrl",priority,
                    created_at AS "createdAt",received_at AS "receivedAt",expires_at AS "expiresAt",read_at AS "readAt",
                    action_status AS "actionStatus",data_class AS "dataClass",metadata::text AS metadata,content_purged_at AS "contentPurgedAt"
-            FROM inbox_messages ORDER BY received_at DESC,message_id LIMIT ? OFFSET ?
-            """, size, (page - 1) * size);
+            FROM inbox_messages
+            """+filter+" ORDER BY received_at DESC,message_id LIMIT ? OFFSET ?", size, (page - 1) * size);
         items.forEach(row -> {
             row.put("readStatus", row.get("readAt") == null ? "unread" : "read");
             row.put("metadata", json.readTree((String) row.get("metadata")));
         });
-        return Map.of("items", ApiRows.normalize(items), "total", db.queryForObject("SELECT count(*) FROM inbox_messages", Long.class), "page", page, "size", size);
+        return Map.of("items", ApiRows.normalize(items), "total", db.queryForObject("SELECT count(*) FROM inbox_messages"+filter, Long.class), "page", page, "size", size);
     }
 
     @Transactional

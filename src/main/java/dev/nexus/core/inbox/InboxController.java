@@ -3,6 +3,7 @@ package dev.nexus.core.inbox;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -24,8 +25,9 @@ public class InboxController {
 
     @GetMapping
     Map<String,Object> list(@RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
-                            @RequestParam(defaultValue="30") @Min(1) @Max(100) int size) {
-        return inbox.list(page, size);
+                            @RequestParam(defaultValue="30") @Min(1) @Max(100) int size,
+                            @RequestParam(required=false) @Pattern(regexp="read|unread") String readStatus) {
+        return inbox.list(page, size, readStatus);
     }
 
     @PostMapping("/{id}/read")

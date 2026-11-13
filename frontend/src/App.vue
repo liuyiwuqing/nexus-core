@@ -16,6 +16,7 @@ const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
+const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -40,6 +41,7 @@ function logout() {
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
   messageSubmission.value = null; messageUncertain.value = false;
+  messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
 }
 
 async function refresh(): Promise<boolean> {
@@ -48,20 +50,30 @@ async function refresh(): Promise<boolean> {
   loading.value = true;
   try {
     const result = await Promise.all([
-      api<Page<Message>>(`messages?page=${messages.value.page}`, 'GET', undefined, controller.signal),
+      api<Page<Message>>(`messages?page=${messages.value.page}${messageReadStatus.value ? '&readStatus=' + encodeURIComponent(messageReadStatus.value) : ''}`, 'GET', undefined, controller.signal),
       api<{ items: Device[] }>('devices', 'GET', undefined, controller.signal),
       api<{ items: Connector[] }>('connectors', 'GET', undefined, controller.signal),
-      api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}`, 'GET', undefined, controller.signal),
+      api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${deliveryStatus.value ? '&status=' + encodeURIComponent(deliveryStatus.value) : ''}`, 'GET', undefined, controller.signal),
       api<Status>('status', 'GET', undefined, controller.signal),
     ]);
     if (requestId !== readGeneration || currentEpoch !== epoch) return false;
+    const messageLast = Math.max(1, Math.ceil(result[0].total / result[0].size));
+    const deliveryLast = Math.max(1, Math.ceil(result[3].total / result[3].size));
+    // 已读/重试或后台更新可能移走末页最后一项；用同一筛选重新读取有效页。
+    if (result[0].page > messageLast || result[3].page > deliveryLast) {
+      messages.value.page = Math.min(result[0].page, messageLast);
+      deliveries.value.page = Math.min(result[3].page, deliveryLast);
+      return await refresh();
+    }
     [messages.value, { items: devices.value }, { items: connectors.value }, deliveries.value, status.value] = result;
-    error.value = '';
+    error.value = ''; readFailed.value = false;
     return true;
   } catch (failure) {
     if (failure instanceof DOMException && failure.name === 'AbortError') return false;
-    if (currentEpoch === epoch || failure instanceof ApiFailure && failure.status === 401)
+    if (requestId === readGeneration && currentEpoch === epoch) {
+      readFailed.value = true;
       error.value = failure instanceof ApiFailure ? failure.message : '暂时无法连接 CORE，请检查服务后重试。';
+    } else if (failure instanceof ApiFailure && failure.status === 401) error.value = failure.message;
     return false;
   } finally { if (requestId === readGeneration) loading.value = false; }
 }
@@ -125,6 +137,16 @@ const importComment = (name: string) => mutate(() => api(`connectors/halo/commen
 const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST'), '已重新加入投递队列。');
 function messagePage(page: number) { messages.value.page = page; void refresh(); }
 function deliveryPage(page: number) { deliveries.value.page = page; void refresh(); }
+function filterMessages(value: Message['readStatus'] | '') {
+  if (loading.value || busy.value) return;
+  messageReadStatus.value = value; messages.value = { ...messages.value, items: [], total: 0, page: 1 };
+  void refresh();
+}
+function filterDeliveries(value: string) {
+  if (loading.value || busy.value) return;
+  deliveryStatus.value = value; deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
+  void refresh();
+}
 onMounted(() => { interval = setInterval(() => { if (authenticated.value && !loading.value && !busy.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
 onUnmounted(() => { clearInterval(interval); controller?.abort(); });
 </script>
@@ -152,10 +174,10 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
       <div class="content">
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
-        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @connectors="tab = 'connectors'" />
+        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
-        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :busy="busy" :loading="loading" :retry="retry" @page="deliveryPage" />
+        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :busy="busy" :loading="loading" :failed="readFailed" :status="deliveryStatus" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />

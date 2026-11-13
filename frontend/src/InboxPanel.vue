@@ -4,13 +4,14 @@ import { formatTime, type Api, type Message, type MessageSubmission, type Page }
 import AnalysisPanel from './AnalysisPanel.vue';
 
 const props = defineProps<{
-  data: Page<Message>; loading: boolean; busy: boolean;
+  data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   pending: MessageSubmission | null; uncertain: boolean;
   create: (title: string, content: string) => Promise<boolean>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
-const emit = defineEmits<{ page: [page: number]; connectors: [] }>();
+const emit = defineEmits<{ page: [page: number]; filter: [value: Message['readStatus'] | '']; connectors: [] }>();
+function filterChanged(event: Event) { emit('filter', (event.target as HTMLSelectElement).value as Message['readStatus'] | ''); }
 const selectedId = ref('');
 const selected = computed(() => props.data.items.find(message => message.messageId === selectedId.value));
 const compose = ref(false);
@@ -28,16 +29,20 @@ async function send() {
 
 <template>
   <section>
-    <div class="section-heading"><div><h1>消息</h1><p>{{ data.total }} 条消息</p></div>
+    <div class="section-heading"><div><h1>消息</h1><p>{{ loading ? '正在加载…' : failed ? '未能读取消息' : `${data.total} 条消息` }}</p></div>
       <button class="secondary" :disabled="!!pending" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
     </div>
+    <div class="list-filters"><label>消息状态<select aria-label="消息状态" :value="readStatus" :disabled="loading || busy" @change="filterChanged"><option value="">全部</option><option value="unread">未读</option><option value="read">已读</option></select></label></div>
     <form v-if="compose" class="inline-form" @submit.prevent="send">
       <label>标题<input v-model="title" maxlength="160" required :disabled="busy" :readonly="!!pending" /></label>
       <label>内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="busy" :readonly="!!pending"></textarea></label>
       <p v-if="uncertain" class="inline-error" role="status">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</p>
       <div class="form-footer"><span>发送到所有已启用的设备。</span><button class="primary" :disabled="busy">{{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}</button></div>
     </form>
-    <div v-if="!data.items.length && !loading" class="empty-state">
+    <div v-if="loading && !data.items.length" class="empty-state" role="status">正在加载消息…</div>
+    <div v-else-if="failed" class="empty-state"><h2>消息读取失败</h2></div>
+    <div v-else-if="!data.items.length && readStatus" class="empty-state"><h2>没有符合条件的消息</h2></div>
+    <div v-else-if="!data.items.length" class="empty-state">
       <div class="empty-envelope" aria-hidden="true">✉</div><h2>消息会从这里开始</h2>
       <p>接入 Halo 后，新的公开评论会自动汇入。</p><button class="secondary" @click="emit('connectors')">查看接入</button>
     </div>
@@ -51,9 +56,9 @@ async function send() {
           <span class="message-preview">{{ message.summary }}</span>
         </button>
         <div class="pagination">
-          <button :disabled="data.page <= 1 || loading" @click="emit('page', data.page - 1)">上一页</button>
+          <button :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">上一页</button>
           <span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span>
-          <button :disabled="data.page * data.size >= data.total || loading" @click="emit('page', data.page + 1)">下一页</button>
+          <button :disabled="data.page * data.size >= data.total || loading || busy" @click="emit('page', data.page + 1)">下一页</button>
         </div>
       </div>
       <article v-if="selected" class="message-detail">

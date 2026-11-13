@@ -112,13 +112,15 @@ public class DeliveryService {
         }
     }
 
-    public Map<String,Object> list(int page, int size) {
+    public Map<String,Object> list(int page, int size, String status) {
+        String filter=" WHERE (?::text IS NULL OR d.status=?)";
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
                    d.last_error AS "lastError",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",d.read_at AS "readAt",
                    d.next_attempt_at AS "nextAttemptAt",m.title,m.expires_at AS "expiresAt"
-            FROM deliveries d JOIN inbox_messages m USING(message_id) ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?
-            """, size, (page - 1) * size)), "total", db.queryForObject("SELECT count(*) FROM deliveries", Long.class), "page", page, "size", size);
+            FROM deliveries d JOIN inbox_messages m USING(message_id)
+            """+filter+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", status, status, size, (page - 1) * size)),
+            "total", db.queryForObject("SELECT count(*) FROM deliveries d"+filter, Long.class, status, status), "page", page, "size", size);
     }
 
     private boolean validVersion(JsonNode packet) {

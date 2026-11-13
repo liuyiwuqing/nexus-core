@@ -36,6 +36,8 @@ python3 tools/run_local.py run
 
 测试消息在结果未知时保留同一请求 ID 和正文，切换导航可继续重试，收到确认后才开始下一条消息。退出/刷新页面后不恢复正文；详细行为和验证边界见 [测试消息与断线重试](docs/console-messages.md)。
 
+消息可按已读/未读筛选，投递可按现有七种状态筛选；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。HTTP 可选参数及边界见[状态筛选](docs/console-list-filters.md)。
+
 `build` 先检查 TypeScript、构建前端，再运行 Maven verify，输出 `target/nexus-core-0.1.0-SNAPSHOT.jar`；需要 Docker 执行集成测试。`test` 不读取 `data/local.env`，测试使用独立数据库和 Broker，不接真实博客/模型。环境变量优先于本机配置。配置文件按 `KEY=value` 读取，不执行 shell，也不要添加 shell 引号或变量替换。
 
 运行日志留在启动终端；停止前台服务用 Ctrl+C。依赖停止使用 `docker compose --env-file data/local.env stop`，保留数据库卷。不要使用 `down -v` 清理业务数据。
