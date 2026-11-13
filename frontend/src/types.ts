@@ -38,13 +38,19 @@ export interface OtaView {
 export interface Connector { id: string; source: string; configured: boolean; enabled: boolean; state: string; lastSuccessAt?: string | null; lastError?: string | null; since?: string }
 export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; lastError: string | null; nextAttemptAt: string; readAt: string | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
+export interface Overview {
+  asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
+  devices: { total: number; online: number; offline: number; disabled: number };
+  today: { messages: number; deliveries: number; failedDeliveries: number; deliveryFailureRate: number | null };
+  backlog: { pending: number; sent: number }; failedDeliveries: number;
+}
 export type Api = <T>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export interface Analysis {
   status: 'not_requested' | 'pending' | 'processing' | 'succeeded' | 'failed' | 'blocked';
   summary?: string; category?: string; importance?: string; replyDraft?: string; lastError?: string;
   memoryStatus?: 'off' | 'pending' | 'stored' | 'error' | 'blocked'; memoryUri?: string; memoryError?: string;
 }
-export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory';
+export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory' | 'overview';
 export function formatTime(value?: string | null): string {
   if (!value) return '—';
   const date = new Date(value);

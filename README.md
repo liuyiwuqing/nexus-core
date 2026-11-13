@@ -42,6 +42,8 @@ python3 tools/run_local.py run
 
 消息可按已读/未读筛选，投递可按现有七种状态筛选；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。HTTP 可选参数及边界见[状态筛选](docs/console-list-filters.md)。
 
+“概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`，MQTT 健康与设备在线分别呈现。口径及验证入口见[运行概览](docs/console-overview.md)。
+
 `build` 先检查 TypeScript、构建前端，再运行 Maven verify，输出 `target/nexus-core-0.1.0-SNAPSHOT.jar`；需要 Docker 执行集成测试。`test` 不读取 `data/local.env`，测试使用独立数据库和 Broker，不接真实博客/模型。环境变量优先于本机配置。配置文件按 `KEY=value` 读取，不执行 shell，也不要添加 shell 引号或变量替换。
 
 运行日志留在启动终端；停止前台服务用 Ctrl+C。依赖停止使用 `docker compose --env-file data/local.env stop`，保留数据库卷。不要使用 `down -v` 清理业务数据。
@@ -162,6 +164,7 @@ python3 tools/upgrade_broker_policy.py --apply
 
 | 路径 | 用途 |
 | --- | --- |
+| `GET /overview` | 只读运行统计，固定 UTC 今日窗口 |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |

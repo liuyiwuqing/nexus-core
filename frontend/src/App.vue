@@ -8,6 +8,7 @@ import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
+import OverviewPanel from './OverviewPanel.vue';
 import { errorNames, type Message, type MessageSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
@@ -17,7 +18,7 @@ const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
-const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }];
+const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
 class ApiFailure extends Error { constructor(readonly status: number, code: string) { super(errorNames[code] || `请求失败（HTTP ${status}）`); } }
@@ -181,6 +182,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
+        <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
         <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" />
       </div>
     </div>
