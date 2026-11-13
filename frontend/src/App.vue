@@ -9,7 +9,7 @@ import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
-import { errorNames, type Message, type MessageSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
+import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
@@ -17,6 +17,8 @@ const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
+const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
+const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
@@ -42,12 +44,13 @@ function logout() {
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
   messageSubmission.value = null; messageUncertain.value = false;
+  toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
 }
 
-async function refresh(): Promise<boolean> {
+async function refresh(clearFeedback = false): Promise<boolean> {
   controller?.abort(); controller = new AbortController();
-  const requestId = ++readGeneration, currentEpoch = epoch;
+  const requestId = ++readGeneration, currentEpoch = epoch, previousError = error.value;
   loading.value = true;
   try {
     const result = await Promise.all([
@@ -64,10 +67,12 @@ async function refresh(): Promise<boolean> {
     if (result[0].page > messageLast || result[3].page > deliveryLast) {
       messages.value.page = Math.min(result[0].page, messageLast);
       deliveries.value.page = Math.min(result[3].page, deliveryLast);
-      return await refresh();
+      return await refresh(clearFeedback);
     }
     [messages.value, { items: devices.value }, { items: connectors.value }, deliveries.value, status.value] = result;
-    error.value = ''; readFailed.value = false;
+    // 后台读取恢复只清理读取错误；操作错误留给用户主动核对或下一次操作。
+    if ((readFailed.value || clearFeedback) && error.value === previousError) error.value = '';
+    readFailed.value = false;
     return true;
   } catch (failure) {
     if (failure instanceof DOMException && failure.name === 'AbortError') return false;
@@ -126,6 +131,48 @@ async function createMessage(title: string, content: string): Promise<boolean> {
     }
   }, '测试消息已保存并进入投递队列。');
 }
+async function createTool(toolId: string, args: Record<string,string>): Promise<boolean> {
+  if (busy.value) return false;
+  const currentEpoch = epoch, wasUncertain = toolUncertain.value;
+  const submission = toolSubmission.value ?? { requestKey: crypto.randomUUID(), toolId, arguments: { ...args } };
+  toolSubmission.value = submission;
+  return mutate(async () => {
+    try {
+      const accepted = await api<{ jobId: string; toolId: string; arguments: Record<string,string> }>('tool-jobs', 'POST', submission);
+      if (!accepted || typeof accepted.jobId !== 'string' || !accepted.jobId || accepted.toolId !== submission.toolId || !accepted.arguments ||
+          Object.keys(accepted.arguments).length !== Object.keys(submission.arguments).length || Object.entries(submission.arguments).some(([key,value]) => accepted.arguments[key] !== value))
+        throw new Error('Invalid tool acknowledgment');
+      if (currentEpoch === epoch) { toolSubmission.value = null; toolUncertain.value = false; }
+    } catch (failure) {
+      if (currentEpoch === epoch) {
+        const rejected = failure instanceof ApiFailure && failure.status >= 400 && failure.status < 500 && failure.status !== 408;
+        if (rejected && !wasUncertain) toolSubmission.value = null;
+        toolUncertain.value = !rejected || wasUncertain;
+      }
+      throw failure;
+    }
+  }, submission.toolId === 'app.open' ? '请求已创建，请核对后确认。' : '查询已加入队列。');
+}
+async function createRule(input: Omit<RuleSubmission,'requestKey'>): Promise<boolean> {
+  if (busy.value) return false;
+  const currentEpoch = epoch, wasUncertain = ruleUncertain.value;
+  const submission = ruleSubmission.value ?? { ...input, requestKey: crypto.randomUUID() };
+  ruleSubmission.value = submission;
+  return mutate(async () => {
+    try {
+      const accepted = await api<{ ruleId: string }>('automation/rules', 'POST', submission);
+      if (!accepted || typeof accepted.ruleId !== 'string' || !accepted.ruleId) throw new Error('Invalid rule acknowledgment');
+      if (currentEpoch === epoch) { ruleSubmission.value = null; ruleUncertain.value = false; }
+    } catch (failure) {
+      if (currentEpoch === epoch) {
+        const rejected = failure instanceof ApiFailure && failure.status >= 400 && failure.status < 500 && failure.status !== 408;
+        if (rejected && !wasUncertain) ruleSubmission.value = null;
+        ruleUncertain.value = !rejected || wasUncertain;
+      }
+      throw failure;
+    }
+  }, '规则已保存；是否启用请在列表中核对。');
+}
 const markRead = (id: string) => mutate(() => api(`messages/${id}/read`, 'POST'), '已标记已读。');
 const register = (deviceId: string, name: string) => mutate(() => api('devices', 'POST', { deviceId, name }), '设备已登记。');
 const rename = (id: string, name: string, expectedName: string) => mutate(async () => {
@@ -171,19 +218,19 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
       <div class="sidebar-bottom"><span class="local-indicator">本机控制台</span><button class="text-button" @click="logout">退出登录</button></div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><button class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新' }}</button></header>
+      <header class="topbar"><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
       <div class="content">
-        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh">重试</button></div>
+        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy" :loading="loading" :failed="readFailed" :status="deliveryStatus" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @refresh="refresh" />
-        <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" />
+        <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
-        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" />
+        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" />
       </div>
     </div>
   </div>

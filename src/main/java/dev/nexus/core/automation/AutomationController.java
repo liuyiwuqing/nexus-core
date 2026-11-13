@@ -14,11 +14,12 @@ public class AutomationController {
     private final AutomationService automation;
     public AutomationController(AutomationService automation) { this.automation = automation; }
     public record Rule(@NotBlank @Size(max=80) String name, @NotBlank String trigger, @NotBlank String action,
-                       String localTime, String zone, String title, String content) {}
+                       String localTime, String zone, String title, String content, UUID requestKey) {}
     public record Enabled(boolean enabled) {}
     @GetMapping("/rules") Map<String,Object> rules() { return Map.of("items", automation.rules()); }
     @PostMapping("/rules") ResponseEntity<?> create(@Valid @RequestBody Rule rule) {
-        return ResponseEntity.status(201).body(Map.of("ruleId", automation.create(rule.name(), rule.trigger(), rule.action(), rule.localTime(), rule.zone(), rule.title(), rule.content())));
+        var result=automation.create(rule.name(), rule.trigger(), rule.action(), rule.localTime(), rule.zone(), rule.title(), rule.content(), rule.requestKey());
+        return ResponseEntity.status(result.created()?201:200).body(Map.of("ruleId",result.ruleId()));
     }
     @PutMapping("/rules/{id}/enabled") ResponseEntity<Void> enable(@PathVariable UUID id, @RequestBody Enabled enabled) {
         automation.enable(id, enabled.enabled()); return ResponseEntity.noContent().build();

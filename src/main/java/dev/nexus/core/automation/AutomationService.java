@@ -5,8 +5,12 @@ import dev.nexus.core.web.ApiRows;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -30,7 +34,9 @@ public class AutomationService {
         this.db = db; this.transaction = transaction; this.events = events; this.json = json;
         this.actions = actions.stream().collect(Collectors.toUnmodifiableMap(AutomationAction::id, Function.identity()));
     }
-    public UUID create(String name, String trigger, String action, String time, String zone, String title, String content) {
+    public record Created(UUID ruleId,boolean created) {}
+    @Transactional
+    public Created create(String name, String trigger, String action, String time, String zone, String title, String content, UUID requestKey) {
         Map<String,String> arguments;
         if (trigger.equals("message.received") && action.equals("analyze_public_comment")) arguments = Map.of();
         else if (trigger.equals("schedule.daily") && action.equals("notify_device")) {
@@ -40,8 +46,21 @@ public class AutomationService {
             arguments = Map.of("localTime", time, "zone", zone, "title", title, "content", content);
         } else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
         UUID id = UUID.randomUUID();
-        db.update("INSERT INTO automation_rules(rule_id,name,trigger_type,action_id,arguments) VALUES(?,?,?,?,?::jsonb)", id, name, trigger, action, json.writeValueAsString(arguments));
-        return id;
+        String fingerprint=requestKey==null?null:creationHash(name,trigger,action,arguments);
+        var inserted=db.queryForList("""
+            INSERT INTO automation_rules(rule_id,name,trigger_type,action_id,arguments,create_request_key,create_request_hash)
+            VALUES(?,?,?,?,?::jsonb,?,?) ON CONFLICT(create_request_key) DO NOTHING RETURNING rule_id
+            """,id,name,trigger,action,json.writeValueAsString(arguments),requestKey,fingerprint);
+        if(!inserted.isEmpty())return new Created(id,true);
+        var original=db.queryForMap("SELECT rule_id,create_request_hash FROM automation_rules WHERE create_request_key=?",requestKey);
+        if(!fingerprint.equals(original.get("create_request_hash")))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
+        return new Created((UUID)original.get("rule_id"),false);
+    }
+    private String creationHash(String name,String trigger,String action,Map<String,String> arguments) {
+        String canonical=json.writeValueAsString(new TreeMap<>(Map.of("name",name,"trigger",trigger,"action",action,"arguments",new TreeMap<>(arguments))));
+        try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)));}
+        catch(java.security.NoSuchAlgorithmException failure){throw new IllegalStateException(failure);}
     }
     public List<Map<String,Object>> rules() {
         var rows = db.queryForList("SELECT rule_id AS \"ruleId\",name,trigger_type AS trigger,action_id AS action,enabled,version,arguments::text AS arguments,created_at AS \"createdAt\" FROM automation_rules ORDER BY created_at DESC LIMIT 100");

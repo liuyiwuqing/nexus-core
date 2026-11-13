@@ -28,6 +28,8 @@ CONSOLE-05 的 CORE `af916aa` 对应 [Docker CI 43408287857](https://github.com/
 
 CONSOLE-04 新增[投递状态时间线与受限取消](console-delivery-history.md)：V13 同事务状态记录、旧行诚实基线、永久取消 guard 与幂等取消，保留原投递/回执契约。真实 HTTP/worker/隔离 SQL、浏览器、Java–C 源码契约与完整构建分别核对，不迁移真实库或发送撤回命令。
 
-CONSOLE-04 的 CORE `109b83f` 已推送并核对远端，对应 [Docker CI 43410896935](https://github.com/liuyiwuqing/nexus-core/actions/runs/43410896935) 完成，源码镜像构建和隔离 Compose 的全部步骤 success。04 配套 `0dec4b6` 已推送，固件 CI 单独核对；70 通过/5 跳过的 Maven、253 项浏览器及 Java–C 源码契约仍为本地证据。
+CONSOLE-04 的 CORE `109b83f` 已推送并核对远端，对应 [Docker CI 43410896935](https://github.com/liuyiwuqing/nexus-core/actions/runs/43410896935) 完成，源码镜像构建和隔离 Compose 的全部步骤 success。04 配套 `0dec4b6` 对应 [43410974174](https://github.com/liuyiwuqing/ai-desktop-pet/actions/runs/43410974174) 七个 job success，含 full 主机/协议/DSP/LVGL；70 通过/5 跳过的 Maven、253 项浏览器及 Java–C 源码契约仍为本地证据。
+
+CONSOLE-12-A 补齐[工具/规则创建与页面故障处理](console-operations.md)：固定逻辑提交、V14 规则可选幂等键、读取失败隐藏旧操作、独立审计/迟到响应门控，保留现有确认、启停、版本和入队语义。接口/隔离 PostgreSQL、实际 Vue 及完整构建分别核对；不扩大到自动化条件/动作或真实执行验收。
 
 线上管理台采用独立 [Docker Compose 方案](docker-deployment.md)：源码构建 Vue/JAR 镜像、私有初始化、PostgreSQL/MQTT/Caddy、认证健康检查及隔离部署验证。根目录开发 Compose 保留。当前没有目标服务器，生产 DNS/证书、真实配置迁移、资源和恢复演练仍需另行验收；本地验证结果记入 04 台账 DEL-06。

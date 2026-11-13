@@ -46,6 +46,8 @@ python3 tools/run_local.py run
 
 投递详情提供事务状态时间线，仅允许取消能确认尚未开始发送的记录；旧行从迁移时基线开始留存，重试不会重新获得取消资格，未知结果核对同一投递。API、V13 和保留边界见[时间线与取消](docs/console-delivery-history.md)。
 
+工具与规则创建在断线后保持同一提交编号和参数；规则 API 提供可选 `requestKey`，旧调用仍兼容。独立读取/审计失败会隐藏旧操作，详情见[工具与自动化故障处理](docs/console-operations.md)。
+
 `build` 先检查 TypeScript、构建前端，再运行 Maven verify，输出 `target/nexus-core-0.1.0-SNAPSHOT.jar`；需要 Docker 执行集成测试。`test` 不读取 `data/local.env`，测试使用独立数据库和 Broker，不接真实博客/模型。环境变量优先于本机配置。配置文件按 `KEY=value` 读取，不执行 shell，也不要添加 shell 引号或变量替换。
 
 运行日志留在启动终端；停止前台服务用 Ctrl+C。依赖停止使用 `docker compose --env-file data/local.env stop`，保留数据库卷。不要使用 `down -v` 清理业务数据。

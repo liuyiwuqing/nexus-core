@@ -41,6 +41,8 @@ export interface DeliveryHistory extends Page<{
   sequence: number; recordedAt: string; kind: string; previousStatus: string | null; status: string;
   attempts: number; lastError: string | null; nextAttemptAt: string; receivedAt: string | null; displayedAt: string | null; readAt: string | null;
 }> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
+export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
+export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
