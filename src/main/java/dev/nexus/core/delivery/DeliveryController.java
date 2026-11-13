@@ -17,8 +17,17 @@ public class DeliveryController {
     public DeliveryController(DeliveryService delivery) { this.delivery = delivery; }
     @GetMapping Map<String,Object> list(@RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
                                        @RequestParam(defaultValue="30") @Min(1) @Max(100) int size,
-                                       @RequestParam(required=false) @Pattern(regexp="pending|sent|received|displayed|read|failed|expired") String status) {
+                                       @RequestParam(required=false) @Pattern(regexp="pending|sent|received|displayed|read|failed|expired|cancelled") String status) {
         return delivery.list(page, size, status);
+    }
+    @GetMapping("/{id}/history") Map<String,Object> history(@PathVariable UUID id,
+            @RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
+            @RequestParam(defaultValue="30") @Min(1) @Max(100) int size) {
+        return delivery.history(id,page,size);
+    }
+    @PostMapping("/{id}/cancel") ResponseEntity<Void> cancel(@PathVariable UUID id) {
+        delivery.cancel(id);
+        return ResponseEntity.noContent().build();
     }
     @PostMapping("/{id}/retry") ResponseEntity<Void> retry(@PathVariable UUID id) {
         delivery.retry(id);

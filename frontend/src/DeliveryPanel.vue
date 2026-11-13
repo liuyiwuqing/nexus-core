@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { formatTime, deliveryNames, errorNames, type Delivery, type Page } from './types';
-defineProps<{ data: Page<Delivery>; busy: boolean; loading: boolean; failed: boolean; status: string; retry: (id: string) => Promise<boolean> }>();
-const emit = defineEmits<{ page: [page: number]; filter: [value: string] }>();
-function filterChanged(event: Event) { emit('filter', (event.target as HTMLSelectElement).value); }
+import { nextTick, ref } from 'vue';
+import DeliveryHistoryPanel from './DeliveryHistoryPanel.vue';
+import { formatTime, deliveryNames, errorNames, type Api, type Delivery, type Page } from './types';
+defineProps<{ data: Page<Delivery>; api: Api; busy: boolean; loading: boolean; failed: boolean; status: string; retry: (id: string) => Promise<boolean> }>();
+const emit = defineEmits<{ page: [page: number]; filter: [value: string]; refresh: [] }>();
+const selected = ref<string | null>(null);
+function filterChanged(event: Event) { selected.value = null; emit('filter', (event.target as HTMLSelectElement).value); }
+function pageChanged(page: number) { selected.value = null; emit('page', page); }
+async function closeHistory() {
+  const id = selected.value; selected.value = null; await nextTick();
+  (document.getElementById(`delivery-history-${id}`) || document.querySelector<HTMLSelectElement>('select[aria-label="投递状态"]'))?.focus();
+}
 </script>
 <template>
   <section>
@@ -18,9 +26,10 @@ function filterChanged(event: Event) { emit('filter', (event.target as HTMLSelec
           <td><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
             <span v-if="delivery.lastError" class="cell-sub">{{ errorNames[delivery.lastError] || delivery.lastError }}</span>
             <span v-else-if="delivery.status === 'pending' || delivery.status === 'sent'" class="cell-sub">下次尝试 {{ formatTime(delivery.nextAttemptAt) }}</span></td>
-          <td>{{ delivery.attempts }}</td><td><button v-if="delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</button><span v-else class="muted">—</span></td>
+          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><button v-if="delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</button><button :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</button></div></td>
         </tr></tbody></table>
-      <div class="pagination"><button :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">上一页</button><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><button :disabled="data.page * data.size >= data.total || loading || busy" @click="emit('page', data.page + 1)">下一页</button></div>
+      <div class="pagination"><button :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">上一页</button><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><button :disabled="data.page * data.size >= data.total || loading || busy" @click="pageChanged(data.page + 1)">下一页</button></div>
     </div>
+    <DeliveryHistoryPanel v-if="selected" :key="selected" :event-id="selected" :api="api" :busy="busy" @close="closeHistory" @changed="emit('refresh')" />
   </section>
 </template>

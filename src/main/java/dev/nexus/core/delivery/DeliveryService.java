@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 
@@ -22,6 +23,7 @@ public class DeliveryService {
     private final int retrySeconds;
     private final InboxService inbox;
     private static final List<String> ACK_ORDER = List.of("pending", "sent", "received", "displayed", "read");
+    private static final String CAN_CANCEL = "d.status='pending' AND d.attempts=0 AND NOT d.cancel_blocked AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
 
     public DeliveryService(JdbcTemplate db, @Value("${nexus.delivery.max-attempts}") int maxAttempts,
                            @Value("${nexus.delivery.retry-seconds}") int retrySeconds, InboxService inbox) {
@@ -92,7 +94,7 @@ public class DeliveryService {
         }
         if (!List.of("received", "displayed", "read").contains(next)) return;
         // Late valid ACKs can resolve an exhausted delivery, but cannot revive expired messages.
-        if (current.equals("expired") || !((Timestamp) rows.getFirst().get("expires_at")).toInstant().isAfter(Instant.now())) return;
+        if (List.of("expired","cancelled").contains(current) || !((Timestamp) rows.getFirst().get("expires_at")).toInstant().isAfter(Instant.now())) return;
         if (ACK_ORDER.indexOf(next) <= ACK_ORDER.indexOf(current)) return;
         db.update("""
             UPDATE deliveries SET status=?,last_error=NULL,received_at=COALESCE(received_at,now()),
@@ -117,10 +119,40 @@ public class DeliveryService {
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
                    d.last_error AS "lastError",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",d.read_at AS "readAt",
-                   d.next_attempt_at AS "nextAttemptAt",m.title,m.expires_at AS "expiresAt"
-            FROM deliveries d JOIN inbox_messages m USING(message_id)
-            """+filter+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", status, status, size, (page - 1) * size)),
+                   d.next_attempt_at AS "nextAttemptAt",m.title,m.expires_at AS "expiresAt",
+            """+"("+CAN_CANCEL+") AS \"canCancel\" FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)"+
+            filter+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", status, status, size, (page - 1) * size)),
             "total", db.queryForObject("SELECT count(*) FROM deliveries d"+filter, Long.class, status, status), "page", page, "size", size);
+    }
+
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public Map<String,Object> history(UUID event,int page,int size) {
+        var current=db.queryForList("SELECT d.event_id AS \"eventId\",d.status,d.attempts,("+CAN_CANCEL+
+            ") AS \"canCancel\" FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id) WHERE d.event_id=?",event);
+        if(current.isEmpty())
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"delivery_not_found");
+        var first=db.queryForList("SELECT kind FROM delivery_history WHERE event_id=? ORDER BY sequence LIMIT 1",String.class,event);
+        return Map.of("items",ApiRows.normalize(db.queryForList("""
+            SELECT sequence,recorded_at AS "recordedAt",kind,previous_status AS "previousStatus",status,attempts,
+                last_error AS "lastError",next_attempt_at AS "nextAttemptAt",received_at AS "receivedAt",
+                displayed_at AS "displayedAt",read_at AS "readAt"
+            FROM delivery_history WHERE event_id=? ORDER BY sequence LIMIT ? OFFSET ?
+            """,event,size,(page-1)*size)),
+            "delivery",current.getFirst(),"includesCreation",!first.isEmpty()&&first.getFirst().equals("created"),
+            "total",db.queryForObject("SELECT count(*) FROM delivery_history WHERE event_id=?",Long.class,event),"page",page,"size",size);
+    }
+
+    @Transactional
+    public void cancel(UUID event) {
+        // The conditional UPDATE and claim() serialize on the delivery row. A
+        // reservation permanently blocks cancellation before network publication.
+        if(db.update("""
+            UPDATE deliveries d SET status='cancelled',last_error='cancelled_by_admin'
+            FROM inbox_messages m,devices v WHERE d.message_id=m.message_id AND d.device_id=v.device_id AND d.event_id=? AND
+            """+CAN_CANCEL,event)>0)return;
+        var rows=db.queryForList("SELECT status FROM deliveries WHERE event_id=?",String.class,event);
+        if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"delivery_not_found");
+        if(!rows.getFirst().equals("cancelled"))throw new ResponseStatusException(HttpStatus.CONFLICT,"delivery_not_cancellable");
     }
 
     private boolean validVersion(JsonNode packet) {

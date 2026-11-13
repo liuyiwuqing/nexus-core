@@ -40,9 +40,11 @@ python3 tools/run_local.py run
 
 测试消息在结果未知时保留同一请求 ID 和正文，切换导航可继续重试，收到确认后才开始下一条消息。退出/刷新页面后不恢复正文；详细行为和验证边界见 [测试消息与断线重试](docs/console-messages.md)。
 
-消息可按已读/未读筛选，投递可按现有七种状态筛选；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。HTTP 可选参数及边界见[状态筛选](docs/console-list-filters.md)。
+消息可按已读/未读筛选，投递可按现有八种状态筛选；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。HTTP 可选参数及边界见[状态筛选](docs/console-list-filters.md)。
 
 “概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`，MQTT 健康与设备在线分别呈现。口径及验证入口见[运行概览](docs/console-overview.md)。
+
+投递详情提供事务状态时间线，仅允许取消能确认尚未开始发送的记录；旧行从迁移时基线开始留存，重试不会重新获得取消资格，未知结果核对同一投递。API、V13 和保留边界见[时间线与取消](docs/console-delivery-history.md)。
 
 `build` 先检查 TypeScript、构建前端，再运行 Maven verify，输出 `target/nexus-core-0.1.0-SNAPSHOT.jar`；需要 Docker 执行集成测试。`test` 不读取 `data/local.env`，测试使用独立数据库和 Broker，不接真实博客/模型。环境变量优先于本机配置。配置文件按 `KEY=value` 读取，不执行 shell，也不要添加 shell 引号或变量替换。
 
@@ -168,7 +170,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
-| `GET /deliveries`，`POST /deliveries/{id}/retry` | 投递状态与失败重试 |
+| `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史、失败重试与受限取消 |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |
 | `GET /ai`，`GET/POST /messages/{id}/analysis`，`POST .../analysis/retry` | 模型状态和分析 |

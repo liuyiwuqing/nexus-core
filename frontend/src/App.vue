@@ -178,7 +178,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
-        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :busy="busy" :loading="loading" :failed="readFailed" :status="deliveryStatus" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" />
+        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy" :loading="loading" :failed="readFailed" :status="deliveryStatus" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @refresh="refresh" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />

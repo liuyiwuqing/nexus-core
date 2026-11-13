@@ -24,4 +24,8 @@ CORE/记忆工具平滑轮换的软件实现、文档及验证已完成，随本
 
 CONSOLE-05 新增[只读运行概览](console-overview.md)：UTC 收件窗口、既有 90 秒在线规则、当前失败比例与保留投递积压，独立加载/异常/轮询。接口与真实 PostgreSQL 专项、实际 Vue 的回环边界检查及完整构建分别记录，不作为设备或部署证据。
 
+CONSOLE-05 的 CORE `af916aa` 对应 [Docker CI 43408287857](https://github.com/liuyiwuqing/nexus-core/actions/runs/43408287857) 全步骤 success；04 `24df6d9` 对应 [43408341106](https://github.com/liuyiwuqing/ai-desktop-pet/actions/runs/43408341106) 七个 job success。前者运行源码构建/隔离 Compose，后者运行固件/主机及交付检查；HTTP 数据库/Maven 和浏览器专项仍是本地证据。
+
+CONSOLE-04 新增[投递状态时间线与受限取消](console-delivery-history.md)：V13 同事务状态记录、旧行诚实基线、永久取消 guard 与幂等取消，保留原投递/回执契约。真实 HTTP/worker/隔离 SQL、浏览器、Java–C 源码契约与完整构建分别核对，不迁移真实库或发送撤回命令。
+
 线上管理台采用独立 [Docker Compose 方案](docker-deployment.md)：源码构建 Vue/JAR 镜像、私有初始化、PostgreSQL/MQTT/Caddy、认证健康检查及隔离部署验证。根目录开发 Compose 保留。当前没有目标服务器，生产 DNS/证书、真实配置迁移、资源和恢复演练仍需另行验收；本地验证结果记入 04 台账 DEL-06。

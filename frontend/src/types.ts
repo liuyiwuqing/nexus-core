@@ -36,7 +36,11 @@ export interface OtaView {
     commands: { commandId: string; operation: string; status: string; attempts: number; expiresAt: string }[] }[];
 }
 export interface Connector { id: string; source: string; configured: boolean; enabled: boolean; state: string; lastSuccessAt?: string | null; lastError?: string | null; since?: string }
-export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; lastError: string | null; nextAttemptAt: string; readAt: string | null }
+export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; canCancel: boolean; lastError: string | null; nextAttemptAt: string; readAt: string | null }
+export interface DeliveryHistory extends Page<{
+  sequence: number; recordedAt: string; kind: string; previousStatus: string | null; status: string;
+  attempts: number; lastError: string | null; nextAttemptAt: string; receivedAt: string | null; displayedAt: string | null; readAt: string | null;
+}> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
@@ -60,7 +64,7 @@ export function formatTime(value?: string | null): string {
 }
 export const deliveryNames: Record<string, string> = {
   pending: '等待投递', sent: '等待设备确认', received: '设备已保存', displayed: '设备已展示',
-  read: '用户已读', failed: '投递失败', expired: '已结束',
+  read: '用户已读', failed: '投递失败', expired: '已结束', cancelled: '已取消',
 };
 export const errorNames: Record<string, string> = {
   unauthorized: '管理令牌无效，请重新登录。', invalid_request: '请检查填写的内容。',
@@ -72,6 +76,8 @@ export const errorNames: Record<string, string> = {
   halo_network_error: '暂时无法连接 Halo，消息会保留并等待下次同步。',
   halo_scan_limit_exceeded: '评论数量超过单次扫描上限，需要调整同步配置。',
   delivery_not_retryable: '这条投递已处理、已过期或设备已停用，不能重试。',
+  delivery_not_cancellable: '这条投递已开始、已结束或无法确认从未发送，不能取消。',
+  delivery_not_found: '投递记录不存在或已按保留策略删除。', cancelled_by_admin: '管理员取消投递',
   ack_timeout: '设备未在重试期限内确认', broker_unavailable: '消息连接暂不可用', busy: '设备队列已满',
   storage_error: '设备存储失败', time_unavailable: '设备尚未校时', read_elsewhere: '已在消息中心标记已读',
   expired: '消息已过期', device_disabled: '设备已停用', invalid: '设备拒绝了消息格式',
