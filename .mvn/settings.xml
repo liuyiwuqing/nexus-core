@@ -1,0 +1,4 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <!-- Isolate this public project from machine-wide private repository mirrors. -->
+  <mirrors><mirror><id>nexus-central</id><mirrorOf>*</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors>
+</settings>

@@ -1,0 +1,28 @@
+name: nexus-core
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: ${NEXUS_DB_PASSWORD:?Run tools/init_local.py first}
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    ports:
+      - "${NEXUS_MQTT_BIND_ADDRESS:-127.0.0.1}:8883:8883"
+    volumes:
+      - ./data/mosquitto/config:/mosquitto/config:ro
+      - ./data/mosquitto/certs:/mosquitto/certs:ro
+    restart: unless-stopped
+volumes:
+  postgres-data:

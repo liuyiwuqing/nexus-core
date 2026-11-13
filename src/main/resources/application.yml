@@ -1,0 +1,72 @@
+server:
+  address: ${NEXUS_BIND_ADDRESS:127.0.0.1}
+  port: ${NEXUS_PORT:8088}
+  error:
+    include-message: never
+    include-stacktrace: never
+spring:
+  task:
+    scheduling:
+      pool:
+        size: 3
+  application:
+    name: nexus-core
+  datasource:
+    url: ${NEXUS_DB_URL:jdbc:postgresql://127.0.0.1:54329/nexus}
+    username: ${NEXUS_DB_USER:nexus}
+    password: ${NEXUS_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 6
+  flyway:
+    clean-disabled: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+nexus:
+  retention:
+    enabled: ${NEXUS_RETENTION_ENABLED:false}
+    cron: ${NEXUS_RETENTION_CRON:0 0 4 * * *}
+  admin-token: ${NEXUS_ADMIN_TOKEN:}
+  mqtt:
+    uri: ${NEXUS_MQTT_URI:ssl://localhost:8883}
+    username: ${NEXUS_MQTT_USERNAME:nexus-core}
+    password: ${NEXUS_MQTT_PASSWORD:}
+    client-id: ${NEXUS_MQTT_CLIENT_ID:nexus-core}
+    allow-insecure: ${NEXUS_MQTT_ALLOW_INSECURE:false}
+    ca-cert: ${NEXUS_MQTT_CA_CERT:}
+  delivery:
+    tick-ms: 1000
+    retry-seconds: 15
+    max-attempts: 12
+  halo:
+    enabled: ${NEXUS_HALO_ENABLED:false}
+    url: ${NEXUS_HALO_URL:}
+    token: ${NEXUS_HALO_TOKEN:}
+    since: ${NEXUS_HALO_SINCE:}
+    connector-id: ${NEXUS_HALO_CONNECTOR_ID:halo-main}
+    poll-ms: 60000
+  ai:
+    enabled: ${NEXUS_AI_ENABLED:false}
+    auto-enabled: ${NEXUS_AI_AUTO_ENABLED:false}
+    base-url: ${NEXUS_AI_BASE_URL:}
+    api-key: ${NEXUS_AI_API_KEY:}
+    model: ${NEXUS_AI_MODEL:}
+    proxy: ${NEXUS_AI_PROXY:}
+    tick-ms: 10000
+  memory:
+    mcp:
+      enabled: ${NEXUS_MEMORY_MCP_ENABLED:false}
+      token: ${NEXUS_MEMORY_MCP_TOKEN:}
+    enabled: ${NEXUS_MEMORY_ENABLED:false}
+    url: ${NEXUS_MEMORY_URL:}
+    api-key: ${NEXUS_MEMORY_API_KEY:}
+    account: ${NEXUS_MEMORY_ACCOUNT:default}
+    user: ${NEXUS_MEMORY_USER:default}
+    peer: ${NEXUS_MEMORY_PEER:nexus-pet}
+    tick-ms: 3000
+  bridge:
+    enabled: ${NEXUS_BRIDGE_ENABLED:false}
+    url: ${NEXUS_BRIDGE_URL:http://127.0.0.1:8091/}
+    token: ${NEXUS_BRIDGE_TOKEN:}
+  tools:
+    tick-ms: 1000

@@ -1,0 +1,17 @@
+target/
+.env
+.env.*
+!.env.example
+data/
+.idea/
+*.iml
+.DS_Store
+.venv/
+*.key
+*.pem
+*.p12
+*.pfx
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc

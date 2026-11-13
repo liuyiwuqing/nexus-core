@@ -1,0 +1,23 @@
+package dev.nexus.core.inbox;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import java.time.Instant;
+import java.util.Map;
+
+public record MessageInput(
+    @NotBlank @Pattern(regexp="[a-zA-Z0-9_.-]{1,64}") String connectorId,
+    @NotBlank @Pattern(regexp="[a-zA-Z0-9_.-]{1,32}") String source,
+    @NotBlank @Size(max=160) String eventId,
+    @NotBlank @Pattern(regexp="[a-zA-Z0-9_.-]{1,64}") String eventType,
+    @NotBlank @Size(max=160) String title,
+    @NotBlank @Size(max=8192) String content,
+    @Size(max=1024) String summary,
+    @Size(max=160) String sender,
+    @Size(max=2048) String originalUrl,
+    @Pattern(regexp="low|normal|high|critical") String priority,
+    Instant createdAt,
+    Instant expiresAt,
+    @Size(max=16) Map<@Size(max=64) String, @Size(max=256) String> metadata
+) {}
