@@ -1,4 +1,5 @@
 export interface Page<T> { items: T[]; total: number; page: number; size: number }
+export interface MessageSubmission { readonly eventId: string; readonly title: string; readonly content: string }
 export interface Message {
   messageId: string; connectorId: string; source: string; eventType: string;
   title: string; content: string; summary: string; sender: string; originalUrl: string;

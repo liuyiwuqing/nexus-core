@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { formatTime, type Api, type Message, type Page } from './types';
+import { computed, ref, watch } from 'vue';
+import { formatTime, type Api, type Message, type MessageSubmission, type Page } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 
 const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean;
+  pending: MessageSubmission | null; uncertain: boolean;
   create: (title: string, content: string) => Promise<boolean>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
@@ -15,6 +16,9 @@ const selected = computed(() => props.data.items.find(message => message.message
 const compose = ref(false);
 const title = ref('');
 const content = ref('');
+watch(() => props.pending, submission => {
+  if (submission) { title.value = submission.title; content.value = submission.content; compose.value = true; }
+}, { immediate: true });
 async function send() {
   if (await props.create(title.value, content.value)) {
     title.value = ''; content.value = ''; compose.value = false;
@@ -25,12 +29,13 @@ async function send() {
 <template>
   <section>
     <div class="section-heading"><div><h1>消息</h1><p>{{ data.total }} 条消息</p></div>
-      <button class="secondary" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
+      <button class="secondary" :disabled="!!pending" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
     </div>
     <form v-if="compose" class="inline-form" @submit.prevent="send">
-      <label>标题<input v-model="title" maxlength="160" required :disabled="busy" /></label>
-      <label>内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="busy"></textarea></label>
-      <div class="form-footer"><span>发送到所有已启用的设备。</span><button class="primary" :disabled="busy">{{ busy ? '正在发送…' : '发送' }}</button></div>
+      <label>标题<input v-model="title" maxlength="160" required :disabled="busy" :readonly="!!pending" /></label>
+      <label>内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="busy" :readonly="!!pending"></textarea></label>
+      <p v-if="uncertain" class="inline-error" role="status">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</p>
+      <div class="form-footer"><span>发送到所有已启用的设备。</span><button class="primary" :disabled="busy">{{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}</button></div>
     </form>
     <div v-if="!data.items.length && !loading" class="empty-state">
       <div class="empty-envelope" aria-hidden="true">✉</div><h2>消息会从这里开始</h2>

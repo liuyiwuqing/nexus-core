@@ -8,13 +8,14 @@ import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
-import { errorNames, type Message, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
+import { errorNames, type Message, type MessageSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
+const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
 const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -38,6 +39,7 @@ function logout() {
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
+  messageSubmission.value = null; messageUncertain.value = false;
 }
 
 async function refresh(): Promise<boolean> {
@@ -86,9 +88,31 @@ async function mutate(action: () => Promise<unknown>, success: string): Promise<
   } finally { busy.value = false; }
 }
 
-const createMessage = (title: string, content: string) => mutate(() => api('messages', 'POST', {
-  connectorId: 'manual', source: 'manual', eventId: crypto.randomUUID(), eventType: 'manual.test', title, content, priority: 'normal',
-}), '测试消息已保存并进入投递队列。');
+async function createMessage(title: string, content: string): Promise<boolean> {
+  if (busy.value) return false;
+  const currentEpoch = epoch;
+  // HTTP 结果未知时，重试必须保持同一逻辑提交；导航不能丢掉去重身份。
+  const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content };
+  messageSubmission.value = submission;
+  return mutate(async () => {
+    try {
+      const accepted = await api<{ messageId: string }>('messages', 'POST', {
+        connectorId: 'manual', source: 'manual', eventType: 'manual.test', priority: 'normal', ...submission,
+      });
+      if (!accepted || typeof accepted.messageId !== 'string' || !accepted.messageId)
+        throw new Error('Invalid message acknowledgment');
+      if (currentEpoch === epoch) { messageSubmission.value = null; messageUncertain.value = false; }
+    } catch (failure) {
+      if (currentEpoch === epoch) {
+        // 408/5xx/连接或解码失败均可能已保存。明确的 4xx 拒绝才允许编辑后新建提交。
+        const rejected = failure instanceof ApiFailure && failure.status >= 400 && failure.status < 500 && failure.status !== 408;
+        if (rejected) messageSubmission.value = null;
+        messageUncertain.value = !rejected;
+      }
+      throw failure;
+    }
+  }, '测试消息已保存并进入投递队列。');
+}
 const markRead = (id: string) => mutate(() => api(`messages/${id}/read`, 'POST'), '已标记已读。');
 const register = (deviceId: string, name: string) => mutate(() => api('devices', 'POST', { deviceId, name }), '设备已登记。');
 const rename = (id: string, name: string, expectedName: string) => mutate(async () => {
@@ -128,7 +152,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
       <div class="content">
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
-        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :busy="busy" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @connectors="tab = 'connectors'" />
+        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :busy="busy" :loading="loading" :retry="retry" @page="deliveryPage" />
