@@ -50,6 +50,12 @@ class InboxFlowTest {
         assertThat(request("POST","/api/v1/ota/releases","{}",TOKEN).statusCode()).isEqualTo(404);
     }
 
+    @Test void growthMirroringRequiresExplicitDeploymentOptIn()throws Exception {
+        var response=request("GET","/api/v1/pet/devices","",TOKEN);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(response.body()).path("enabled").asBoolean()).isFalse();
+    }
+
     @Test void retentionIsDisabledUnlessTheDeploymentOptsIn()throws Exception {
         var preview=request("GET","/api/v1/retention","",TOKEN);
         assertThat(preview.statusCode()).isEqualTo(200);

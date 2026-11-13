@@ -44,6 +44,8 @@ class BrokerPolicyTest(unittest.TestCase):
             self.assertIn("topic write nexus/v1/devices/+/config\n", updated)
             self.assertIn("pattern read nexus/v1/devices/%u/ota\n", updated)
             self.assertIn("pattern write nexus/v1/devices/%u/ota_status\n", updated)
+            self.assertIn("pattern write nexus/v1/devices/%u/growth_status\n", updated)
+            self.assertIn("topic read nexus/v1/devices/+/growth_status\n", updated)
             self.assertNotIn("topic read #", updated)
             updated_conf = (directory / "mosquitto.conf").read_text()
             self.assertIn("message_size_limit 2048\n", updated_conf)
@@ -62,7 +64,7 @@ class BrokerPolicyTest(unittest.TestCase):
             original_backup=directory/'.management-v1-backup';original_backup.mkdir();(original_backup/'acl').write_text(LEGACY)
             result=self.command(directory,'--apply');self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual((original_backup/'acl').read_text(),LEGACY)
-            self.assertEqual((directory/'.remote-ota-v1-backup/acl').read_text(),MANAGEMENT_V1_ACL)
+            self.assertEqual((directory/'.growth-sync-v1-backup/acl').read_text(),MANAGEMENT_V1_ACL)
             self.assertIn('pattern write nexus/v1/devices/%u/ota_acks\n',(directory/'acl').read_text())
 
     def test_custom_acl_is_left_untouched(self):
@@ -77,7 +79,18 @@ class BrokerPolicyTest(unittest.TestCase):
             self.assertIn("custom_acl_requires_manual_merge", result.stderr)
             self.assertEqual((directory / "acl").read_text(), custom)
             self.assertEqual((directory / "mosquitto.conf").read_text(), conf)
-            self.assertFalse((directory / ".remote-ota-v1-backup").exists())
+            self.assertFalse((directory / ".growth-sync-v1-backup").exists())
+
+    def test_remote_ota_upgrade_keeps_its_original_recovery_snapshot(self):
+        from broker_policy import REMOTE_OTA_V1_ACL
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp);(directory/'acl').write_text(REMOTE_OTA_V1_ACL)
+            (directory/'mosquitto.conf').write_text('listener 8883\nallow_anonymous false\nmessage_size_limit 2048\nmax_packet_size 4096\n')
+            old=directory/'.remote-ota-v1-backup';old.mkdir();(old/'acl').write_text(LEGACY)
+            result=self.command(directory,'--apply');self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual((old/'acl').read_text(),LEGACY)
+            self.assertEqual((directory/'.growth-sync-v1-backup/acl').read_text(),REMOTE_OTA_V1_ACL)
+            self.assertIn('pattern write nexus/v1/devices/%u/growth_status\n',(directory/'acl').read_text())
 
 if __name__ == "__main__":
     unittest.main()

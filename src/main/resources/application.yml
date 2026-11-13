@@ -23,6 +23,8 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
 nexus:
+  growth-sync:
+    enabled: ${NEXUS_GROWTH_SYNC_ENABLED:false}
   auth:
     token-file: ${NEXUS_AUTH_TOKEN_FILE:}
   ota:

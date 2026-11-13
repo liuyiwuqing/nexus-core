@@ -1,6 +1,7 @@
 package dev.nexus.core.delivery;
 
 import dev.nexus.core.device.DeviceManagementService;
+import dev.nexus.core.device.DeviceGrowthService;
 import dev.nexus.core.device.RemoteOtaService;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
@@ -26,9 +27,10 @@ public class MqttTransport {
     private final MqttConnectOptions options = new MqttConnectOptions();
     private volatile boolean ready;
     private final boolean otaEnabled;
+    private final boolean growthEnabled;
     private volatile String lastError = "not_connected";
 
-    public MqttTransport(DeliveryService delivery, DeviceManagementService management, RemoteOtaService ota, ObjectMapper json,
+    public MqttTransport(DeliveryService delivery, DeviceManagementService management, RemoteOtaService ota, DeviceGrowthService growth, ObjectMapper json,
         @Value("${nexus.mqtt.uri}") String uri,
         @Value("${nexus.mqtt.username}") String username,
         @Value("${nexus.mqtt.password}") String password,
@@ -36,6 +38,7 @@ public class MqttTransport {
         @Value("${nexus.mqtt.allow-insecure}") boolean allowInsecure,
         @Value("${nexus.mqtt.ca-cert:}") String caCert) throws Exception {
         otaEnabled=ota.enabled();
+        growthEnabled=growth.enabled();
         URI parsed = URI.create(uri);
         if ((!"ssl".equals(parsed.getScheme()) && !(allowInsecure && "tcp".equals(parsed.getScheme())))
             || parsed.getHost() == null || parsed.getUserInfo() != null || username.isBlank() || password.isBlank())
@@ -71,6 +74,7 @@ public class MqttTransport {
                 if (parts.length != 5 || !parts[0].equals("nexus") || !parts[1].equals("v1") || !parts[2].equals("devices")
                     || !parts[3].matches("[a-zA-Z0-9_-]{1,40}")) return;
                 try {
+                    if(parts[4].equals("growth_status")) { growth.observation(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("ota_status")) { ota.observation(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("ota_acks")) { ota.acknowledge(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("telemetry")) { management.telemetry(parts[3],message.getPayload());return; }
@@ -94,6 +98,7 @@ public class MqttTransport {
             if (!client.isConnected()) client.connect(options).waitForCompletion(4000);
             var topics=new java.util.ArrayList<>(java.util.List.of("nexus/v1/devices/+/acks","nexus/v1/devices/+/state","nexus/v1/devices/+/telemetry","nexus/v1/devices/+/config_acks"));
             if(otaEnabled)topics.addAll(java.util.List.of("nexus/v1/devices/+/ota_acks","nexus/v1/devices/+/ota_status"));
+            if(growthEnabled)topics.add("nexus/v1/devices/+/growth_status");
             int[] qosValues=new int[topics.size()];java.util.Arrays.fill(qosValues,1);
             var token=client.subscribe(topics.toArray(String[]::new),qosValues);
             token.waitForCompletion(3000);

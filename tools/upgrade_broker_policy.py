@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview by default; explicitly apply a backed-up management/OTA ACL/packet-limit update."""
+"""Preview by default; explicitly apply a backed-up management/OTA/growth ACL update."""
 import argparse
 import json
 import os
@@ -45,7 +45,7 @@ def upgrade(directory, apply):
     result = {"changed": changed, "applied": False, "backup": None, "restartRequired": False}
     if not changed or not apply:
         return result
-    backup = directory / ".remote-ota-v1-backup"
+    backup = directory / ".growth-sync-v1-backup"
     backup.mkdir(mode=0o700)  # Never overwrite the original recovery snapshot.
     for name, content in original.items():
         replace(backup / name, content, 0o600)
@@ -62,7 +62,7 @@ def upgrade(directory, apply):
         for name in written:
             if (directory / name).read_text() == candidate[name]:
                 replace(directory / name, original[name], modes[name])
-        raise ValueError("broker_upgrade_failed_check_remote_ota_v1_backup") from None
+        raise ValueError("broker_upgrade_failed_check_growth_sync_v1_backup") from None
     result.update(applied=True, backup=str(backup), restartRequired=True)
     return result
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
 import { formatTime, type Api } from './types';
+import DeviceGrowthPanel from './DeviceGrowthPanel.vue';
 interface Focus { sessionId: string; durationMinutes: number; state: string; startedAt: string; dueAt: string;
   remainingSeconds: number; experienceReward: number; coinReward: number }
 interface Profile { level: number; levelProgress: number; experience: number; coins: number; bond: number; completedFocus: number; activeSession: Focus | null }
@@ -39,7 +40,9 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
   <section>
     <div class="section-heading"><div><h1>一起成长</h1><p>完成专注，积累经验。</p></div><button class="text-button" :disabled="loading" @click="load">刷新</button></div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <DeviceGrowthPanel :api="api" />
     <template v-if="profile">
+      <h2>CORE 专注档案</h2>
       <dl class="pet-stats"><div><dt>等级</dt><dd>{{ profile.level }}</dd></div><div><dt>经验</dt><dd>{{ profile.experience }}</dd></div><div><dt>金币</dt><dd>{{ profile.coins }}</dd></div><div><dt>亲密度</dt><dd>{{ profile.bond }}<small> / 100</small></dd></div></dl>
       <div class="growth-progress"><progress :value="profile.levelProgress" max="100" :aria-label="`距离下一级还需 ${100-profile.levelProgress} 经验`"></progress><small>距下一级 {{ 100-profile.levelProgress }} 经验 · 已完成 {{ profile.completedFocus }} 次专注</small></div>
       <article v-if="active" class="record-card focus-card">
@@ -48,7 +51,6 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
         <div class="record-actions"><button class="primary" :disabled="busy || remaining>0" @click="finish('complete')">完成并结算</button><button class="text-button" :disabled="busy" @click="finish('cancel')">取消本次专注</button></div>
       </article>
       <form v-else class="inline-form" @submit.prevent="start"><label>专注时长（分钟）<input v-model.number="minutes" type="number" min="1" max="180" step="1" required :disabled="busy" /></label><div class="form-footer"><span>每分钟 1 经验，单次最多 120；每天最多 240。取消不结算。</span><button class="primary" :disabled="busy">开始专注</button></div></form>
-      <p class="scope-note">此处保存 CORE 成长档案，尚未与设备原有存档同步。</p>
       <div class="record-list"><article v-for="session in sessions.filter(s=>s.state!=='active')" :key="session.sessionId" class="record-card"><div class="record-heading"><h2>{{ session.durationMinutes }} 分钟专注</h2><span class="badge" :class="session.state==='completed' ? 'success' : ''">{{ names[session.state] }}</span></div><small>{{ formatTime(session.startedAt) }}</small><p v-if="session.state==='completed'">+{{ session.experienceReward }} 经验 · +{{ session.coinReward }} 金币</p></article></div>
     </template>
     <p v-else-if="loading" class="muted" role="status">正在读取成长档案…</p>
