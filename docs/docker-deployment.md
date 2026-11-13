@@ -101,3 +101,5 @@ python3 tools/test_docker_deployment.py \
 实际执行结果及配套提交在 04 的 [任务台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)记录。源码构建、本地 Docker、远程 CI、公网 DNS/证书、目标机资源、真实供应商和设备验收分别判断。
 
 2026-11-13 本地：CLI 11 项通过，前端类型检查/构建与 Maven verify 退出 0（67 条中 62 通过、5 条可选环境跳过，0 失败/错误）；实际源码 Docker 镜像为 `linux/arm64`，隔离 Compose 六组检查通过。报告和日志保留在忽略目录 `target/docker-smoke.json`、`target/docker-*.log`。初次 MQTT 严格校验发现新 CA 缺少 keyUsage，先由 `openssl verify -x509_strict` 复现，补齐新证书约束后通过；已有凭据/CA 未变。随后修正验证脚本读取列表主键为既有 `messageId`，重跑整套检查通过，没有修改业务 API。
+
+CORE `9026e41` 已推送并核对远端；对应 [Docker CI 43398869944](https://github.com/liuyiwuqing/nexus-core/actions/runs/43398869944) 已完成且 `docker-compose` job/全部步骤 success，远程 CLI 11 项、源码镜像及六组实际 Compose 检查通过。该 workflow 不运行宿主完整 Maven 集成套件，62 通过/5 跳过仍是上述本地证据。04 配套部署索引/台账 `5f9c15c` 已推送；本段仅补 CI 记录，不改变已验证的实现或配置。
