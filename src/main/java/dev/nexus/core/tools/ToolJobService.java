@@ -1,12 +1,12 @@
 package dev.nexus.core.tools;
 
 import dev.nexus.core.web.ApiRows;
+import dev.nexus.core.security.TokenCredentials;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,8 +25,8 @@ public class ToolJobService {
     private final ObjectMapper json;
     private final String actor;
     public ToolJobService(JdbcTemplate db, TransactionTemplate transaction, MacBridgeClient bridge, ObjectMapper json,
-                          @Value("${nexus.admin-token}") String token) {
-        this.db = db; this.transaction = transaction; this.bridge = bridge; this.json = json; actor = ToolCatalog.hash(token);
+                          TokenCredentials credentials) {
+        this.db = db; this.transaction = transaction; this.bridge = bridge; this.json = json; actor = credentials.adminActor();
     }
     public Map<String,Object> catalog() {
         if (!bridge.configured()) return Map.of("configured", false, "state", "off", "tools", ToolCatalog.TOOLS);

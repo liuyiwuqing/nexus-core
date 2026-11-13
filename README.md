@@ -1,6 +1,6 @@
 # NEXUS CORE
 
-Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状态，Mosquitto TLS 连接设备，Vue 管理台随 JAR 一起发布。平台令牌和 AI 密钥只留在服务端。
+Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状态，Mosquitto TLS 连接设备，Vue 管理台随 JAR 一起发布。平台令牌和 AI 密钥只留在服务端。CORE/记忆工具凭据文件轮换见 [轮换说明](docs/credential-rotation.md)。
 
 需求范围、已验证基线和逐项交付约定见 [交付文档](docs/delivery-workflow.md)。每项同步实现与文档、验证、提交并推送后继续；生产部署与真实设备验收独立记录。
 
@@ -202,3 +202,9 @@ PostgreSQL 数据在 Compose 卷中，设备密钥/证书在 `data/`；两处均
 验证：`python3 tools/run_local.py build`、`python3 tools/test_broker_policy.py`；配套 04 的 `tools/ci/test_remote_ota_contract.py` 运行实际 Java/数据库/MQTT 与 C 事务回环，Flash/SDK/重启为托管边界，不等于实机 OTA。
 
 本项本地完整构建为 50 条测试（46 通过、4 条环境条件跳过），随后新增的默认关闭 HTTP 用例单独通过并重新打包。OTA 专项实际 PostgreSQL/MQTT 5 条通过，配套实际 C peer 另行通过；浏览器 OTA 22 项及既有管理 38 项通过。完整验收边界在配套文档，真实部署与实机升级仍未执行。
+
+## 平滑 Bearer 轮换
+
+可选 `NEXUS_AUTH_TOKEN_FILE` 使用受保护 current/previous 文件，保留环境模式；文件模式拒绝旧环境后备，按请求重载，损坏返回固定 503。管理与 `/mcp/memory` 范围始终独立，工具任务归属保留初始化时的稳定身份；在途请求不被撤销中断。stdio 使用 `NEXUS_MEMORY_MCP_TOKEN_FILE` 独立客户端副本，每次 RPC 重读，不自动重试。初次切换模式需一次正常重启，后续文件更新不重启。
+
+`tools/credential_store.py` 提供 init/status/rotate/revoke/export-memory，使用本地文件锁/修订/原子写入、不输出秘密。格式、权限、命令与已执行验证见 [本仓文档](docs/credential-rotation.md)和配套 [20](../04-ai-desktop-pet/docs/20-credential-rotation.md)。仅验证隔离文件与服务，没有轮换真实凭据或改变设备/上游服务的凭据维护流程。

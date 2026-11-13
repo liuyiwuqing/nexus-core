@@ -23,6 +23,8 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
 nexus:
+  auth:
+    token-file: ${NEXUS_AUTH_TOKEN_FILE:}
   ota:
     enabled: ${NEXUS_OTA_ENABLED:false}
   retention:

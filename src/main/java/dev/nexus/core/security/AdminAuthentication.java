@@ -10,20 +10,16 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 public class AdminAuthentication extends OncePerRequestFilter {
-    private final byte[] expected;
+    private final TokenCredentials credentials;
     private final MemoryToolAccess memoryTools;
 
-    public AdminAuthentication(@Value("${nexus.admin-token}") String token,MemoryToolAccess memoryTools) {
-        if (token.length() < 32 || token.chars().anyMatch(Character::isWhitespace))
-            throw new IllegalStateException("NEXUS_ADMIN_TOKEN must contain at least 32 non-whitespace characters");
-        expected = ("Bearer " + token).getBytes(StandardCharsets.UTF_8);
+    public AdminAuthentication(TokenCredentials credentials,MemoryToolAccess memoryTools) {
+        this.credentials=credentials;
         this.memoryTools=memoryTools;
     }
 
@@ -46,8 +42,14 @@ public class AdminAuthentication extends OncePerRequestFilter {
         String supplied = request.getHeader("Authorization");
         boolean memoryEndpoint=path.equals(MemoryToolAccess.PATH);
         if(memoryEndpoint&&!memoryTools.enabled()){response.setStatus(404);return;}
-        if (memoryEndpoint ? !memoryTools.accepts(supplied)||java.util.Collections.list(request.getHeaders("Authorization")).size()!=1 :
-                supplied == null || !MessageDigest.isEqual(expected, supplied.getBytes(StandardCharsets.UTF_8))) {
+        boolean accepted;
+        try {accepted=java.util.Collections.list(request.getHeaders("Authorization")).size()==1&&
+            (memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));}
+        catch(TokenCredentials.Unavailable unavailable) {
+            response.setStatus(503);response.setHeader("Retry-After","1");response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"authentication_configuration_unavailable\"}");return;
+        }
+        if (!accepted) {
             response.setHeader("WWW-Authenticate", "Bearer");
             response.setStatus(401);
             response.setContentType("application/json");
