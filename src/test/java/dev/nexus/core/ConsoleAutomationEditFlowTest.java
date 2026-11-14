@@ -199,13 +199,17 @@ class ConsoleAutomationEditFlowTest {
         JsonNode runs;
         do {runs=get("automation/runs?ruleId="+id).path("items");if(!runs.isEmpty()&&runs.get(0).path("state").asText().equals("enqueued"))break;Thread.sleep(30);}while(System.nanoTime()<deadline);
         assertThat(runs).hasSize(1);assertThat(runs.get(0).path("state").asText()).isEqualTo("enqueued");
-        assertThat(get("messages").path("items").get(0).path("title").asText()).isEqualTo("新提醒");
+        String messageId=runs.get(0).path("result").path("messageId").asText();
+        var reminder=java.util.stream.StreamSupport.stream(get("messages?source=automation&size=100").path("items").spliterator(),false)
+            .filter(message -> message.path("messageId").asText().equals(messageId)).findFirst().orElseThrow();
+        assertThat(reminder.path("title").asText()).isEqualTo("新提醒");
         assertThat(request("PUT","automation/rules/"+id+"/enabled","{\"enabled\":false,\"expectedVersion\":3}",TOKEN).statusCode()).isEqualTo(204);
         String second=editBody(4,"当天再编辑").replace("09:30",time).replace("新提醒","不应重复");
         assertThat(request("PUT","automation/rules/"+id,second,TOKEN).statusCode()).isEqualTo(200);
         assertThat(request("PUT","automation/rules/"+id+"/enabled","{\"enabled\":true,\"expectedVersion\":5}",TOKEN).statusCode()).isEqualTo(204);
         Thread.sleep(400);
-        assertThat(get("automation/runs?ruleId="+id).path("items")).hasSize(1);
-        assertThat(get("messages").path("total").asInt()).isEqualTo(1);
+        var after=get("automation/runs?ruleId="+id).path("items");
+        assertThat(after).hasSize(1);
+        assertThat(after.get(0).path("result").path("messageId").asText()).isEqualTo(messageId);
     }
 }
