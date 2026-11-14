@@ -49,9 +49,12 @@ export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
 export interface WebhookSource {id:string;name:string;enabled:boolean;version:number;deviceIds:string[];received:number;lastReceivedAt:string|null}
 export interface AccessSession {issued:string;pendingIssue:boolean}
 export interface SourceSession {pending:{path:string;method:string;body:unknown}|null;credentials:{token:string;secret:string}|null}
-export interface RouteDefinition {name:string;enabled:boolean;source:string;eventType:string;match:string;expression:string;deviceIds:string[];priority:string;from:string;before:string;zone:string}
+export interface RouteDefinition {name:string;enabled:boolean;source:string;eventType:string;match:string;expression:string;deviceIds:string[];priority:string;from:string;before:string;zone:string;templateId?:string|null}
+export interface TemplateDefinition {name:string;title:string;summary:string;icon:string;sound:string;durationSeconds:number}
+export interface MessageTemplate {templateId:string;definition:TemplateDefinition;version:number;deleted:boolean}
+export interface TemplateSession {id:string;version:number;draft:TemplateDefinition|null;pending:{expectedVersion:number;definition:TemplateDefinition}|null;uncertain:boolean}
 export interface RouteRule {ruleId:string;version:number;deleted:boolean;definition:RouteDefinition}
-export interface RoutingSession {id:string;version:number;draft:RouteDefinition|null;pending:{expectedVersion:number;definition:RouteDefinition}|null;uncertain:boolean;test?:{requestKey:string;deviceIds:string[];title:string;content:string;priority:string}|null;policy?:{mode:string;expectedVersion:number}|null}
+export interface RoutingSession {id:string;version:number;draft:RouteDefinition|null;pending:{expectedVersion:number;definition:RouteDefinition}|null;uncertain:boolean;test?:{requestKey:string;deviceIds:string[];title:string;content:string;priority:string;templateId?:string|null}|null;policy?:{mode:string;expectedVersion:number}|null}
 export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateDevices: number; block: string; asOf: string }
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
@@ -68,7 +71,7 @@ export interface Analysis {
   summary?: string; category?: string; importance?: string; replyDraft?: string; lastError?: string;
   memoryStatus?: 'off' | 'pending' | 'stored' | 'error' | 'blocked'; memoryUri?: string; memoryError?: string;
 }
-export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory' | 'overview' | 'routing' | 'access';
+export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory' | 'overview' | 'routing' | 'access' | 'templates';
 export function formatTime(value?: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -88,6 +91,7 @@ export const errorNames: Record<string, string> = {
   rule_enabled: '请先停用规则，再编辑。', rule_execution_in_progress: '规则仍有正在入队的任务，请等待完成后再编辑。',
   rule_deleted: '规则已删除，执行历史仍保留。', no_enabled_devices: '当前没有启用的设备。',
   invalid_route: '请检查路由条件、设备、时区和时间窗。', route_version_conflict: '路由版本已变化，请只读核对后重新编辑。', route_deleted: '路由已删除。',
+  invalid_template: '请检查模板变量和当前设备支持的卡片、声音、时长。', template_deleted: '模板已删除。', template_in_use: '模板仍被路由引用，请先解除引用。', template_version_conflict: '模板版本已变化，请核对后重新编辑。',
   forbidden: '当前角色无权执行此操作。', audit_unavailable: '审计存储暂时不可用，操作未开始。', invalid_role_token: '请检查令牌名称、角色和到期时间。', role_token_version_conflict: '令牌状态已变化，请刷新核对。',
   invalid_source: '请检查来源标识、名称、正文和设备范围。', source_version_conflict: '来源版本已变化，请核对当前来源后操作。', source_disabled: '来源已停用。', source_enabled: '请先停用来源，再轮换凭据。', source_rate_limited: '来源请求过于频繁，请稍后重试。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',

@@ -8,9 +8,10 @@ import DeliveryPanel from './DeliveryPanel.vue';
 import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
 import RoutingPanel from './RoutingPanel.vue';
-import type { RoutingSession, SourceSession, AccessSession } from './types';
+import type { RoutingSession, SourceSession, AccessSession, TemplateSession } from './types';
 import SourcesPanel from './SourcesPanel.vue';
 import AccessPanel from './AccessPanel.vue';
+import TemplatesPanel from './TemplatesPanel.vue';
 import type { Role } from './access';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
@@ -32,11 +33,12 @@ const newRoutingSession=():RoutingSession=>({id:'',version:0,draft:null,pending:
 const routingSession=ref<RoutingSession>(newRoutingSession());
 const sourceSession=ref<SourceSession>({pending:null,credentials:null});
 const accessSession=ref<AccessSession>({issued:'',pendingIssue:false});
+const templateSession=ref<TemplateSession>({id:'',version:0,draft:null,pending:null,uncertain:false});
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
 const exporting = ref<'messages' | 'deliveries' | null>(null);
-const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }, { id: 'access', label: '权限', glyph: '⚿' }];
+const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }, { id: 'access', label: '权限', glyph: '⚿' }, { id: 'templates', label: '模板', glyph: '▤' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -66,7 +68,7 @@ function logout() {
   ruleEdit.value = null;
   ruleDeletion.value = null;
   routingSession.value=newRoutingSession();
-  sourceSession.value={pending:null,credentials:null};accessSession.value={issued:'',pendingIssue:false};role.value='viewer';
+  sourceSession.value={pending:null,credentials:null};accessSession.value={issued:'',pendingIssue:false};templateSession.value={id:'',version:0,draft:null,pending:null,uncertain:false};role.value='viewer';
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -390,6 +392,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
         <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" />
+        <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
         <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
         <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
       </div>

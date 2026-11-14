@@ -5,6 +5,7 @@ import dev.nexus.core.web.ConsoleListQuery;
 import dev.nexus.core.web.MetadataCsv;
 import dev.nexus.core.events.EventJournal;
 import dev.nexus.core.routing.MessageRouting;
+import dev.nexus.core.routing.MessageTemplates;
 import java.net.URI;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -25,12 +26,14 @@ public class InboxService {
     private final ObjectMapper json;
     private final EventJournal events;
     private final MessageRouting routing;
+    private final MessageTemplates templates;
 
-    public InboxService(JdbcTemplate db, ObjectMapper json, EventJournal events, MessageRouting routing) {
+    public InboxService(JdbcTemplate db, ObjectMapper json, EventJournal events, MessageRouting routing,MessageTemplates templates) {
         this.db = db;
         this.json = json;
         this.events = events;
         this.routing = routing;
+        this.templates = templates;
     }
 
     public record IngestResult(UUID messageId, boolean created) {}
@@ -53,8 +56,9 @@ public class InboxService {
         return ingest(in,false,routing.targets(in,Instant.now()).stream().filter(t->permitted.contains(t.deviceId())).toList());
     }
     @Transactional
-    public IngestResult targetedTest(MessageInput in, List<String> devices) {
+    public IngestResult targetedTest(MessageInput in, List<String> devices,UUID templateId) {
         db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "targeted-test:"+in.eventId());
+        templates.require(templateId);
         if(devices==null || devices.isEmpty() || devices.size()>32)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_route");
         for(String device:devices)if(!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=? AND enabled)",Boolean.class,device)))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_route");
@@ -64,8 +68,10 @@ public class InboxService {
             var original=db.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id",String.class,row.get("message_id"));
             if(!in.title().equals(row.get("title"))||!in.content().equals(row.get("content"))||!in.priority().equals(row.get("priority"))||!original.equals(devices.stream().distinct().sorted().toList()))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
+            if(Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM deliveries WHERE message_id=? AND template_id IS DISTINCT FROM ?::uuid)",Boolean.class,row.get("message_id"),templateId)))
+                throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
         }
-        return ingest(in,false,devices.stream().distinct().map(d->new MessageRouting.Target(d,null)).toList());
+        return ingest(in,false,devices.stream().distinct().map(d->new MessageRouting.Target(d,null,templateId)).toList());
     }
     private IngestResult ingest(MessageInput in, boolean publicComment, List<MessageRouting.Target> targets) {
         var existing = db.queryForList("SELECT message_id FROM inbox_messages WHERE connector_id=? AND upstream_event_id=?", in.connectorId(), in.eventId());
@@ -99,7 +105,8 @@ public class InboxService {
         }
         // Message and outbox are committed together, including during a process restart.
         for (var target : targets==null?routing.targets(in,now):targets) {
-            db.update("INSERT INTO deliveries(event_id,message_id,device_id,priority_override) VALUES(?,?,?,?)", UUID.randomUUID(), id, target.deviceId(),target.priority());
+            var rendered=target.templateId()==null?null:templates.render(target.templateId(),in);
+            db.update("INSERT INTO deliveries(event_id,message_id,device_id,priority_override,title_override,summary_override,event_type_override,template_id,template_version) VALUES(?,?,?,?,?,?,?,?,?)", UUID.randomUUID(), id, target.deviceId(),target.priority(),rendered==null?null:rendered.title(),rendered==null?null:rendered.summary(),rendered==null?null:rendered.eventType(),target.templateId(),rendered==null?null:rendered.version());
         }
         events.messageReceived(id, in.source(), publicComment ? "public_comment" : "internal");
         return new IngestResult(id, true);

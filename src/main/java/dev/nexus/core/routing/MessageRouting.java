@@ -20,11 +20,12 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class MessageRouting {
     public record Definition(String name, boolean enabled, String source, String eventType, String match,
-                             String expression, List<String> deviceIds, String priority, String from, String before, String zone) {}
-    public record Target(String deviceId, String priority) {}
+                             String expression, List<String> deviceIds, String priority, String from, String before, String zone,UUID templateId) {}
+    public record Target(String deviceId, String priority,UUID templateId) {public Target(String device,String priority){this(device,priority,null);}}
     private final JdbcTemplate db;
     private final ObjectMapper json;
-    public MessageRouting(JdbcTemplate db, ObjectMapper json) { this.db=db; this.json=json; }
+    private final MessageTemplates templates;
+    public MessageRouting(JdbcTemplate db, ObjectMapper json,MessageTemplates templates) { this.db=db; this.json=json;this.templates=templates; }
 
     public Map<String,Object> policy() { return db.queryForMap("SELECT mode,version FROM routing_policy WHERE singleton"); }
     @Transactional public Map<String,Object> policy(String mode,int expectedVersion) {
@@ -88,6 +89,7 @@ public class MessageRouting {
             }
         }catch(java.time.DateTimeException error){invalid();}
         for(String device:d.deviceIds())if(!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=?)",Boolean.class,device)))invalid();
+        templates.require(d.templateId());
     }
     private boolean identity(String value,int max) {return value!=null && (value.equals("*")||value.matches("[a-zA-Z0-9_.-]{1,"+max+"}"));}
     private Pattern safePattern(String value) {
@@ -116,7 +118,7 @@ public class MessageRouting {
                 LocalTime time=now.atZone(ZoneId.of(rule.zone())).toLocalTime(),from=LocalTime.parse(rule.from()),before=LocalTime.parse(rule.before());
                 if(from.isBefore(before)?time.isBefore(from)||!time.isBefore(before):time.isBefore(from)&&!time.isBefore(before))continue;
             }
-            for(String device:rule.deviceIds())if(enabled.contains(device))selected.putIfAbsent(device,new Target(device,rule.priority().isEmpty()?null:rule.priority()));
+            for(String device:rule.deviceIds())if(enabled.contains(device))selected.putIfAbsent(device,new Target(device,rule.priority().isEmpty()?null:rule.priority(),rule.templateId()));
         }
         return new ArrayList<>(selected.values());
     }
