@@ -1,0 +1,120 @@
+name: Publish deployment images
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    uses: ./.github/workflows/docker-deployment.yml
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: core
+            suffix: ""
+            file: Dockerfile
+          - kind: init
+            suffix: -init
+            file: deploy/docker/Dockerfile.init
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name images by source commit
+        id: image
+        env:
+          IMAGE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          image_base="ghcr.io/${GITHUB_REPOSITORY,,}${IMAGE_SUFFIX}"
+          printf 'tag=%s:sha-%s\n' "$image_base" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Publish amd64 and arm64 image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.kind }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.kind }}
+      - name: Record published manifest
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: printf '%s → `%s`\n' "$IMAGE_TAG" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+  verify-published:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Inspect both architectures and pull the published digests
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          rows = []
+          for variable, suffix in (("NEXUS_CORE_IMAGE", ""), ("NEXUS_INIT_IMAGE", "-init")):
+              base = "ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + suffix
+              tag = base + ":sha-" + os.environ["GITHUB_SHA"]
+              raw = subprocess.check_output(["docker", "buildx", "imagetools", "inspect", "--raw", tag])
+              platforms = {(item["platform"]["os"], item["platform"]["architecture"])
+                           for item in json.loads(raw)["manifests"]}
+              assert {("linux", "amd64"), ("linux", "arm64")} <= platforms
+              digest = subprocess.check_output(["docker", "buildx", "imagetools", "inspect", tag,
+                                                "--format", "{{.Manifest.Digest}}"], text=True).strip()
+              assert re.fullmatch(r"sha256:[a-f0-9]{64}", digest)
+              reference = base + "@" + digest
+              subprocess.run(["docker", "pull", reference], check=True)
+              rows.append(variable + "=" + reference + "\n")
+          Path("target").mkdir(exist_ok=True)
+          Path("target/published-images.env").write_text("".join(rows))
+          with open(os.environ["GITHUB_ENV"], "a") as stream:
+              stream.writelines(rows)
+          PY
+      - name: Verify actual registry images without building
+        run: python3 tools/test_image_deployment.py --image "$NEXUS_CORE_IMAGE" --init-image "$NEXUS_INIT_IMAGE" --report target/published-image-smoke.json
+      - name: Save verified image references and sanitized report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: published-image-verification
+          path: |
+            target/published-images.env
+            target/published-image-smoke.json

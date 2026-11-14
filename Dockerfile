@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS console
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS console
 WORKDIR /source/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run check && npm run build
 
-FROM maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS package
+FROM --platform=$BUILDPLATFORM maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS package
 WORKDIR /source
 COPY .mvn/settings.xml .mvn/settings.xml
 COPY pom.xml ./

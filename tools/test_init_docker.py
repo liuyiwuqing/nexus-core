@@ -42,12 +42,12 @@ class DockerInitializationTest(unittest.TestCase):
 
     def test_new_installation_is_private_and_ready_for_compose(self):
         with tempfile.TemporaryDirectory(prefix="nexus-docker-cli-") as temporary:
-            data = Path(temporary) / "private deployment"
+            data = Path(temporary) / "private deployment $TOKEN"
             result = subprocess.run([
                 sys.executable, str(ROOT / "tools/init_docker.py"),
                 "--data-dir", str(data), "--domain", "console.example.invalid",
                 "--mqtt-host", "mqtt.example.invalid", "--device", "docker-test",
-                "--image", "nexus-core:cli-test",
+                "--image", "ghcr.io/example/core@sha256:" + "a" * 64,
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             env = dict(line.split("=", 1) for line in (data / "core.env").read_text().splitlines()
@@ -79,6 +79,20 @@ class DockerInitializationTest(unittest.TestCase):
             self.assertFalse(services["core"].get("ports"))
             self.assertFalse(services["postgres"].get("ports"))
             self.assertEqual(services["core"]["environment"]["NEXUS_ADMIN_TOKEN"], env["NEXUS_ADMIN_TOKEN"])
+            panel_file = data / "compose.1panel.yml"
+            panel = subprocess.run(["docker", "compose", "-f", str(panel_file), "config", "--format", "json"],
+                                   capture_output=True, text=True)
+            self.assertEqual(panel.returncode, 0, "generated 1Panel compose must work without source or compose.env")
+            panel_services = json.loads(panel.stdout)["services"]
+            self.assertEqual(set(panel_services), {"core", "postgres", "mqtt"})
+            self.assertNotIn("build", panel_services["core"])
+            self.assertEqual(panel_services["core"]["image"], "ghcr.io/example/core@sha256:" + "a" * 64)
+            self.assertEqual(panel_services["core"]["ports"][0]["host_ip"], "127.0.0.1")
+            self.assertFalse(panel_services["postgres"].get("ports"))
+            self.assertEqual(panel_services["core"]["environment"]["NEXUS_DB_PASSWORD"], env["NEXUS_DB_PASSWORD"])
+            self.assertNotIn("format:", panel_file.read_text())
+            self.assertNotIn("${NEXUS_DOCKER_DATA", panel_file.read_text())
+            self.assertNotIn("${NEXUS_CORE_IMAGE", panel_file.read_text())
 
 
 if __name__ == "__main__":

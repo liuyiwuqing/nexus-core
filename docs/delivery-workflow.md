@@ -22,6 +22,8 @@ CORE/记忆工具平滑轮换的软件实现、文档及验证已完成，随本
 
 各项先完成可本地验证的软件闭环；真实环境所需身份、生产签名钥、发布域名/服务器、设备部署和产品验收另行记录，不以夹具或编译冒充。
 
+DEL-07 补齐 [1Panel 镜像交付](1panel-deployment.md)：独立初始化镜像、无源码/无 raw 格式的三服务编排，以及“验证后发布多架构镜像，再从 GHCR 按 digest 回拉验证”的工作流。服务器不再承担源码构建，私有仓库与包可见性不变；目标机验收仍独立记录。该项目交付约定沉淀在功能文档和可执行 CI，无需修改共享团队 Skill。
+
 CONSOLE-05 新增[只读运行概览](console-overview.md)：UTC 收件窗口、既有 90 秒在线规则、当前失败比例与保留投递积压，独立加载/异常/轮询。接口与真实 PostgreSQL 专项、实际 Vue 的回环边界检查及完整构建分别记录，不作为设备或部署证据。
 
 CONSOLE-05 的 CORE `af916aa` 对应 [Docker CI 43408287857](https://github.com/liuyiwuqing/nexus-core/actions/runs/43408287857) 全步骤 success；04 `24df6d9` 对应 [43408341106](https://github.com/liuyiwuqing/ai-desktop-pet/actions/runs/43408341106) 七个 job success。前者运行源码构建/隔离 Compose，后者运行固件/主机及交付检查；HTTP 数据库/Maven 和浏览器专项仍是本地证据。

@@ -1,5 +1,7 @@
 # Docker 线上部署
 
+使用 1Panel、希望直接拉取镜像时，请使用 [1Panel 镜像部署](1panel-deployment.md)。本页保留自行构建与独立 Caddy 的方案；其中 `format: raw` 不适用于用户已报告的旧版 1Panel 解析器。
+
 管理台随 CORE 镜像提供，页面和 `/api/v1` 使用同一 HTTPS 域名。服务器运行 CORE、PostgreSQL、Mosquitto 和 Caddy 四个容器，ESP32 仍直接连接语音供应商；Mac 不参与日常运行。
 
 本方案用于**新安装**。已有数据库/设备凭据不会自动导入，也不能用初始化工具覆盖。当前没有目标服务器，本页不代表已经上线。

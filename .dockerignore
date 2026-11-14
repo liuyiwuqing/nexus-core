@@ -14,3 +14,11 @@
 !frontend/vite.config.ts
 !frontend/src/
 !frontend/src/**
+!tools/
+!tools/init_docker.py
+!tools/init_local.py
+!tools/broker_policy.py
+!deploy/
+!deploy/docker/
+!deploy/docker/Dockerfile.init
+!deploy/docker/compose.1panel.yml

@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--device", default="dodo-1")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data", help="Private output directory; default keeps local development unchanged")
     parser.add_argument("--broker-dns", action="append", default=[], help="Additional broker DNS SAN, e.g. the Compose service name")
+    parser.add_argument("--native-password-tool", action="store_true", help="Use installed mosquitto_passwd instead of Docker (initializer image)")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", args.device) or args.device == "nexus-core":
         parser.error("invalid device id")
@@ -74,8 +75,11 @@ def main():
     passwd = config / "passwd"
     write(passwd, f"nexus-core:{core_password}\n{args.device}:{device_password}\n")
     # Encrypt the file in place; secrets are not passed in process arguments.
-    run("docker", "run", "--rm", "--entrypoint", "mosquitto_passwd", "-v", f"{config}:/config",
-        "eclipse-mosquitto:2.0.22", "-U", "/config/passwd")
+    if args.native_password_tool:
+        run("mosquitto_passwd", "-U", str(passwd))
+    else:
+        run("docker", "run", "--rm", "--entrypoint", "mosquitto_passwd", "-v", f"{config}:/config",
+            "eclipse-mosquitto:2.0.22", "-U", "/config/passwd")
     passwd.chmod(0o644)
     write(config / "acl", MANAGEMENT_ACL, 0o644)
     write(config / "mosquitto.conf", """listener 8883

@@ -21,7 +21,9 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 
 ## Docker 线上部署
 
-管理台与 API 共用 CORE 容器，配套 PostgreSQL、MQTT/TLS 和 Caddy。使用根目录 `Dockerfile` 与 `deploy/docker/compose.yml`，初始化私有配置后构建、启动；宿主不依赖 Java/Node。完整命令、HTTPS、持久化、备份与升级见 [Docker 部署](docs/docker-deployment.md)。本地和远程 Docker CI 已通过，尚未上线目标服务器。
+1Panel 使用 [镜像部署](docs/1panel-deployment.md)：发布配套 CORE/初始化镜像，服务器直接拉取；一次性初始化工具生成私有配置和可粘贴的三服务编排，不上传源码，不依赖宿主 Python/Java/Node，不占用面板的 80/443。镜像发布和拉取验证以具体流水线结果为准，目标机尚未验收。
+
+自行构建或使用独立 Caddy 时保留根目录 `Dockerfile` 与 `deploy/docker/compose.yml`，完整命令、HTTPS、持久化、备份与升级见 [Docker 部署](docs/docker-deployment.md)。该源码方案的本地和远程 Docker CI 已通过，不等于生产部署。
 
 ## 本机安装
 

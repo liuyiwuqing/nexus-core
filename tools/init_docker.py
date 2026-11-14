@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Initialize a NEW private Docker deployment; never overwrite an existing installation."""
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,15 @@ import sys
 from init_local import write
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def panel_compose(data, image):
+    template = (ROOT / "deploy/docker/compose.1panel.yml").read_text()
+    # Quote complete YAML scalars, including paths with spaces, and escape Compose
+    # interpolation so a literal dollar in a host path is not treated as a variable.
+    template = re.sub(r"\$\{NEXUS_DOCKER_DATA:-/etc/nexus/docker\}(/[a-zA-Z0-9/.-]+)",
+                      lambda match: json.dumps((str(data) + match[1]).replace("$", "$$")), template)
+    return template.replace("${NEXUS_CORE_IMAGE:?Set a published CORE image}", json.dumps(image))
 
 
 def hostname(value):
@@ -24,14 +34,15 @@ def main():
     parser.add_argument("--domain", required=True, type=hostname, help="Public HTTPS console domain")
     parser.add_argument("--mqtt-host", required=True, type=hostname, help="Public device-facing MQTT hostname/IP")
     parser.add_argument("--device", default="dodo-1")
-    parser.add_argument("--image", default="nexus-core:local", help="Local image tag; no registry upload")
+    parser.add_argument("--image", default="nexus-core:local", help="CORE image reference: local or published tag/digest")
+    parser.add_argument("--native-password-tool", action="store_true", help="Use installed mosquitto_passwd (initializer image)")
     args = parser.parse_args()
     data = args.data_dir.expanduser().absolute()
     if any(c in str(data) for c in "'\n\r"):
         parser.error("data directory cannot contain apostrophes or line breaks")
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", args.device) or args.device == "nexus-core":
         parser.error("invalid device id")
-    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}", args.image):
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}(?:@sha256:[a-f0-9]{64})?", args.image):
         parser.error("invalid image tag")
     if data.exists() or data.is_symlink():
         parser.error("destination already exists; preserve it and choose a new directory")
@@ -43,7 +54,8 @@ def main():
     # and is never silently regenerated over partial credentials on a later run.
     try:
         subprocess.run([sys.executable, str(ROOT / "tools/init_local.py"), "--data-dir", str(data),
-                        "--host", args.mqtt_host, "--device", args.device, "--broker-dns", "mqtt"],
+                        "--host", args.mqtt_host, "--device", args.device, "--broker-dns", "mqtt",
+                        *(["--native-password-tool"] if args.native_password_tool else [])],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         env = dict(line.split("=", 1) for line in (data / "local.env").read_text().splitlines()
                    if line and not line.startswith("#"))
@@ -63,12 +75,14 @@ def main():
         write(data / "postgres.env", "POSTGRES_DB=nexus\nPOSTGRES_USER=nexus\nPOSTGRES_PASSWORD=" + env["NEXUS_DB_PASSWORD"] + "\n")
         write(data / "compose.env", "# Keep with the matching deployment; no runtime secrets here.\n" +
               f"NEXUS_DOCKER_DATA='{data}'\nNEXUS_CONSOLE_DOMAIN={args.domain}\nNEXUS_CORE_IMAGE={args.image}\n")
+        write(data / "compose.1panel.yml", panel_compose(data, args.image))
         (data / "local.env").unlink()
         (data / "bridge.json").unlink()
     except (OSError, ValueError, subprocess.SubprocessError):
         raise SystemExit("initialization failed; private partial output preserved, do not reuse this directory") from None
     print("已生成私有 Docker 配置、TLS/ACL 和设备配置；未输出凭据。")
     print("使用 deploy/docker/compose.yml 与该目录的 compose.env 启动；操作见 docs/docker-deployment.md。")
+    print("1Panel：将输出目录内的 compose.1panel.yml 粘贴到编排；HTTPS 由现有反向代理提供。")
 
 
 if __name__ == "__main__":
