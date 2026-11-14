@@ -137,6 +137,17 @@ public class InboxService {
             FROM inbox_messages m
             """+filter.where()+" ORDER BY received_at DESC,message_id LIMIT ?", filter.parameters(MetadataCsv.ROW_LIMIT + 1));
     }
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> exportContent(String readStatus,String source,String from,String before){
+        var filter=ConsoleListQuery.messages(readStatus,source,from,before);
+        var rows=db.queryForList("""
+            SELECT m.message_id AS "messageId",m.source,m.event_type AS "eventType",m.title,m.content,m.summary,m.sender,
+                m.original_url AS "originalUrl",m.priority,m.received_at AS "receivedAt",m.created_at AS "createdAt"
+            FROM inbox_messages m
+            """+filter.where()+" AND m.received_at>now()-interval '7 days' AND m.content_purged_at IS NULL ORDER BY m.received_at DESC,m.message_id LIMIT 1001",filter.parameters());
+        if(rows.size()>1000)throw new ResponseStatusException(HttpStatus.CONFLICT,"content_export_too_large");
+        return rows;
+    }
 
     @Transactional
     public void markRead(UUID id) {

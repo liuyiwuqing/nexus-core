@@ -22,7 +22,7 @@ public class AccessAudit extends OncePerRequestFilter {
     public AccessAudit(JdbcTemplate db,org.springframework.transaction.support.TransactionTemplate transaction){this.db=db;this.transaction=transaction;}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)throws ServletException,IOException {
         String path=request.getServletPath(),method=request.getMethod();
-        boolean audit=path.startsWith("/api/v1/")&&(!method.equals("GET")&&!method.equals("HEAD") || path.endsWith("/export"));
+        boolean audit=path.startsWith("/api/v1/")&&(!method.equals("GET")&&!method.equals("HEAD") || path.endsWith("/export")||path.equals("/api/v1/messages/content-export"));
         if(!audit){chain.doFilter(request,response);return;}
         UUID id=UUID.randomUUID();String target=path.replaceAll("[^a-zA-Z0-9_./-]","?");
         if(target.length()>256)target=target.substring(0,256);

@@ -48,4 +48,10 @@ public class InboxController {
         return MetadataCsv.response("messages-metadata.csv", inbox.export(readStatus, source, receivedFrom, receivedBefore),
             "messageId", "connectorId", "source", "eventType", "priority", "receivedAt", "createdAt", "expiresAt", "readAt", "readStatus", "contentPurgedAt");
     }
+    @GetMapping("/content-export")
+    ResponseEntity<String> contentExport(@RequestParam String confirm,@RequestParam(required=false) String readStatus,
+        @RequestParam(required=false) String source,@RequestParam(required=false) String receivedFrom,@RequestParam(required=false) String receivedBefore){
+        if(!"EXPORT_MESSAGE_CONTENT".equals(confirm))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"content_export_confirmation_required");
+        return MetadataCsv.response("messages-content.csv",inbox.exportContent(readStatus,source,receivedFrom,receivedBefore),"messageId","source","eventType","title","content","summary","sender","originalUrl","priority","receivedAt","createdAt");
+    }
 }

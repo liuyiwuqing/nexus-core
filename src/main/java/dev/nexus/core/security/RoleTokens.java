@@ -44,7 +44,9 @@ public class RoleTokens {
         db.update("UPDATE role_tokens SET revoked_at=now(),version=version+1 WHERE token_id=?",id);
     }
     public static boolean permits(String role,String method,String path){
+        path=path.replaceAll(";[^/]*","").replaceAll("/+$","");
         if(role.equals("admin"))return true;
+        if(path.startsWith("/api/v1/messages/content-export"))return false;
         if(method.equals("GET"))return path.startsWith("/api/v1/")&&!path.startsWith("/api/v1/access")&&!path.startsWith("/api/v1/audit");
         if(method.equals("POST") && (path.equals("/api/v1/session")||path.equals("/api/v1/memory/search")||path.equals("/api/v1/templates/preview")||path.matches("/api/v1/automation/rules/[a-f0-9-]{36}/preview")||path.equals("/api/v1/routing/preview")))return true;
         if(!role.equals("operator"))return false;

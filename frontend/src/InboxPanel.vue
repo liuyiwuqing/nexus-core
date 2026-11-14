@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useAccess } from './access';
-const { operate } = useAccess();
+const { admin, operate } = useAccess();
 import { computed, ref, watch } from 'vue';
 import { formatTime, type Api, type Message, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
@@ -14,11 +14,12 @@ const props = defineProps<{
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
-const emit = defineEmits<{ page: [page: number]; filter: [value: Message['readStatus'] | '']; search: [value: ListSearch]; clear: []; export: []; connectors: [] }>();
+const emit = defineEmits<{ page: [page: number]; filter: [value: Message['readStatus'] | '']; search: [value: ListSearch]; clear: []; export: []; contentExport: []; connectors: [] }>();
 function filterChanged(event: Event) { emit('filter', (event.target as HTMLSelectElement).value as Message['readStatus'] | ''); }
 const selectedId = ref('');
 const selected = computed(() => props.data.items.find(message => message.messageId === selectedId.value));
 const compose = ref(false);
+const bodyExport=ref(false),bodyConfirm=ref(false);
 const title = ref('');
 const content = ref('');
 watch(() => props.pending, submission => {
@@ -36,7 +37,7 @@ async function send() {
     <div class="section-heading"><div><h1>消息</h1><p>{{ loading ? '正在加载…' : failed ? '未能读取消息' : `${data.total} 条消息` }}</p></div>
       <button v-if="operate" class="secondary" :disabled="!!pending" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
     </div>
-    <ListSearchForm kind="messages" :filters="search" :status-active="!!readStatus" :disabled="loading || busy" :failed="failed" :total="data.total" :exporting="exporting" @apply="emit('search', $event)" @clear="emit('clear')" @export="emit('export')"><label>消息状态<select aria-label="消息状态" :value="readStatus" :disabled="loading || busy" @change="filterChanged"><option value="">全部</option><option value="unread">未读</option><option value="read">已读</option></select></label></ListSearchForm>
+    <ListSearchForm kind="messages" :filters="search" :status-active="!!readStatus" :disabled="loading || busy" :failed="failed" :total="data.total" :exporting="exporting" @apply="emit('search', $event)" @clear="emit('clear')" @export="emit('export')"><label>消息状态<select aria-label="消息状态" :value="readStatus" :disabled="loading || busy" @change="filterChanged"><option value="">全部</option><option value="unread">未读</option><option value="read">已读</option></select></label><template #extra-actions="{blocked}"><button v-if="admin" type="button" class="text-button" :disabled="blocked" @click="bodyExport=!bodyExport;bodyConfirm=false">导出正文…</button><div v-if="admin&&bodyExport" class="inline-form"><p>仅导出当前已应用筛选中，最近七天未清理的正文、标题、摘要、发送者和原始链接；最多 1000 条。文件只在本次下载生成。</p><label class="checkbox-label"><input v-model="bodyConfirm" type="checkbox" :disabled="blocked">确认下载包含消息正文的文件</label><button type="button" class="primary spaced" :disabled="blocked||!bodyConfirm" @click="emit('contentExport');bodyConfirm=false">确认导出正文</button></div></template></ListSearchForm>
     <form v-if="compose" class="inline-form" @submit.prevent="send">
       <label>标题<input v-model="title" maxlength="160" required :disabled="busy" :readonly="!!pending" /></label>
       <label>内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="busy" :readonly="!!pending"></textarea></label>

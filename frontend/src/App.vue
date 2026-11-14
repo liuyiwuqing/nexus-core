@@ -336,13 +336,14 @@ function searchDeliveries(value: ListSearch, clear = false) {
 }
 function cancelExport() { exportGeneration++; exportController?.abort(); exporting.value = null; }
 watch(tab, cancelExport);
-async function exportMetadata(kind: 'messages' | 'deliveries') {
+async function exportMetadata(kind: 'messages' | 'deliveries',content=false) {
+  if(content&&(role.value!=='admin'||kind!=='messages'))return;
   if (loading.value || busy.value || exporting.value || readFailed.value) return;
   const currentEpoch = epoch, generation = ++exportGeneration;
   exportController = new AbortController(); exporting.value = kind; error.value = ''; notice.value = '';
   const query = querySuffix(kind).replace(/^&/, '?');
   try {
-    const response = await fetch(`/api/v1/${kind}/export${query}`, { signal: exportController.signal, cache: 'no-store', headers: { Authorization: 'Bearer ' + token.value } });
+    const response = await fetch(content?`/api/v1/messages/content-export?confirm=EXPORT_MESSAGE_CONTENT${querySuffix('messages')}`:`/api/v1/${kind}/export${query}`, { signal: exportController.signal, cache: 'no-store', headers: { Authorization: 'Bearer ' + token.value } });
     if (currentEpoch !== epoch || generation !== exportGeneration) return;
     if (!response.ok) {
       const problem = await response.json().catch(() => ({ error: '' })) as { error?: string };
@@ -355,13 +356,13 @@ async function exportMetadata(kind: 'messages' | 'deliveries') {
     if (currentEpoch !== epoch || generation !== exportGeneration) return;
     if (!blob.size) throw new Error('invalid_export');
     const url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = `${kind}-metadata.csv`; document.body.append(link); link.click(); link.remove();
+    link.href = url; link.download = `${kind}-${content?'content':'metadata'}.csv`; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notice.value = '元数据 CSV 已生成。';
+    notice.value = content?'正文 CSV 已生成，仅含最近七天未清理内容。':'元数据 CSV 已生成。';
   } catch (failure) {
     if (failure instanceof DOMException && failure.name === 'AbortError') return;
     if (currentEpoch === epoch && generation === exportGeneration || failure instanceof ApiFailure && failure.status === 401)
-      error.value = failure instanceof ApiFailure ? failure.message : '未能导出元数据，请重试。';
+      error.value = failure instanceof ApiFailure ? failure.message : content?'未能导出正文，请重试。':'未能导出元数据，请重试。';
   } finally { if (generation === exportGeneration) exporting.value = null; }
 }
 let lastPeriodic=0;
@@ -394,7 +395,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
         <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
-        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @connectors="tab = 'connectors'" />
+        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @content-export="exportMetadata('messages',true)" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />

@@ -27,6 +27,7 @@ function apply() {
       <button class="secondary" :disabled="disabled">应用筛选</button>
       <button class="text-button" type="button" :disabled="disabled || (!active && !dirty)" @click="emit('clear')">清空筛选</button>
       <button class="secondary" type="button" :disabled="disabled || failed || total === 0 || dirty" title="导出当前筛选结果，最多 5000 条；仅含标识、状态和时间，不含正文。" @click="emit('export')">{{ exporting ? '正在导出…' : '导出元数据' }}</button>
+      <slot name="extra-actions" :blocked="disabled || failed || total === 0 || dirty" />
     </div>
     <p v-if="error" class="inline-error filter-feedback" role="alert">{{ error }}</p>
     <p v-else-if="dirty" class="muted filter-feedback" role="status">筛选尚未应用。</p>
