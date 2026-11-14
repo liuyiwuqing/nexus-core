@@ -25,6 +25,8 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 
 管理台支持[可选择启用的消息路由与定向测试](docs/console-routing.md)，默认保持广播，新规则只影响后续入库消息。
 
+第三方消息使用[独立来源令牌与签名 Webhook](docs/webhook-sources.md)，来源设备范围与路由交集、限流、防重放和一次性凭据维护均由服务端执行。
+
 1Panel 使用 [镜像部署](docs/1panel-deployment.md)：发布配套 CORE/初始化镜像，服务器直接拉取；一次性初始化工具生成私有配置和可粘贴的三服务编排，不上传源码，不依赖宿主 Python/Java/Node，不占用面板的 80/443。镜像发布和拉取验证以具体流水线结果为准，目标机尚未验收。
 
 自行构建或使用独立 Caddy 时保留根目录 `Dockerfile` 与 `deploy/docker/compose.yml`，完整命令、HTTPS、持久化、备份与升级见 [Docker 部署](docs/docker-deployment.md)。该源码方案的本地和远程 Docker CI 已通过，不等于生产部署。

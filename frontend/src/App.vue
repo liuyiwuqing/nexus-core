@@ -7,7 +7,8 @@ import DeliveryPanel from './DeliveryPanel.vue';
 import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
 import RoutingPanel from './RoutingPanel.vue';
-import type { RoutingSession } from './types';
+import type { RoutingSession, SourceSession } from './types';
+import SourcesPanel from './SourcesPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
@@ -25,6 +26,7 @@ const ruleEdit = ref<RuleEditSession | null>(null);
 const ruleDeletion = ref<RuleDeletion | null>(null);
 const newRoutingSession=():RoutingSession=>({id:'',version:0,draft:null,pending:null,uncertain:false});
 const routingSession=ref<RoutingSession>(newRoutingSession());
+const sourceSession=ref<SourceSession>({pending:null,credentials:null});
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
@@ -59,6 +61,7 @@ function logout() {
   ruleEdit.value = null;
   ruleDeletion.value = null;
   routingSession.value=newRoutingSession();
+  sourceSession.value={pending:null,credentials:null};
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -366,7 +369,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
-        <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
+        <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />

@@ -49,6 +49,10 @@ public class InboxService {
         return ingest(in,publicComment,null);
     }
     @Transactional
+    public IngestResult ingestScoped(MessageInput in,List<String> permitted) {
+        return ingest(in,false,routing.targets(in,Instant.now()).stream().filter(t->permitted.contains(t.deviceId())).toList());
+    }
+    @Transactional
     public IngestResult targetedTest(MessageInput in, List<String> devices) {
         db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "targeted-test:"+in.eventId());
         if(devices==null || devices.isEmpty() || devices.size()>32)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_route");

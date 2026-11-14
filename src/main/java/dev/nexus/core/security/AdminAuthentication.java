@@ -39,6 +39,19 @@ public class AdminAuthentication extends OncePerRequestFilter {
             return;
         }
         response.setHeader("Cache-Control", "no-store");
+        boolean sourceEndpoint=request.getMethod().equals("POST")&&path.matches("/api/v1/hooks/[a-z0-9][a-z0-9-]{0,23}") ||
+            request.getMethod().equals("GET")&&path.matches("/api/v1/hooks/[a-z0-9][a-z0-9-]{0,23}/messages/[a-fA-F0-9-]{36}");
+        if(sourceEndpoint) {
+            // Authentication and source scope are enforced by WebhookSources; this
+            // path never accepts an administrator token as a source credential.
+            if(java.util.Collections.list(request.getHeaders("Authorization")).size()!=1 || request.getHeader("Origin")!=null || request.getMethod().equals("POST") && (java.util.Collections.list(request.getHeaders("X-Nexus-Timestamp")).size()!=1 || java.util.Collections.list(request.getHeaders("X-Nexus-Signature")).size()!=1)){response.setStatus(401);return;}
+            if(request.getMethod().equals("POST")) {
+                byte[] raw=request.getInputStream().readNBytes(32769);
+                if(raw.length>32768){response.setStatus(413);return;}
+                chain.doFilter(wrapped(request,raw),response);
+            }else chain.doFilter(request,response);
+            return;
+        }
         String supplied = request.getHeader("Authorization");
         boolean memoryEndpoint=path.equals(MemoryToolAccess.PATH);
         if(memoryEndpoint&&!memoryTools.enabled()){response.setStatus(404);return;}
@@ -78,5 +91,15 @@ public class AdminAuthentication extends OncePerRequestFilter {
         } else {
             chain.doFilter(request, response);
         }
+    }
+    private HttpServletRequest wrapped(HttpServletRequest request,byte[] bytes) {
+        return new HttpServletRequestWrapper(request){
+            @Override public ServletInputStream getInputStream(){var input=new ByteArrayInputStream(bytes);return new ServletInputStream(){
+                @Override public int read(){return input.read();}
+                @Override public boolean isFinished(){return input.available()==0;}
+                @Override public boolean isReady(){return true;}
+                @Override public void setReadListener(ReadListener listener){throw new UnsupportedOperationException();}
+            };}
+        };
     }
 }

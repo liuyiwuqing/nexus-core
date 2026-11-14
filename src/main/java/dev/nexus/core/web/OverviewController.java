@@ -30,7 +30,7 @@ public class OverviewController {
                     count(*) FILTER (WHERE NOT enabled) AS disabled FROM devices CROSS JOIN bounds b
             ), message_counts AS (
                 SELECT count(*) AS messages FROM inbox_messages m CROSS JOIN bounds b
-                WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of
+                WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of AND m.metadata->>'test' IS DISTINCT FROM 'true'
             ), delivery_counts AS (
                 SELECT count(*) FILTER (WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of) AS today_total,
                     count(*) FILTER (WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of AND d.status='failed') AS today_failed,
@@ -38,6 +38,7 @@ public class OverviewController {
                     count(*) FILTER (WHERE d.status='sent') AS sent,
                     count(*) FILTER (WHERE d.status='failed') AS failed
                 FROM deliveries d JOIN inbox_messages m ON m.message_id=d.message_id CROSS JOIN bounds b
+                WHERE m.metadata->>'test' IS DISTINCT FROM 'true'
             )
             SELECT b.*,dc.total,dc.online,dc.disabled,mc.messages,dd.*
             FROM bounds b CROSS JOIN device_counts dc CROSS JOIN message_counts mc CROSS JOIN delivery_counts dd
