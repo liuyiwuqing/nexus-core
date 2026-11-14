@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { operate } = useAccess();
 import { computed, ref, watch } from 'vue';
 import { formatTime, type Api, type Message, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
@@ -32,7 +34,7 @@ async function send() {
 <template>
   <section>
     <div class="section-heading"><div><h1>消息</h1><p>{{ loading ? '正在加载…' : failed ? '未能读取消息' : `${data.total} 条消息` }}</p></div>
-      <button class="secondary" :disabled="!!pending" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
+      <button v-if="operate" class="secondary" :disabled="!!pending" @click="compose = !compose" :aria-expanded="compose">{{ compose ? '收起' : '发送测试消息' }}</button>
     </div>
     <ListSearchForm kind="messages" :filters="search" :status-active="!!readStatus" :disabled="loading || busy" :failed="failed" :total="data.total" :exporting="exporting" @apply="emit('search', $event)" @clear="emit('clear')" @export="emit('export')"><label>消息状态<select aria-label="消息状态" :value="readStatus" :disabled="loading || busy" @change="filterChanged"><option value="">全部</option><option value="unread">未读</option><option value="read">已读</option></select></label></ListSearchForm>
     <form v-if="compose" class="inline-form" @submit.prevent="send">
@@ -71,7 +73,7 @@ async function send() {
         <div class="message-body">{{ selected.contentPurgedAt ? `已于 ${formatTime(selected.contentPurgedAt)} 清除正文和分析结果。` : selected.content }}</div>
         <AnalysisPanel v-if="selected.dataClass === 'public_comment' && !selected.contentPurgedAt" :key="selected.messageId" :message-id="selected.messageId" :api="api" :mutate="mutate" :busy="busy" />
         <div class="detail-actions">
-          <button v-if="selected.readStatus === 'unread'" class="primary" :disabled="busy" @click="markRead(selected.messageId)">标记已读</button>
+          <button v-if="operate && selected.readStatus === 'unread'" class="primary" :disabled="busy" @click="markRead(selected.messageId)">标记已读</button>
           <span v-else class="read-label">✓ 已读</span>
           <a v-if="selected.originalUrl" :href="selected.originalUrl" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
         </div>

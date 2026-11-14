@@ -11,16 +11,21 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Component;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE+20)
 public class AdminAuthentication extends OncePerRequestFilter {
     private final TokenCredentials credentials;
     private final MemoryToolAccess memoryTools;
+    private final RoleTokens roles;
 
-    public AdminAuthentication(TokenCredentials credentials,MemoryToolAccess memoryTools) {
+    public AdminAuthentication(TokenCredentials credentials,MemoryToolAccess memoryTools,RoleTokens roles) {
         this.credentials=credentials;
         this.memoryTools=memoryTools;
+        this.roles=roles;
     }
 
     @Override
@@ -56,8 +61,11 @@ public class AdminAuthentication extends OncePerRequestFilter {
         boolean memoryEndpoint=path.equals(MemoryToolAccess.PATH);
         if(memoryEndpoint&&!memoryTools.enabled()){response.setStatus(404);return;}
         boolean accepted;
+        RoleTokens.Identity identity=null;
         try {accepted=java.util.Collections.list(request.getHeaders("Authorization")).size()==1&&
-            (memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));}
+            (memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));
+            if(!accepted&&!memoryEndpoint&&java.util.Collections.list(request.getHeaders("Authorization")).size()==1){identity=roles.authenticate(supplied);accepted=identity!=null;}
+        }
         catch(TokenCredentials.Unavailable unavailable) {
             response.setStatus(503);response.setHeader("Retry-After","1");response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"authentication_configuration_unavailable\"}");return;
@@ -68,6 +76,11 @@ public class AdminAuthentication extends OncePerRequestFilter {
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"unauthorized\"}");
             return;
+        }
+        String role=memoryEndpoint?"memory":identity==null?"admin":identity.role();
+        request.setAttribute("nexus.role",role);request.setAttribute("nexus.actor",memoryEndpoint?"memory-tools":identity==null?credentials.adminActor():identity.actor());
+        if(!memoryEndpoint&&!RoleTokens.permits(role,request.getMethod(),path)) {
+            response.setStatus(403);response.setContentType("application/json");response.getWriter().write("{\"error\":\"forbidden\"}");return;
         }
         // This machine endpoint has no browser clients or CORS allowlist.
         if(memoryEndpoint&&request.getHeader("Origin")!=null){response.setStatus(403);return;}

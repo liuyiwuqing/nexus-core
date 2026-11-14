@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { operate } = useAccess();
 import { onMounted, onUnmounted, ref } from 'vue';
 import { deliveryNames, errorNames, type Api, type DeliveryHistory } from './types';
 
@@ -76,8 +78,8 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
     <p v-else-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <template v-else-if="data">
       <p v-if="loading" class="management-hint" role="status">正在更新时间线…</p>
-      <div class="management-status"><span class="badge">{{ deliveryNames[data.delivery.status] || data.delivery.status }}</span><span>本轮尝试 {{ data.delivery.attempts }}</span><button v-if="data.delivery.canCancel && !confirmCancel && !uncertain" class="secondary compact" :disabled="busy || sending || loading" @click="confirmCancel = true">取消投递</button></div>
-      <div v-if="data.delivery.canCancel && (confirmCancel || uncertain)" class="delivery-cancel-confirm">
+      <div class="management-status"><span class="badge">{{ deliveryNames[data.delivery.status] || data.delivery.status }}</span><span>本轮尝试 {{ data.delivery.attempts }}</span><button v-if="operate && data.delivery.canCancel && !confirmCancel && !uncertain" class="secondary compact" :disabled="busy || sending || loading" @click="confirmCancel = true">取消投递</button></div>
+      <div v-if="operate && data.delivery.canCancel && (confirmCancel || uncertain)" class="delivery-cancel-confirm">
         <p>取消这条尚未开始发送的投递？不删除消息，也不影响其他设备。</p>
         <div class="management-actions"><button class="secondary compact" :disabled="sending || busy || loading" @click="cancel">{{ sending ? '正在取消…' : uncertain ? '重试取消同一投递' : '确认取消' }}</button><button v-if="!uncertain" class="text-button" :disabled="sending" @click="confirmCancel = false">暂不取消</button></div>
       </div>

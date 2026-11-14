@@ -1,6 +1,7 @@
 package dev.nexus.core.connector;
 
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,8 +27,8 @@ public class WebhookController {
     @PostMapping("/api/v1/sources/{id}/credentials") Map<String,Object> rotate(@PathVariable String id,@Valid @RequestBody Version input){return sources.rotate(id,input.expectedVersion());}
     @PostMapping("/api/v1/sources/{id}/test") ResponseEntity<?> test(@PathVariable String id,@Valid @RequestBody Test input){return ResponseEntity.accepted().body(sources.test(id,input.requestKey(),input.title(),input.content()));}
     @PostMapping("/api/v1/hooks/{id}") ResponseEntity<?> receive(@PathVariable String id,@RequestHeader(value="Authorization",required=false) String token,
-        @RequestHeader(value="X-Nexus-Timestamp",required=false) String timestamp,@RequestHeader(value="X-Nexus-Signature",required=false) String signature,@RequestBody byte[] raw,HttpServletResponse response){
-        try{return ResponseEntity.accepted().body(sources.receive(id,token,timestamp,signature,raw));}
+        @RequestHeader(value="X-Nexus-Timestamp",required=false) String timestamp,@RequestHeader(value="X-Nexus-Signature",required=false) String signature,@RequestBody byte[] raw,HttpServletResponse response,HttpServletRequest request){
+        try{var result=sources.receive(id,token,timestamp,signature,raw);request.setAttribute("nexus.role","source");request.setAttribute("nexus.actor","source:"+id);return ResponseEntity.accepted().body(result);}
         catch(ResponseStatusException e){if(e.getStatusCode().value()==429)response.setHeader("Retry-After","60");throw e;}
     }
     @GetMapping("/api/v1/hooks/{id}/messages/{message}") Map<String,Object> receipt(@PathVariable String id,@PathVariable UUID message,@RequestHeader(value="Authorization",required=false) String token){return sources.receipt(id,message,token);}

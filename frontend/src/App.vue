@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { provide } from 'vue';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import InboxPanel from './InboxPanel.vue';
 import DevicesPanel from './DevicesPanel.vue';
@@ -7,13 +8,16 @@ import DeliveryPanel from './DeliveryPanel.vue';
 import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
 import RoutingPanel from './RoutingPanel.vue';
-import type { RoutingSession, SourceSession } from './types';
+import type { RoutingSession, SourceSession, AccessSession } from './types';
 import SourcesPanel from './SourcesPanel.vue';
+import AccessPanel from './AccessPanel.vue';
+import type { Role } from './access';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
 import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 
+const role=ref<Role>('viewer');provide('role',role);
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
@@ -27,11 +31,12 @@ const ruleDeletion = ref<RuleDeletion | null>(null);
 const newRoutingSession=():RoutingSession=>({id:'',version:0,draft:null,pending:null,uncertain:false});
 const routingSession=ref<RoutingSession>(newRoutingSession());
 const sourceSession=ref<SourceSession>({pending:null,credentials:null});
+const accessSession=ref<AccessSession>({issued:'',pendingIssue:false});
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
 const exporting = ref<'messages' | 'deliveries' | null>(null);
-const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }];
+const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }, { id: 'access', label: '权限', glyph: '⚿' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -61,7 +66,7 @@ function logout() {
   ruleEdit.value = null;
   ruleDeletion.value = null;
   routingSession.value=newRoutingSession();
-  sourceSession.value={pending:null,credentials:null};
+  sourceSession.value={pending:null,credentials:null};accessSession.value={issued:'',pendingIssue:false};role.value='viewer';
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -114,8 +119,17 @@ async function refresh(clearFeedback = false): Promise<boolean> {
 }
 
 async function login() {
+  if(loading.value)return;
+  const currentEpoch=epoch;loading.value=true;
   token.value = token.value.trim(); error.value = ''; notice.value = '';
-  if (await refresh()) authenticated.value = true;
+  try {
+    const session=await api<{role:Role}>('session','POST');
+    if(!['admin','operator','viewer'].includes(session.role))throw new Error('Invalid session');
+    if(currentEpoch!==epoch)return;
+    role.value=session.role;
+    if(await refresh())authenticated.value=true;
+  } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=failure instanceof Error?failure.message:'登录失败';}
+  finally{if(currentEpoch===epoch)loading.value=false;}
 }
 
 async function mutate(action: () => Promise<unknown>, success: string): Promise<boolean> {
@@ -348,7 +362,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
   <main v-if="!authenticated" class="login-page">
     <form class="login-card" @submit.prevent="login">
       <div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">PET CONSOLE</span></span></div>
-      <h1>连接你的桌面伙伴</h1><p>使用本机配置中的管理令牌登录。</p>
+      <h1>连接你的桌面伙伴</h1><p>使用管理员或独立角色令牌登录。</p>
       <label class="token-label">管理令牌<input v-model="token" :type="tokenVisible ? 'text' : 'password'" autocomplete="off" spellcheck="false" required :disabled="loading" /></label>
       <label class="checkbox-label"><input v-model="tokenVisible" type="checkbox" />显示令牌</label>
       <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
@@ -359,11 +373,11 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
   <div v-else class="app-layout">
     <aside class="sidebar">
       <div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">PET CONSOLE</span></span></div>
-      <nav aria-label="主导航"><button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id"><span aria-hidden="true">{{ item.glyph }}</span>{{ item.label }}</button></nav>
+      <nav aria-label="主导航"><button v-for="item in tabs.filter(v=>role==='admin'||!['access','tools'].includes(v.id))" :key="item.id" :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id"><span aria-hidden="true">{{ item.glyph }}</span>{{ item.label }}</button></nav>
       <div class="sidebar-bottom"><span class="local-indicator">本机控制台</span><button class="text-button" @click="logout">退出登录</button></div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
+      <header class="topbar"><span class="muted">{{role==='admin'?'管理员':role==='operator'?'操作员 · 消息与规则':'只读访问'}}</span><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
       <div class="content">
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
@@ -375,6 +389,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
+        <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" />
         <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
         <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
       </div>

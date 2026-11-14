@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { admin, operate } = useAccess();
 import { onUnmounted, ref, watch } from 'vue';
 import { errorNames, type Analysis, type Api } from './types';
 
@@ -48,14 +50,14 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); });
       <div class="analysis-tags"><span class="badge">{{ categories[state.category || ''] || '其他' }}</span><span v-if="state.importance === 'high'" class="badge warning">AI 判断：重要</span></div>
       <details v-if="state.replyDraft"><summary>回复草稿 · 未发送</summary><p class="draft-text">{{ state.replyDraft }}</p></details>
       <div class="memory-row"><span>{{ memoryNames[state.memoryStatus || 'off'] }}</span>
-        <button v-if="state.memoryStatus !== 'stored'" class="secondary compact" :disabled="!memory || busy || state.memoryStatus === 'pending'" @click="save">保存到长期记忆</button>
+        <button v-if="admin && state.memoryStatus !== 'stored'" class="secondary compact" :disabled="!memory || busy || state.memoryStatus === 'pending'" @click="save">保存到长期记忆</button>
       </div>
       <p v-if="!memory" class="muted">长期记忆未启用</p>
       <p v-if="state.memoryError" class="inline-error">{{ errorNames[state.memoryError] || '记忆保存未完成，请检查服务。' }}</p>
     </template>
     <template v-else-if="state">
       <p v-if="state.lastError" class="inline-error">{{ errorNames[state.lastError] || '分析未完成，请检查 AI 服务后重试。' }}</p>
-      <button class="secondary compact" :disabled="!ai || busy || ['pending', 'processing'].includes(state.status)" @click="analyze">{{ state.status === 'not_requested' ? '分析公开评论' : '重新核验并分析' }}</button>
+      <button class="secondary compact" :disabled="!operate || !ai || busy || ['pending', 'processing'].includes(state.status)" @click="analyze">{{ state.status === 'not_requested' ? '分析公开评论' : '重新核验并分析' }}</button>
     </template>
   </section>
 </template>

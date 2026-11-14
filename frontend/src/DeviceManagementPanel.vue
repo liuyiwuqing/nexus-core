@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement } from './types';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
@@ -14,7 +16,7 @@ const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== baseline.value);
 const staleDraft = computed(() => !!form.value && !!data.value?.telemetry?.config &&
   (data.value.telemetry.configRevision !== formRevision.value || JSON.stringify(data.value.telemetry.config) !== baseline.value));
-const disabled = computed(() => props.busy || sending.value || !!uncertain.value || !!loadError.value || !data.value?.canConfigure || staleDraft.value);
+const disabled = computed(() => !admin.value || props.busy || sending.value || !!uncertain.value || !!loadError.value || !data.value?.canConfigure || staleDraft.value);
 const stateNames = { pending: '等待下发', sent: '等待设备确认', applied: '设备已保存', rejected: '设备未接受', expired: '已到期', unconfirmed: '结果未确认' };
 const eventNames: Record<string, string> = { created: '管理员提交', publish_attempt: '尝试下发', publish_unconfirmed: '下发结果未确认', applied: '设备设置已确认', rejected: '设备未接受', expired: '请求到期', unconfirmed: '等待配置回读' };
 let alive = true, generation = 0, interval: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;

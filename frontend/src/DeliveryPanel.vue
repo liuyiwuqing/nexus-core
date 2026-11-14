@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { operate } = useAccess();
 import { nextTick, ref } from 'vue';
 import DeliveryHistoryPanel from './DeliveryHistoryPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
@@ -27,7 +29,7 @@ async function closeHistory() {
           <td><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
             <span v-if="delivery.lastError" class="cell-sub">{{ errorNames[delivery.lastError] || delivery.lastError }}</span>
             <span v-else-if="delivery.status === 'pending' || delivery.status === 'sent'" class="cell-sub">下次尝试 {{ formatTime(delivery.nextAttemptAt) }}</span></td>
-          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><button v-if="delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</button><button :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</button></div></td>
+          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><button v-if="operate && delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</button><button :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</button></div></td>
         </tr></tbody></table>
       <div class="pagination"><button :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">上一页</button><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><button :disabled="data.page * data.size >= data.total || loading || busy" @click="pageChanged(data.page + 1)">下一页</button></div>
     </div>

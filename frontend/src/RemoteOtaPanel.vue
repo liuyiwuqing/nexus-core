@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { errorNames, formatTime, type Api, type Device, type OtaRelease, type OtaView } from './types';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
@@ -19,7 +21,7 @@ const compatible = computed(() => releases.value.filter(item => {
   return identity && Object.entries(item.identity).every(([key, value]) => identity[key] === value) &&
     item.target.releaseSequence > (data.value?.observation?.reservedSequence ?? 0);
 }));
-const blocked = computed(() => props.busy || sending.value || !!pending.value || !!loadError.value);
+const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
 let alive = true, generation = 0, timer: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;
 async function refresh() {
   if (loading.value) return;

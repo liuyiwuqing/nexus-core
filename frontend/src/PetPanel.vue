@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAccess } from './access';
+const { admin } = useAccess();
 import { computed, onUnmounted, ref } from 'vue';
 import { formatTime, type Api } from './types';
 import DeviceGrowthPanel from './DeviceGrowthPanel.vue';
@@ -48,9 +50,9 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
       <article v-if="active" class="record-card focus-card">
         <div class="record-heading"><h2>{{ remaining ? '专注进行中' : '专注时间已到' }}</h2><span class="badge">{{ active.durationMinutes }} 分钟</span></div>
         <p class="focus-clock" role="timer" aria-label="剩余时间">{{ countdown }}</p>
-        <div class="record-actions"><button class="primary" :disabled="busy || remaining>0" @click="finish('complete')">完成并结算</button><button class="text-button" :disabled="busy" @click="finish('cancel')">取消本次专注</button></div>
+        <div v-if="admin" class="record-actions"><button class="primary" :disabled="busy || remaining>0" @click="finish('complete')">完成并结算</button><button class="text-button" :disabled="busy" @click="finish('cancel')">取消本次专注</button></div>
       </article>
-      <form v-else class="inline-form" @submit.prevent="start"><label>专注时长（分钟）<input v-model.number="minutes" type="number" min="1" max="180" step="1" required :disabled="busy" /></label><div class="form-footer"><span>每分钟 1 经验，单次最多 120；每天最多 240。取消不结算。</span><button class="primary" :disabled="busy">开始专注</button></div></form>
+      <form v-else-if="admin" class="inline-form" @submit.prevent="start"><label>专注时长（分钟）<input v-model.number="minutes" type="number" min="1" max="180" step="1" required :disabled="busy" /></label><div class="form-footer"><span>每分钟 1 经验，单次最多 120；每天最多 240。取消不结算。</span><button class="primary" :disabled="busy">开始专注</button></div></form>
       <div class="record-list"><article v-for="session in sessions.filter(s=>s.state!=='active')" :key="session.sessionId" class="record-card"><div class="record-heading"><h2>{{ session.durationMinutes }} 分钟专注</h2><span class="badge" :class="session.state==='completed' ? 'success' : ''">{{ names[session.state] }}</span></div><small>{{ formatTime(session.startedAt) }}</small><p v-if="session.state==='completed'">+{{ session.experienceReward }} 经验 · +{{ session.coinReward }} 金币</p></article></div>
     </template>
     <p v-else-if="loading" class="muted" role="status">正在读取成长档案…</p>
