@@ -12,6 +12,8 @@ import type { RoutingSession, SourceSession, AccessSession, TemplateSession } fr
 import SourcesPanel from './SourcesPanel.vue';
 import AccessPanel from './AccessPanel.vue';
 import TemplatesPanel from './TemplatesPanel.vue';
+import SetupGuide from './SetupGuide.vue';
+import { watchConsoleEvents } from './eventStream';
 import type { Role } from './access';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
@@ -19,6 +21,10 @@ import OverviewPanel from './OverviewPanel.vue';
 import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 
 const role=ref<Role>('viewer');provide('role',role);
+const showGuide=ref(false),selectedDevice=ref(''),eventsConnected=ref(false);
+let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|undefined,streamGeneration=0;
+function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
+function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh();}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
@@ -59,6 +65,7 @@ async function api<T>(path: string, method = 'GET', body?: unknown, signal?: Abo
 }
 
 function logout() {
+  stopEvents();showGuide.value=false;selectedDevice.value='';
   cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
@@ -106,6 +113,7 @@ async function refresh(clearFeedback = false): Promise<boolean> {
       return await refresh(clearFeedback);
     }
     [messages.value, { items: devices.value }, { items: connectors.value }, deliveries.value, status.value] = result;
+    if(selectedDevice.value&&!devices.value.some(d=>d.deviceId===selectedDevice.value))selectedDevice.value='';
     // 后台读取恢复只清理读取错误；操作错误留给用户主动核对或下一次操作。
     if ((readFailed.value || clearFeedback) && error.value === previousError) error.value = '';
     readFailed.value = false;
@@ -129,7 +137,7 @@ async function login() {
     if(!['admin','operator','viewer'].includes(session.role))throw new Error('Invalid session');
     if(currentEpoch!==epoch)return;
     role.value=session.role;
-    if(await refresh())authenticated.value=true;
+    if(await refresh()){authenticated.value=true;showGuide.value=devices.value.length===0;startEvents();}
   } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=failure instanceof Error?failure.message:'登录失败';}
   finally{if(currentEpoch===epoch)loading.value=false;}
 }
@@ -356,8 +364,10 @@ async function exportMetadata(kind: 'messages' | 'deliveries') {
       error.value = failure instanceof ApiFailure ? failure.message : '未能导出元数据，请重试。';
   } finally { if (generation === exportGeneration) exporting.value = null; }
 }
-onMounted(() => { interval = setInterval(() => { if (authenticated.value && !loading.value && !busy.value && !exporting.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
-onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport(); });
+let lastPeriodic=0;
+function visibleRefresh(){if(authenticated.value&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh();}
+onMounted(() => { document.addEventListener('visibilitychange',visibleRefresh);interval = setInterval(() => { if(eventsConnected.value&&Date.now()-lastPeriodic<15000)return;lastPeriodic=Date.now();if (authenticated.value && !loading.value && !busy.value && !exporting.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
+onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefresh);stopEvents();clearInterval(interval); controller?.abort(); cancelExport(); });
 </script>
 
 <template>
@@ -379,12 +389,13 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
       <div class="sidebar-bottom"><span class="local-indicator">本机控制台</span><button class="text-button" @click="logout">退出登录</button></div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><span class="muted">{{role==='admin'?'管理员':role==='operator'?'操作员 · 消息与规则':'只读访问'}}</span><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
+      <header class="topbar"><span class="muted">{{role==='admin'?'管理员':role==='operator'?'操作员 · 消息与规则':'只读访问'}}</span><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><label class="device-view"><span class="sr-only">设备视图</span><select aria-label="设备视图" v-model="selectedDevice" @change="tab='devices'"><option value="">全部设备</option><option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">{{d.name}}</option></select></label><button class="text-button" @click="showGuide=!showGuide">接入引导</button><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
       <div class="content">
+        <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @connectors="tab = 'connectors'" />
-        <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
+        <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />

@@ -224,3 +224,13 @@ td strong { font-weight: 550; overflow-wrap: anywhere; }
  .growth-progress progress { width:100%; height:8px; accent-color:#52735d; }
  .focus-clock { font-size:56px; font-variant-numeric:tabular-nums; letter-spacing:1px; margin:24px 0; }
  @media(max-width:640px) { .pet-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .pet-stats>div {padding:16px;} }
+
+/* The global device view and onboarding actions wrap without shrinking controls. */
+.topbar { height:auto; min-height:68px; gap:12px; flex-wrap:wrap; padding-top:12px; padding-bottom:12px; }
+.device-view { display:flex; align-items:center; gap:8px; }
+.device-view select { max-width:180px; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.setup-guide { margin-bottom:20px; }
+.setup-guide ol, .setup-guide ul { padding-left:22px; }
+.setup-guide li + li { margin-top:10px; }
+@media(max-width:700px) { .topbar { height:auto; min-height:48px; gap:8px; } .device-view select { max-width:140px; } }
