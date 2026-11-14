@@ -71,6 +71,6 @@ docker run --rm --read-only --cap-drop ALL \
 
 本地入口：`python3 -m unittest discover -s tools -p 'test_*.py'`、`tools/test_docker_deployment.py` 和 `tools/test_image_deployment.py --image <CORE> --init-image <INIT>`。新增检查覆盖无源码/socket 初始化、私有权限/密码哈希、重复初始化原样拒绝、普通 env/特殊路径、三服务配置、认证/实际 JAR 资源、MQTT TLS 与重建持久性，仅清理自身随机项目和卷；测试端口随机绑定回环地址。
 
-CI、镜像发布、从仓库拉取后的验证分别以实际运行和报告为准。目标 1Panel 版本、Debian DNS/防火墙、OpenResty 网络、域名 HTTPS、真实供应商及设备仍需目标机验收；流水线不自动连接用户服务器，不修改包的公开可见性。
+CI、镜像发布、从仓库拉取后的验证分别以实际运行和报告为准。提交 `043f134e2be179cf51cd7ea713cba93053e948dc` 的发布运行 [43584412344](https://github.com/liuyiwuqing/nexus-core/actions/runs/43584412344) 已成功，最终 digest 为 `ghcr.io/liuyiwuqing/nexus-core@sha256:2653a588d45b7e46fdf3c8e9672d62bb8be2223a7d5058b7292b01820dbe259f` 与 `ghcr.io/liuyiwuqing/nexus-core-init@sha256:6195bb0732f248eaf6c43cda4778bbe115c67c69f0633c165461bb55c460759c`；回拉后的 7 项验证通过。目标 1Panel 版本、Debian DNS/防火墙、OpenResty 网络、域名 HTTPS、真实供应商及设备仍需目标机验收；流水线不自动连接用户服务器，不修改包的公开可见性。
 
 2026-11-14 本地：CLI 11 项通过；CORE 镜像执行前端类型检查/构建与 Maven package 成功；原 Compose 六组检查、新增镜像部署七组检查全部通过，并清理本轮隔离容器/卷。新增七组使用实际 `linux/arm64` 镜像，包含 `$`/空格路径和单引号 env 原样解析。初始化镜像首次默认构建网络因 Alpine DNS 失败，host 网络构建通过；未修改源码中的软件源或全局网络设置。两份 Actions workflow 的 actionlint 1.7.12 检查通过。远程发布与回拉验证另记实际运行，不把本地镜像当作已发布产物。
