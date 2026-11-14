@@ -36,4 +36,6 @@ CONSOLE-12-A 的 CORE `28793aa` / 04 `052851f` 均已推送并核对远端。[Do
 
 CONSOLE-13 新增[来源/设备/收件窗口与元数据 CSV](console-list-filters.md)：列表、计数与导出共享绑定条件；管理员读取、5000 行上限、明确列白名单与 CSV 公式转义。新增 6 项 HTTP/隔离 PostgreSQL、实际 Vue 44 项和完整构建 80 通过/5 跳过；没有新增迁移或正文导出。配套页面回归、JAR 资源、提交与远程 CI 在 04 台账分别核对。
 
+CONSOLE-13 的 CORE `ea9cb77` 已正常推送并核对远端；[Docker CI 43553123583](https://github.com/liuyiwuqing/nexus-core/actions/runs/43553123583) 的初始化 CLI 11 项、源码镜像构建及真实隔离 Compose 全步骤 success。393 项浏览器、80 通过/5 跳过的完整 Maven 与 Java–C 源码契约仍为本地证据，目标机/实机验收未执行。
+
 线上管理台采用独立 [Docker Compose 方案](docker-deployment.md)：源码构建 Vue/JAR 镜像、私有初始化、PostgreSQL/MQTT/Caddy、认证健康检查及隔离部署验证。根目录开发 Compose 保留。当前没有目标服务器，生产 DNS/证书、真实配置迁移、资源和恢复演练仍需另行验收；本地验证结果记入 04 台账 DEL-06。
