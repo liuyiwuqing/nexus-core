@@ -46,6 +46,9 @@ export interface ToolSubmission { requestKey: string; toolId: string; arguments:
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string }
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
 export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
+export interface RouteDefinition {name:string;enabled:boolean;source:string;eventType:string;match:string;expression:string;deviceIds:string[];priority:string;from:string;before:string;zone:string}
+export interface RouteRule {ruleId:string;version:number;deleted:boolean;definition:RouteDefinition}
+export interface RoutingSession {id:string;version:number;draft:RouteDefinition|null;pending:{expectedVersion:number;definition:RouteDefinition}|null;uncertain:boolean;test?:{requestKey:string;deviceIds:string[];title:string;content:string;priority:string}|null;policy?:{mode:string;expectedVersion:number}|null}
 export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateDevices: number; block: string; asOf: string }
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
@@ -62,7 +65,7 @@ export interface Analysis {
   summary?: string; category?: string; importance?: string; replyDraft?: string; lastError?: string;
   memoryStatus?: 'off' | 'pending' | 'stored' | 'error' | 'blocked'; memoryUri?: string; memoryError?: string;
 }
-export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory' | 'overview';
+export type Tab = 'inbox' | 'pet' | 'devices' | 'connectors' | 'deliveries' | 'tools' | 'automation' | 'memory' | 'overview' | 'routing';
 export function formatTime(value?: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -81,6 +84,7 @@ export const errorNames: Record<string, string> = {
   invalid_rule_snapshot: '未能读取有效的规则定义，请重试核对。',
   rule_enabled: '请先停用规则，再编辑。', rule_execution_in_progress: '规则仍有正在入队的任务，请等待完成后再编辑。',
   rule_deleted: '规则已删除，执行历史仍保留。', no_enabled_devices: '当前没有启用的设备。',
+  invalid_route: '请检查路由条件、设备、时区和时间窗。', route_version_conflict: '路由版本已变化，请只读核对后重新编辑。', route_deleted: '路由已删除。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',
   halo_not_configured: '请先在本机配置 Halo 只读令牌并启用接入。',
   halo_poll_in_progress: '正在同步，请稍后查看结果。',

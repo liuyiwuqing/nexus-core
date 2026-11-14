@@ -6,6 +6,8 @@ import ConnectorsPanel from './ConnectorsPanel.vue';
 import DeliveryPanel from './DeliveryPanel.vue';
 import ToolsPanel from './ToolsPanel.vue';
 import AutomationPanel from './AutomationPanel.vue';
+import RoutingPanel from './RoutingPanel.vue';
+import type { RoutingSession } from './types';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
@@ -21,11 +23,13 @@ const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(fal
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
 const ruleEdit = ref<RuleEditSession | null>(null);
 const ruleDeletion = ref<RuleDeletion | null>(null);
+const newRoutingSession=():RoutingSession=>({id:'',version:0,draft:null,pending:null,uncertain:false});
+const routingSession=ref<RoutingSession>(newRoutingSession());
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
 const exporting = ref<'messages' | 'deliveries' | null>(null);
-const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }];
+const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -54,6 +58,7 @@ function logout() {
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   ruleEdit.value = null;
   ruleDeletion.value = null;
+  routingSession.value=newRoutingSession();
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -367,6 +372,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
+        <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
         <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
       </div>
     </div>

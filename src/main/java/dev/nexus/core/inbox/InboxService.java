@@ -4,6 +4,7 @@ import dev.nexus.core.web.ApiRows;
 import dev.nexus.core.web.ConsoleListQuery;
 import dev.nexus.core.web.MetadataCsv;
 import dev.nexus.core.events.EventJournal;
+import dev.nexus.core.routing.MessageRouting;
 import java.net.URI;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -23,11 +24,13 @@ public class InboxService {
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final EventJournal events;
+    private final MessageRouting routing;
 
-    public InboxService(JdbcTemplate db, ObjectMapper json, EventJournal events) {
+    public InboxService(JdbcTemplate db, ObjectMapper json, EventJournal events, MessageRouting routing) {
         this.db = db;
         this.json = json;
         this.events = events;
+        this.routing = routing;
     }
 
     public record IngestResult(UUID messageId, boolean created) {}
@@ -43,6 +46,24 @@ public class InboxService {
     }
 
     private IngestResult ingest(MessageInput in, boolean publicComment) {
+        return ingest(in,publicComment,null);
+    }
+    @Transactional
+    public IngestResult targetedTest(MessageInput in, List<String> devices) {
+        db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "targeted-test:"+in.eventId());
+        if(devices==null || devices.isEmpty() || devices.size()>32)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_route");
+        for(String device:devices)if(!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=? AND enabled)",Boolean.class,device)))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_route");
+        var existing=db.queryForList("SELECT message_id,title,content,priority FROM inbox_messages WHERE connector_id='targeted-test' AND upstream_event_id=?",in.eventId());
+        if(!existing.isEmpty()) {
+            var row=existing.getFirst();
+            var original=db.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id",String.class,row.get("message_id"));
+            if(!in.title().equals(row.get("title"))||!in.content().equals(row.get("content"))||!in.priority().equals(row.get("priority"))||!original.equals(devices.stream().distinct().sorted().toList()))
+                throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
+        }
+        return ingest(in,false,devices.stream().distinct().map(d->new MessageRouting.Target(d,null)).toList());
+    }
+    private IngestResult ingest(MessageInput in, boolean publicComment, List<MessageRouting.Target> targets) {
         var existing = db.queryForList("SELECT message_id FROM inbox_messages WHERE connector_id=? AND upstream_event_id=?", in.connectorId(), in.eventId());
         if (!existing.isEmpty()) return new IngestResult((UUID) existing.getFirst().get("message_id"), false);
         Instant now = Instant.now();
@@ -73,8 +94,8 @@ public class InboxService {
             return new IngestResult(previous, false);
         }
         // Message and outbox are committed together, including during a process restart.
-        for (String device : db.queryForList("SELECT device_id FROM devices WHERE enabled=true", String.class)) {
-            db.update("INSERT INTO deliveries(event_id,message_id,device_id) VALUES(?,?,?)", UUID.randomUUID(), id, device);
+        for (var target : targets==null?routing.targets(in,now):targets) {
+            db.update("INSERT INTO deliveries(event_id,message_id,device_id,priority_override) VALUES(?,?,?,?)", UUID.randomUUID(), id, target.deviceId(),target.priority());
         }
         events.messageReceived(id, in.source(), publicComment ? "public_comment" : "internal");
         return new IngestResult(id, true);
