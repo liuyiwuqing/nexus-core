@@ -43,3 +43,5 @@ CONSOLE-13 的 CORE `ea9cb77` 已正常推送并核对远端；[Docker CI 435531
 CONSOLE-09-A 新增[停用后规则编辑](console-automation-editing.md)：固定类型/ID、事务版本校验、在途入队保护、原版本重试及只读核对；新页面启停附带观察到的版本，旧客户端保持兼容。新增 7 项 HTTP/真实隔离 PostgreSQL 与既有创建 4 项通过；不新增迁移，不删除历史，也不执行真实规则/消息。完整构建 87 通过/5 条件跳过，页面新增 99/既有 393 项通过；最终前端检查/资源打包与 JAR 三资源、V1–V14 逐字节一致。逐仓推送和远程 CI 分别记入 04 台账。
 
 CONSOLE-09-A 的 CORE `cb18ba2` 已正常推送并核对远端；[Docker CI 43576059029](https://github.com/liuyiwuqing/nexus-core/actions/runs/43576059029) 全步骤 success，含初始化 CLI 11 项、源码镜像及真实隔离 Compose。492 项浏览器及 87 通过/5 跳过的完整 Maven 为本地证据，不冒充远程专项或目标机/实机验收。
+
+CONSOLE-09-A 后续测试提交 `2ba3a84` 将调度断言限定到本规则的运行/结果消息，原 11 项专项再次通过；实现及最终 JAR 来源未变。该提交已推送并核对远端，对应 [Docker CI 43576489895](https://github.com/liuyiwuqing/nexus-core/actions/runs/43576489895) 全步骤 success；首次实现 CI `43576059029` 仍保留各自提交证据。
