@@ -10,6 +10,8 @@ import AutomationPanel from './AutomationPanel.vue';
 import RoutingPanel from './RoutingPanel.vue';
 import type { RoutingSession, SourceSession, AccessSession, TemplateSession } from './types';
 import SourcesPanel from './SourcesPanel.vue';
+import PullPanel from './PullPanel.vue';
+import type {PullSession} from './types';
 import AccessPanel from './AccessPanel.vue';
 import TemplatesPanel from './TemplatesPanel.vue';
 import SetupGuide from './SetupGuide.vue';
@@ -38,6 +40,7 @@ const ruleDeletion = ref<RuleDeletion | null>(null);
 const newRoutingSession=():RoutingSession=>({id:'',version:0,draft:null,pending:null,uncertain:false});
 const routingSession=ref<RoutingSession>(newRoutingSession());
 const sourceSession=ref<SourceSession>({pending:null,credentials:null});
+const pullSession=ref<PullSession>({pending:null,uncertainPoll:null});
 const accessSession=ref<AccessSession>({issued:'',pendingIssue:false});
 const templateSession=ref<TemplateSession>({id:'',version:0,draft:null,pending:null,uncertain:false});
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
@@ -75,7 +78,7 @@ function logout() {
   ruleEdit.value = null;
   ruleDeletion.value = null;
   routingSession.value=newRoutingSession();
-  sourceSession.value={pending:null,credentials:null};accessSession.value={issued:'',pendingIssue:false};templateSession.value={id:'',version:0,draft:null,pending:null,uncertain:false};role.value='viewer';
+  sourceSession.value={pending:null,credentials:null};pullSession.value={pending:null,uncertainPoll:null};accessSession.value={issued:'',pendingIssue:false};templateSession.value={id:'',version:0,draft:null,pending:null,uncertain:false};role.value='viewer';
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -312,6 +315,7 @@ const rename = (id: string, name: string, expectedName: string) => mutate(async 
   devices.value = devices.value.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device);
 }, '设备名称已更新。');
 const enable = (id: string, enabled: boolean) => mutate(() => api(`devices/${id}/enabled`, 'PUT', { enabled }), enabled ? '已启用提醒。' : '已停用提醒。');
+function pullMessages(source:string){tab.value='inbox';void searchMessages({...emptySearch(),identity:source});}
 const poll = () => mutate(() => api('connectors/halo/poll', 'POST'), 'Halo 同步完成。');
 const importComment = (name: string) => mutate(() => api(`connectors/halo/comments/${encodeURIComponent(name)}/import`, 'POST'), '公开评论已导入；重复导入会合并到原消息。');
 const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST'), '已重新加入投递队列。');
@@ -402,7 +406,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @content-export="exportMetadata('messages',true)" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
-        <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
+        <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><PullPanel :api="api" :busy="busy" :session="pullSession" :mutate="mutate" @messages="pullMessages" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
         <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />

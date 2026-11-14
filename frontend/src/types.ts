@@ -84,6 +84,8 @@ export const deliveryNames: Record<string, string> = {
   read: '用户已读', failed: '投递失败', expired: '已结束', cancelled: '已取消',
 };
 export const errorNames: Record<string, string> = {
+  pull_configuration_changed:'来源配置已变化，请读取当前配置后再操作。',pull_version_conflict:'来源版本已变化，请核对当前状态。',pull_disabled:'来源已停用，请先启用。',pull_in_progress:'来源正在同步，请稍后核对结果。',pull_rate_limited:'拉取或测试过于频繁，请至少间隔一分钟。',pull_devices_missing:'请先登记该来源绑定的全部设备。',pull_provider_failed:'拉取失败，请检查网络、来源地址和供应商响应格式。',pull_interrupted:'拉取已中断，请核对最近同步。',pull_history_limit:'来源去重记录达到上限，请由管理员检查保留配置。',pull_failed:'同步未完成，请核对最近状态。',
+
   unauthorized: '管理令牌无效，请重新登录。', invalid_request: '请检查填写的内容。',
   export_too_large: '结果超过 5000 条，请缩小筛选范围后导出。',
   automation_version_conflict: '规则版本已变化，请核对并载入当前版本后再操作。',
@@ -154,3 +156,6 @@ export const errorNames: Record<string, string> = {
   ota_deployment_not_found: '升级记录不存在。', device_not_found: '设备不存在，请刷新设备列表。',
   device_name_conflict: '设备名称已被其他操作更新，请加载当前名称后重试。',
 };
+
+export interface PullSource { id:string;name:string;kind:'rss'|'weather';host:string;deviceIds:string[];intervalMinutes:number;configuration:string;enabled:boolean;version:number;baseline:boolean;lastAttemptAt:string|null;lastSuccessAt:string|null;lastError:string|null;lastReceived:number;state:string }
+export interface PullSession { pending: {id:string;expectedVersion:number;configuration:string;enabled:boolean}|null; uncertainPoll: {id:string;at:string}|null }

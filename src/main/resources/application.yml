@@ -44,6 +44,9 @@ nexus:
     tick-ms: 1000
     retry-seconds: 15
     max-attempts: 12
+  pull:
+    feeds-json: ${NEXUS_PULL_FEEDS_JSON:[]}
+    tick-ms: 30000
   halo:
     enabled: ${NEXUS_HALO_ENABLED:false}
     url: ${NEXUS_HALO_URL:}

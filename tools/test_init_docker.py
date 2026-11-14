@@ -55,6 +55,7 @@ class DockerInitializationTest(unittest.TestCase):
             self.assertEqual(env["NEXUS_DB_URL"], "jdbc:postgresql://postgres:5432/nexus")
             self.assertEqual(env["NEXUS_MQTT_URI"], "ssl://mqtt:8883")
             self.assertEqual(env["NEXUS_BIND_ADDRESS"], "0.0.0.0")
+            self.assertEqual(env["NEXUS_PULL_FEEDS_JSON"], "[]")
             for name in ("HALO", "AI", "MEMORY", "MEMORY_MCP", "BRIDGE", "RETENTION", "OTA", "GROWTH_SYNC"):
                 self.assertEqual(env[f"NEXUS_{name}_ENABLED"], "false")
             self.assertEqual(data.stat().st_mode & 0o777, 0o700)

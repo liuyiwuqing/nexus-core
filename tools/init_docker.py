@@ -66,7 +66,7 @@ def main():
             "NEXUS_MQTT_ALLOW_INSECURE": "false", "NEXUS_MQTT_CLIENT_ID": "nexus-core",
             "NEXUS_AUTH_TOKEN_FILE": "", "NEXUS_MEMORY_MCP_ENABLED": "false", "NEXUS_MEMORY_MCP_TOKEN": "",
             "NEXUS_RETENTION_ENABLED": "false", "NEXUS_OTA_ENABLED": "false", "NEXUS_GROWTH_SYNC_ENABLED": "false",
-            "NEXUS_HALO_URL": "", "NEXUS_BRIDGE_CONFIG_FILE": "",
+            "NEXUS_HALO_URL": "", "NEXUS_BRIDGE_CONFIG_FILE": "", "NEXUS_PULL_FEEDS_JSON": "[]",
         })
         for name in ("NEXUS_AI_CONFIG_FILE", "NEXUS_AI_CONFIG_FORMAT", "NEXUS_MQTT_BIND_ADDRESS"):
             env.pop(name, None)
