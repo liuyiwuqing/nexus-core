@@ -90,6 +90,56 @@ class ConsoleAutomationEditFlowTest {
         assertThat(request("PUT","automation/rules/"+id,unchanged,TOKEN).statusCode()).isEqualTo(200);
         assertThat(get("automation/rules/"+id).path("version").asInt()).isEqualTo(2);
     }
+    @Test void previewDoesNotCreateEventsRunsMessagesOrDeliveries() throws Exception {
+        String id=createDaily("只读预演",quietTime());
+        long messages=fixtures.queryForObject("SELECT count(*) FROM inbox_messages",Long.class);
+        String body="{\"expectedVersion\":1}";
+        var preview=request("POST","automation/rules/"+id+"/preview",body,TOKEN);
+        assertThat(preview.statusCode()).withFailMessage(preview.body()).isEqualTo(200);
+        var result=json.readTree(preview.body());
+        assertThat(result.path("dryRun").asBoolean()).isTrue();
+        assertThat(result.path("rule").path("ruleId").asText()).isEqualTo(id);
+        assertThat(result.path("rule").path("enabled").asBoolean()).isFalse();
+        assertThat(result.path("candidateDevices").asInt()).isGreaterThanOrEqualTo(0);
+        assertThat(fixtures.queryForObject("SELECT count(*) FROM inbox_messages",Long.class)).isEqualTo(messages);
+        assertThat(get("automation/runs?ruleId="+id).path("items")).isEmpty();
+        assertThat(request("POST","automation/rules/"+id+"/preview","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(409);
+        assertThat(request("POST","automation/rules/"+id+"/preview",body,null).statusCode()).isEqualTo(401);
+    }
+    @Test void deletePreservesHistoryAndCreationIdentityAndRejectsLaterMutations() throws Exception {
+        String key=UUID.randomUUID().toString(),definition=rule(key,"删除规则");
+        String id=json.readTree(request("POST","automation/rules",definition,TOKEN).body()).path("ruleId").asText();
+        String history=run(id,1,"failed");
+        String path="automation/rules/"+id+"?expectedVersion=1";
+        assertThat(request("DELETE",path,"",TOKEN).statusCode()).isEqualTo(204);
+        assertThat(request("DELETE",path,"",TOKEN).statusCode()).isEqualTo(204);
+        assertThat(get("automation/rules/"+id).path("deleted").asBoolean()).isTrue();
+        assertThat(java.util.stream.StreamSupport.stream(get("automation/rules").path("items").spliterator(),false).noneMatch(r->r.path("ruleId").asText().equals(id))).isTrue();
+        assertThat(get("automation/runs?ruleId="+id).path("items").get(0).path("runId").asText()).isEqualTo(history);
+        assertThat(request("PUT","automation/rules/"+id+"/enabled","{\"enabled\":true,\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(410);
+        assertThat(request("PUT","automation/rules/"+id,editBody(2,"不能修改"),TOKEN).statusCode()).isEqualTo(410);
+        assertThat(request("POST","automation/rules/"+id+"/preview","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(410);
+        var replay=request("POST","automation/rules",definition,TOKEN);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(replay.body()).path("ruleId").asText()).isEqualTo(id);
+    }
+    @Test void deletionChecksVersionEnabledAndInFlightWork() throws Exception {
+        String id=createDaily("删除保护",quietTime()),path="automation/rules/"+id;
+        assertThat(request("DELETE",path+"?expectedVersion=2","",TOKEN).statusCode()).isEqualTo(409);
+        assertThat(request("DELETE",path+"?expectedVersion=0","",TOKEN).statusCode()).isEqualTo(400);
+        assertThat(request("DELETE",path,"",TOKEN).statusCode()).isEqualTo(400);
+        assertThat(request("DELETE",path+"?expectedVersion=1","",null).statusCode()).isEqualTo(401);
+        assertThat(request("PUT",path+"/enabled","{\"enabled\":true,\"expectedVersion\":1}",TOKEN).statusCode()).isEqualTo(204);
+        assertThat(request("DELETE",path+"?expectedVersion=2","",TOKEN).statusCode()).isEqualTo(409);
+        assertThat(request("PUT",path+"/enabled","{\"enabled\":false,\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(204);
+        String active=run(id,3,"executing");
+        assertThat(request("DELETE",path+"?expectedVersion=3","",TOKEN).statusCode()).isEqualTo(409);
+        fixtures.update("UPDATE automation_runs SET state='failed' WHERE run_id=?",UUID.fromString(active));
+        run(id,3,"pending");
+        assertThat(request("DELETE",path+"?expectedVersion=3","",TOKEN).statusCode()).isEqualTo(204);
+        assertThat(fixtures.queryForObject("SELECT count(*) FROM automation_runs WHERE rule_id=? AND state='pending'",Integer.class,UUID.fromString(id))).isZero();
+        assertThat(request("POST","automation/runs/"+active+"/retry","",TOKEN).statusCode()).isEqualTo(409);
+    }
     // Keep non-scheduler cases outside the due window; each case owns distinct rule IDs.
     String quietTime() { return java.time.LocalTime.now(java.time.ZoneOffset.UTC).plusHours(6).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")); }
     String createDaily(String name,String time) throws Exception {

@@ -18,6 +18,7 @@ public class AutomationController {
     public record Rule(@NotBlank @Size(max=80) String name, @NotBlank String trigger, @NotBlank String action,
                        String localTime, String zone, String title, String content, UUID requestKey) {}
     public record Enabled(boolean enabled, @Min(1) Integer expectedVersion) {}
+    public record Preview(@NotNull @Min(1) Integer expectedVersion) {}
     public record Edit(@NotBlank @Size(max=80) String name, @NotNull @Min(1) Integer expectedVersion,
                        String localTime, String zone, String title, String content) {}
     @GetMapping("/rules") Map<String,Object> rules() { return Map.of("items", automation.rules()); }
@@ -31,6 +32,12 @@ public class AutomationController {
     }
     @PutMapping("/rules/{id}/enabled") ResponseEntity<Void> enable(@PathVariable UUID id, @Valid @RequestBody Enabled enabled) {
         automation.enable(id, enabled.enabled(), enabled.expectedVersion()); return ResponseEntity.noContent().build();
+    }
+    @DeleteMapping("/rules/{id}") ResponseEntity<Void> delete(@PathVariable UUID id, @RequestParam @Min(1) int expectedVersion) {
+        automation.delete(id, expectedVersion); return ResponseEntity.noContent().build();
+    }
+    @PostMapping("/rules/{id}/preview") Map<String,Object> preview(@PathVariable UUID id, @Valid @RequestBody Preview input) {
+        return automation.preview(id, input.expectedVersion());
     }
     @GetMapping("/runs") Map<String,Object> runs(@RequestParam(required=false) UUID ruleId) { return Map.of("items", automation.runs(ruleId)); }
     @PostMapping("/runs/{id}/retry") ResponseEntity<Void> retry(@PathVariable UUID id) { automation.retry(id); return ResponseEntity.accepted().build(); }

@@ -44,7 +44,9 @@ export interface DeliveryHistory extends Page<{
 }> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
 export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string }
-export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string }
+export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
+export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
+export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateDevices: number; block: string; asOf: string }
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
@@ -78,6 +80,7 @@ export const errorNames: Record<string, string> = {
   automation_version_conflict: '规则版本已变化，请核对并载入当前版本后再操作。',
   invalid_rule_snapshot: '未能读取有效的规则定义，请重试核对。',
   rule_enabled: '请先停用规则，再编辑。', rule_execution_in_progress: '规则仍有正在入队的任务，请等待完成后再编辑。',
+  rule_deleted: '规则已删除，执行历史仍保留。', no_enabled_devices: '当前没有启用的设备。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',
   halo_not_configured: '请先在本机配置 Halo 只读令牌并启用接入。',
   halo_poll_in_progress: '正在同步，请稍后查看结果。',

@@ -1,6 +1,7 @@
 package dev.nexus.core.automation;
 
 import dev.nexus.core.events.EventJournal;
+import dev.nexus.core.ai.CommentModel;
 import dev.nexus.core.web.ApiRows;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -30,8 +31,10 @@ public class AutomationService {
     private final EventJournal events;
     private final ObjectMapper json;
     private final Map<String,AutomationAction> actions;
-    public AutomationService(JdbcTemplate db, TransactionTemplate transaction, EventJournal events, ObjectMapper json, List<AutomationAction> actions) {
+    private final CommentModel model;
+    public AutomationService(JdbcTemplate db, TransactionTemplate transaction, EventJournal events, ObjectMapper json, List<AutomationAction> actions, CommentModel model) {
         this.db = db; this.transaction = transaction; this.events = events; this.json = json;
+        this.model = model;
         this.actions = actions.stream().collect(Collectors.toUnmodifiableMap(AutomationAction::id, Function.identity()));
     }
     public record Created(UUID ruleId,boolean created) {}
@@ -69,8 +72,8 @@ public class AutomationService {
     }
     private static final String RULE_VIEW = """
         SELECT r.rule_id AS "ruleId",r.name,r.trigger_type AS trigger,r.action_id AS action,r.enabled,r.version,
-            r.arguments::text AS arguments,r.created_at AS "createdAt",
-            CASE WHEN r.enabled THEN 'rule_enabled'
+            r.arguments::text AS arguments,r.created_at AS "createdAt",(r.deleted_at IS NOT NULL) AS deleted,
+            CASE WHEN r.deleted_at IS NOT NULL THEN 'rule_deleted' WHEN r.enabled THEN 'rule_enabled'
                 WHEN EXISTS(SELECT 1 FROM automation_runs x WHERE x.rule_id=r.rule_id AND x.state='executing') THEN 'rule_execution_in_progress'
                 ELSE '' END AS "editBlock"
         FROM automation_rules r
@@ -81,7 +84,7 @@ public class AutomationService {
         rows.forEach(row -> row.put("canEdit", "".equals(row.get("editBlock"))));
         return ApiRows.normalize(rows);
     }
-    public List<Map<String,Object>> rules() { return ruleRows(" ORDER BY r.created_at DESC LIMIT 100"); }
+    public List<Map<String,Object>> rules() { return ruleRows(" WHERE r.deleted_at IS NULL ORDER BY r.created_at DESC LIMIT 100"); }
     public Map<String,Object> rule(UUID id) {
         var rows = ruleRows(" WHERE r.rule_id=?", id);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -89,9 +92,10 @@ public class AutomationService {
     }
     @Transactional
     public Map<String,Object> edit(UUID id, int expectedVersion, String name, String time, String zone, String title, String content) {
-        var rows = db.queryForList("SELECT name,trigger_type,action_id,enabled,version,arguments::text AS arguments FROM automation_rules WHERE rule_id=? FOR UPDATE", id);
+        var rows = db.queryForList("SELECT name,trigger_type,action_id,enabled,version,deleted_at,arguments::text AS arguments FROM automation_rules WHERE rule_id=? FOR UPDATE", id);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         var current = rows.getFirst();
+        if (current.get("deleted_at") != null) throw new ResponseStatusException(HttpStatus.GONE, "rule_deleted");
         var arguments = arguments((String)current.get("trigger_type"), (String)current.get("action_id"), time, zone, title, content);
         boolean same = name.equals(current.get("name")) && json.valueToTree(arguments).equals(json.readTree((String)current.get("arguments")));
         int version = (Integer)current.get("version");
@@ -109,14 +113,43 @@ public class AutomationService {
     }
     @Transactional
     public void enable(UUID rule, boolean enabled, Integer expectedVersion) {
-        var rows = db.queryForList("SELECT enabled,version FROM automation_rules WHERE rule_id=? FOR UPDATE", rule);
+        var rows = db.queryForList("SELECT enabled,version,deleted_at FROM automation_rules WHERE rule_id=? FOR UPDATE", rule);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if (rows.getFirst().get("deleted_at") != null) throw new ResponseStatusException(HttpStatus.GONE, "rule_deleted");
         if (expectedVersion != null && !expectedVersion.equals(rows.getFirst().get("version")) &&
             !((Integer)rows.getFirst().get("version") == (long)expectedVersion + 1 && rows.getFirst().get("enabled").equals(enabled)))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "automation_version_conflict");
         if (rows.getFirst().get("enabled").equals(enabled)) return;
         db.update("UPDATE automation_rules SET enabled=?,version=version+1,enabled_at=CASE WHEN ? THEN now() ELSE enabled_at END WHERE rule_id=?", enabled, enabled, rule);
         if (!enabled) db.update("UPDATE automation_runs SET state='cancelled',last_error='rule_disabled',completed_at=now() WHERE rule_id=? AND state='pending'", rule);
+    }
+    @Transactional
+    public void delete(UUID id, int expectedVersion) {
+        if (expectedVersion < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_request");
+        var rows = db.queryForList("SELECT enabled,version,deleted_at FROM automation_rules WHERE rule_id=? FOR UPDATE", id);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        var row = rows.getFirst();
+        int version = (Integer) row.get("version");
+        if (row.get("deleted_at") != null && version == (long) expectedVersion + 1) return;
+        if (row.get("deleted_at") != null) throw new ResponseStatusException(HttpStatus.GONE, "rule_deleted");
+        if (version != expectedVersion) throw new ResponseStatusException(HttpStatus.CONFLICT, "automation_version_conflict");
+        if (Boolean.TRUE.equals(row.get("enabled"))) throw new ResponseStatusException(HttpStatus.CONFLICT, "rule_enabled");
+        if (Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM automation_runs WHERE rule_id=? AND state='executing')", Boolean.class, id)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "rule_execution_in_progress");
+        db.update("UPDATE automation_rules SET deleted_at=now(),version=version+1 WHERE rule_id=?", id);
+        db.update("UPDATE automation_runs SET state='cancelled',last_error='rule_deleted',completed_at=now() WHERE rule_id=? AND state='pending'", id);
+    }
+    @Transactional(readOnly=true, isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public Map<String,Object> preview(UUID id, int expectedVersion) {
+        var current = rule(id);
+        if (Boolean.TRUE.equals(current.get("deleted"))) throw new ResponseStatusException(HttpStatus.GONE, "rule_deleted");
+        if (!Integer.valueOf(expectedVersion).equals(current.get("version")))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "automation_version_conflict");
+        boolean notice = "notify_device".equals(current.get("action"));
+        int candidates = notice ? db.queryForObject("SELECT count(*) FROM devices WHERE enabled", Integer.class) : 0;
+        String block = notice ? (candidates == 0 ? "no_enabled_devices" : "") : (model.configured() ? "" : "ai_not_configured");
+        return Map.of("dryRun", true, "rule", current, "candidateDevices", candidates, "block", block,
+                      "asOf", Instant.now().toString());
     }
     public List<Map<String,Object>> runs(UUID rule) {
         var rows = db.queryForList("""

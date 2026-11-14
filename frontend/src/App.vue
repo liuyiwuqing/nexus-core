@@ -9,7 +9,7 @@ import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
-import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
+import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
@@ -20,6 +20,7 @@ const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain 
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
 const ruleEdit = ref<RuleEditSession | null>(null);
+const ruleDeletion = ref<RuleDeletion | null>(null);
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
@@ -52,6 +53,7 @@ function logout() {
   messageSubmission.value = null; messageUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   ruleEdit.value = null;
+  ruleDeletion.value = null;
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -193,7 +195,7 @@ async function createRule(input: Omit<RuleSubmission,'requestKey'>): Promise<boo
   }, '规则已保存；是否启用请在列表中核对。');
 }
 function beginRuleEdit(rule: AutomationRule) {
-  if (busy.value || ruleSubmission.value || !rule.canEdit) return;
+  if (busy.value || ruleSubmission.value || ruleDeletion.value || !rule.canEdit) return;
   ruleEdit.value = { rule, draft: { expectedVersion: rule.version, name: rule.name,
     ...(rule.trigger === 'schedule.daily' ? rule.arguments : {}) }, pending: null, uncertain: false, observed: null };
 }
@@ -203,8 +205,28 @@ function closeRuleEdit() {
   if (ruleEdit.value?.uncertain) notice.value = '编辑已关闭；先前可能已保存的修改不会撤回。';
   ruleEdit.value = null;
 }
+function beginRuleDelete(rule: AutomationRule) {
+  if (!busy.value && !ruleEdit.value && !ruleSubmission.value && rule.canEdit)
+    ruleDeletion.value = { rule, uncertain: false };
+}
+function closeRuleDelete() { if (!busy.value) ruleDeletion.value = null; }
+async function deleteRule(checkOnly = false): Promise<boolean> {
+  const session = ruleDeletion.value, currentEpoch = epoch;
+  if (!session || busy.value) return false;
+  return mutate(async () => {
+    try {
+      if (!checkOnly) await api(`automation/rules/${session.rule.ruleId}?expectedVersion=${session.rule.version}`, 'DELETE');
+      const current = await api<AutomationRule>(`automation/rules/${session.rule.ruleId}`);
+      if (!current || current.ruleId !== session.rule.ruleId || !current.deleted) throw new Error('Deletion not confirmed');
+      if (currentEpoch === epoch) ruleDeletion.value = null;
+    } catch (failure) {
+      if (currentEpoch === epoch) session.uncertain = true;
+      throw failure;
+    }
+  }, '规则已删除，执行历史保留。');
+}
 function ruleMatchesEdit(rule: AutomationRule, input: RuleEditInput) {
-  return rule.name === input.name && (rule.trigger === 'message.received' ||
+  return !rule.deleted && rule.name === input.name && (rule.trigger === 'message.received' ||
     ['localTime', 'zone', 'title', 'content'].every(key => rule.arguments[key] === input[key as keyof RuleEditInput]));
 }
 async function saveRuleEdit(): Promise<boolean> {
@@ -345,7 +367,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
-        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" />
+        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
       </div>
     </div>
   </div>
