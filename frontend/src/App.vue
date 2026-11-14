@@ -9,7 +9,7 @@ import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
-import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
+import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
@@ -19,6 +19,7 @@ const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = r
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
+const ruleEdit = ref<RuleEditSession | null>(null);
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
@@ -50,6 +51,7 @@ function logout() {
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
   messageSubmission.value = null; messageUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
+  ruleEdit.value = null;
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
@@ -190,6 +192,60 @@ async function createRule(input: Omit<RuleSubmission,'requestKey'>): Promise<boo
     }
   }, '规则已保存；是否启用请在列表中核对。');
 }
+function beginRuleEdit(rule: AutomationRule) {
+  if (busy.value || ruleSubmission.value || !rule.canEdit) return;
+  ruleEdit.value = { rule, draft: { expectedVersion: rule.version, name: rule.name,
+    ...(rule.trigger === 'schedule.daily' ? rule.arguments : {}) }, pending: null, uncertain: false, observed: null };
+}
+function changeRuleEdit(draft: RuleEditInput) { if (ruleEdit.value && !ruleEdit.value.pending && !busy.value) ruleEdit.value.draft = draft; }
+function closeRuleEdit() {
+  if (busy.value) return;
+  if (ruleEdit.value?.uncertain) notice.value = '编辑已关闭；先前可能已保存的修改不会撤回。';
+  ruleEdit.value = null;
+}
+function ruleMatchesEdit(rule: AutomationRule, input: RuleEditInput) {
+  return rule.name === input.name && (rule.trigger === 'message.received' ||
+    ['localTime', 'zone', 'title', 'content'].every(key => rule.arguments[key] === input[key as keyof RuleEditInput]));
+}
+async function saveRuleEdit(): Promise<boolean> {
+  const session = ruleEdit.value;
+  if (!session || busy.value) return false;
+  const currentEpoch = epoch, wasUncertain = session.uncertain;
+  const input = session.pending ?? { ...session.draft };
+  session.pending = input;
+  return mutate(async () => {
+    try {
+      const saved = await api<AutomationRule>(`automation/rules/${session.rule.ruleId}`, 'PUT', input);
+      if (!saved || saved.ruleId !== session.rule.ruleId || saved.trigger !== session.rule.trigger || saved.action !== session.rule.action || ![input.expectedVersion, input.expectedVersion + 1].includes(saved.version) || saved.enabled !== false || !ruleMatchesEdit(saved, input))
+        throw new Error('Invalid edit acknowledgment');
+      if (currentEpoch === epoch && ruleEdit.value === session) ruleEdit.value = null;
+    } catch (failure) {
+      if (currentEpoch === epoch && ruleEdit.value === session) {
+        const rejected = failure instanceof ApiFailure && failure.status >= 400 && failure.status < 500 && failure.status !== 408;
+        if (rejected && !wasUncertain) session.pending = null;
+        session.uncertain = !rejected || wasUncertain;
+      }
+      throw failure;
+    }
+  }, '规则已保存，保持停用；重新启用后生效。');
+}
+async function checkRuleEdit(reload = false): Promise<boolean> {
+  const session = ruleEdit.value;
+  if (!session || busy.value) return false;
+  const currentEpoch = epoch;
+  return mutate(async () => {
+    const current = await api<AutomationRule>(`automation/rules/${session.rule.ruleId}`);
+    if (currentEpoch !== epoch || ruleEdit.value !== session) return;
+    if (!current || current.ruleId !== session.rule.ruleId || !Number.isInteger(current.version) || current.version < 1 || current.trigger !== session.rule.trigger || current.action !== session.rule.action || typeof current.name !== 'string' || typeof current.enabled !== 'boolean' || !current.arguments)
+      throw new ApiFailure(502, 'invalid_rule_snapshot');
+    if (reload) {
+      // This is an explicit discard/load action, never a polling overwrite of the draft.
+      ruleEdit.value = { rule: current, draft: { expectedVersion: current.version, name: current.name,
+        ...(current.trigger === 'schedule.daily' ? current.arguments : {}) }, pending: null, uncertain: false, observed: null };
+    } else if (session.pending && current.version >= session.pending.expectedVersion && ruleMatchesEdit(current, session.pending)) ruleEdit.value = null;
+    else session.observed = current;
+  }, reload ? '已载入当前版本。' : session.pending ? '已核对当前规则，请以当前定义和启停状态为准。' : '已读取当前规则。');
+}
 const markRead = (id: string) => mutate(() => api(`messages/${id}/read`, 'POST'), '已标记已读。');
 const register = (deviceId: string, name: string) => mutate(() => api('devices', 'POST', { deviceId, name }), '设备已登记。');
 const rename = (id: string, name: string, expectedName: string) => mutate(async () => {
@@ -289,7 +345,7 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport()
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
         <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
-        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" />
+        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" />
       </div>
     </div>
   </div>

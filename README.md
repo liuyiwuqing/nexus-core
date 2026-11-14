@@ -14,7 +14,7 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 | AI | 公开状态二次核验、摘要/分类/重要性/回复草稿、持久队列、失败重试 | 本机已有兼容模型真实调用通过；草稿不会发送 |
 | 记忆 | 显式保存、固定目录检索、源复核/失效删除、管理页及独立 MCP/stdio 工具 | HTTP/PostgreSQL 与浏览器夹具验证；默认关闭，真实身份/权限/删除及语音接入待验收 |
 | 工具 | 固定工具目录、参数校验、确认绑定、持久审计、未知结果核对 | 真实 Python Bridge 进程测试；本机只启用查询能力 |
-| 自动化 | 新公开评论→分析队列；每日定时→设备消息；启停、失败重试、时区、每日去重 | 真实数据库集成测试；规则默认停用 |
+| 自动化 | 新公开评论→分析队列；每日定时→设备消息；停用后编辑、版本保护、启停、失败重试、时区、每日去重 | 真实数据库集成测试；规则默认停用 |
 | 成长 | 服务端专注计时、经验/金币/亲密度、等级、历史、并发单次结算；设备成长只读镜像 | HTTP/数据库/MQTT 与实际 C producer；两个档案独立结算，见 [同步说明](docs/growth-sync.md) |
 
 此版本没有接管小智 ASR/聊天/TTS，也没有接入邮件、私信、录音、iPhone、Home Assistant 或社交平台私有 API。
@@ -152,6 +152,8 @@ python3 tools/upgrade_broker_policy.py --apply
 
 自动化目前仅支持两种明确规则：新公开评论进入分析队列、每日定时生成设备提醒。新规则默认停用；启用评论规则只处理之后的新事件。每日规则按 IANA 时区计算，每日最多一次，启动后补偿当天最近两小时内的提醒；DST 缺失时刻顺延、重复时刻按日期去重。停用会取消尚未开始的任务，已开始的工作可能完成。“已加入队列”不是 AI 完成、设备已展示或用户已读。规则没有任意脚本、邮件发送或高风险工具自动执行能力。
 
+规则停用且没有正在入队的任务后可编辑；保存核对原版本并保持停用，历史与原创建键保留。页面支持草稿保留、原版本重试和只读核对，不自动覆盖并发修改或启用规则；同一本地日期已生成的提醒不因编辑而重发。接口及限制见[规则编辑](docs/console-automation-editing.md)。删除、测试运行和通用条件/动作仍未提供。
+
 成长页提供 1～180 分钟专注、取消和到时结算；服务端验证时间，页面关闭/服务重启不会丢失。每分钟 1 经验，单次最多 120、UTC 日最多 240，每 100 经验升一级。金币为本次经验/5 取整、最少 1、最多 20；有经验奖励时亲密度增加 1，上限 100。重复/并发结算只记一笔，取消不奖励。可选设备成长只读镜像显示各设备状态，两个档案独立结算；设备姿态、人设、商店和虚拟空间尚未联动。
 
 ## API 与验证
@@ -179,7 +181,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /memory`，`POST /messages/{id}/memory`，`POST /memory/search` | 记忆状态/删除计数、显式保存和受限检索 |
 | `GET /tools`，`GET/POST /tool-jobs`，`GET /tool-jobs/{id}` | 工具能力和执行请求 |
 | `POST /tool-jobs/{id}/{confirm,cancel,reconcile}`，`GET .../audit` | 确认、取消、核对、审计 |
-| `GET/POST /automation/rules`，`PUT .../{id}/enabled`，`GET /automation/runs`，`POST .../{id}/retry` | 自动化 |
+| `GET/POST /automation/rules`，`GET/PUT .../{id}`，`PUT .../{id}/enabled`，`GET /automation/runs`，`POST .../{id}/retry` | 自动化与停用后编辑；新页面启停附带版本 |
 | `GET /pet`，`GET/POST /pet/focus`，`POST /pet/focus/{id}/{complete,cancel}` | 成长与专注 |
 | `GET /pet/devices`，`GET /devices/{id}/growth` | 设备成长只读镜像、存储状态与新鲜度；默认关闭 |
 | `GET /status` | 数据库/Broker 健康；schemaVersion 指消息协议版本 |

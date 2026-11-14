@@ -44,6 +44,9 @@ export interface DeliveryHistory extends Page<{
 }> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
 export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string }
+export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string }
+export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string }
+export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
@@ -72,6 +75,9 @@ export const deliveryNames: Record<string, string> = {
 export const errorNames: Record<string, string> = {
   unauthorized: '管理令牌无效，请重新登录。', invalid_request: '请检查填写的内容。',
   export_too_large: '结果超过 5000 条，请缩小筛选范围后导出。',
+  automation_version_conflict: '规则版本已变化，请核对并载入当前版本后再操作。',
+  invalid_rule_snapshot: '未能读取有效的规则定义，请重试核对。',
+  rule_enabled: '请先停用规则，再编辑。', rule_execution_in_progress: '规则仍有正在入队的任务，请等待完成后再编辑。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',
   halo_not_configured: '请先在本机配置 Halo 只读令牌并启用接入。',
   halo_poll_in_progress: '正在同步，请稍后查看结果。',
@@ -106,7 +112,7 @@ export const errorNames: Record<string, string> = {
   job_not_confirmable: '请求已处理或已取消。', job_already_started: '请求已经开始，不能取消。', job_result_known: '请求结果已经确定。',
   idempotency_conflict: '请求编号对应的参数已变化。', application_not_allowed: '应用未在 Bridge 白名单中或本机未安装。',
   project_not_allowed: '项目未在 Bridge 白名单中。', project_status_failed: '无法读取项目 Git 状态。',
-  application_launch_failed: '系统未接受打开应用请求。', rule_disabled: '规则已停用。',
+  application_launch_failed: '系统未接受打开应用请求。', rule_disabled: '规则已停用。', rule_edited: '规则已修改，旧任务已取消。',
   analysis_needs_review: '分析已失败或被阻止，请先在消息中核验。',
   automation_not_retryable: '仅允许重试当前启用版本中的失败任务。', invalid_automation_rule: '请检查规则时间、时区和提醒内容。',
   comment_not_public_or_missing: '评论不存在或当前不满足公开条件。', invalid_comment_name: '评论 ID 格式不正确。',

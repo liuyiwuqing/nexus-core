@@ -37,14 +37,7 @@ public class AutomationService {
     public record Created(UUID ruleId,boolean created) {}
     @Transactional
     public Created create(String name, String trigger, String action, String time, String zone, String title, String content, UUID requestKey) {
-        Map<String,String> arguments;
-        if (trigger.equals("message.received") && action.equals("analyze_public_comment")) arguments = Map.of();
-        else if (trigger.equals("schedule.daily") && action.equals("notify_device")) {
-            if (time == null || !time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]") || zone == null || zone.isBlank() || title == null || title.isBlank() || title.length() > 160 || content == null || content.isBlank() || content.length() > 8192)
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
-            LocalTime.parse(time); ZoneId.of(zone);
-            arguments = Map.of("localTime", time, "zone", zone, "title", title, "content", content);
-        } else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
+        var arguments = arguments(trigger, action, time, zone, title, content);
         UUID id = UUID.randomUUID();
         String fingerprint=requestKey==null?null:creationHash(name,trigger,action,arguments);
         var inserted=db.queryForList("""
@@ -57,20 +50,70 @@ public class AutomationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
         return new Created((UUID)original.get("rule_id"),false);
     }
+    private Map<String,String> arguments(String trigger, String action, String time, String zone, String title, String content) {
+        Map<String,String> arguments;
+        if (trigger.equals("message.received") && action.equals("analyze_public_comment")) arguments = Map.of();
+        else if (trigger.equals("schedule.daily") && action.equals("notify_device")) {
+            if (time == null || !time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]") || zone == null || zone.isBlank() || title == null || title.isBlank() || title.length() > 160 || content == null || content.isBlank() || content.length() > 8192)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
+            try { LocalTime.parse(time); ZoneId.of(zone); }
+            catch (java.time.DateTimeException invalid) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule"); }
+            arguments = Map.of("localTime", time, "zone", zone, "title", title, "content", content);
+        } else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
+        return arguments;
+    }
     private String creationHash(String name,String trigger,String action,Map<String,String> arguments) {
         String canonical=json.writeValueAsString(new TreeMap<>(Map.of("name",name,"trigger",trigger,"action",action,"arguments",new TreeMap<>(arguments))));
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)));}
         catch(java.security.NoSuchAlgorithmException failure){throw new IllegalStateException(failure);}
     }
-    public List<Map<String,Object>> rules() {
-        var rows = db.queryForList("SELECT rule_id AS \"ruleId\",name,trigger_type AS trigger,action_id AS action,enabled,version,arguments::text AS arguments,created_at AS \"createdAt\" FROM automation_rules ORDER BY created_at DESC LIMIT 100");
+    private static final String RULE_VIEW = """
+        SELECT r.rule_id AS "ruleId",r.name,r.trigger_type AS trigger,r.action_id AS action,r.enabled,r.version,
+            r.arguments::text AS arguments,r.created_at AS "createdAt",
+            CASE WHEN r.enabled THEN 'rule_enabled'
+                WHEN EXISTS(SELECT 1 FROM automation_runs x WHERE x.rule_id=r.rule_id AND x.state='executing') THEN 'rule_execution_in_progress'
+                ELSE '' END AS "editBlock"
+        FROM automation_rules r
+        """;
+    private List<Map<String,Object>> ruleRows(String suffix, Object... parameters) {
+        var rows = db.queryForList(RULE_VIEW + suffix, parameters);
         rows.forEach(row -> row.put("arguments", json.readTree((String) row.get("arguments"))));
+        rows.forEach(row -> row.put("canEdit", "".equals(row.get("editBlock"))));
         return ApiRows.normalize(rows);
     }
-    @Transactional
-    public void enable(UUID rule, boolean enabled) {
-        var rows = db.queryForList("SELECT enabled FROM automation_rules WHERE rule_id=? FOR UPDATE", rule);
+    public List<Map<String,Object>> rules() { return ruleRows(" ORDER BY r.created_at DESC LIMIT 100"); }
+    public Map<String,Object> rule(UUID id) {
+        var rows = ruleRows(" WHERE r.rule_id=?", id);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        return rows.getFirst();
+    }
+    @Transactional
+    public Map<String,Object> edit(UUID id, int expectedVersion, String name, String time, String zone, String title, String content) {
+        var rows = db.queryForList("SELECT name,trigger_type,action_id,enabled,version,arguments::text AS arguments FROM automation_rules WHERE rule_id=? FOR UPDATE", id);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        var current = rows.getFirst();
+        var arguments = arguments((String)current.get("trigger_type"), (String)current.get("action_id"), time, zone, title, content);
+        boolean same = name.equals(current.get("name")) && json.valueToTree(arguments).equals(json.readTree((String)current.get("arguments")));
+        int version = (Integer)current.get("version");
+        if (version != expectedVersion && !(version == (long)expectedVersion + 1 && same && Boolean.FALSE.equals(current.get("enabled"))))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "automation_version_conflict");
+        if (Boolean.TRUE.equals(current.get("enabled"))) throw new ResponseStatusException(HttpStatus.CONFLICT, "rule_enabled");
+        if (Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM automation_runs WHERE rule_id=? AND state='executing')", Boolean.class, id)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "rule_execution_in_progress");
+        if (!same) {
+            // Only a stopped rule without a claimed run can change its shared execution arguments.
+            db.update("UPDATE automation_rules SET name=?,arguments=?::jsonb,version=version+1 WHERE rule_id=?", name, json.writeValueAsString(arguments), id);
+            db.update("UPDATE automation_runs SET state='cancelled',last_error='rule_edited',completed_at=now() WHERE rule_id=? AND state='pending'", id);
+        }
+        return rule(id);
+    }
+    @Transactional
+    public void enable(UUID rule, boolean enabled, Integer expectedVersion) {
+        var rows = db.queryForList("SELECT enabled,version FROM automation_rules WHERE rule_id=? FOR UPDATE", rule);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if (expectedVersion != null && !expectedVersion.equals(rows.getFirst().get("version")) &&
+            !((Integer)rows.getFirst().get("version") == (long)expectedVersion + 1 && rows.getFirst().get("enabled").equals(enabled)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "automation_version_conflict");
         if (rows.getFirst().get("enabled").equals(enabled)) return;
         db.update("UPDATE automation_rules SET enabled=?,version=version+1,enabled_at=CASE WHEN ? THEN now() ELSE enabled_at END WHERE rule_id=?", enabled, enabled, rule);
         if (!enabled) db.update("UPDATE automation_runs SET state='cancelled',last_error='rule_disabled',completed_at=now() WHERE rule_id=? AND state='pending'", rule);
