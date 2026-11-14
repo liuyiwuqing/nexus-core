@@ -39,8 +39,8 @@ public class AutomationService {
     }
     public record Created(UUID ruleId,boolean created) {}
     @Transactional
-    public Created create(String name, String trigger, String action, String time, String zone, String title, String content, UUID requestKey) {
-        var arguments = arguments(trigger, action, time, zone, title, content);
+    public Created create(String name, String trigger, String action, String time, String zone, String title, String content, UUID requestKey,Map<String,String> conditions) {
+        var arguments = arguments(trigger, action, time, zone, title, content,conditions);
         UUID id = UUID.randomUUID();
         String fingerprint=requestKey==null?null:creationHash(name,trigger,action,arguments);
         var inserted=db.queryForList("""
@@ -53,16 +53,32 @@ public class AutomationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,"idempotency_conflict");
         return new Created((UUID)original.get("rule_id"),false);
     }
-    private Map<String,String> arguments(String trigger, String action, String time, String zone, String title, String content) {
-        Map<String,String> arguments;
-        if (trigger.equals("message.received") && action.equals("analyze_public_comment")) arguments = Map.of();
-        else if (trigger.equals("schedule.daily") && action.equals("notify_device")) {
-            if (time == null || !time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]") || zone == null || zone.isBlank() || title == null || title.isBlank() || title.length() > 160 || content == null || content.isBlank() || content.length() > 8192)
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
-            try { LocalTime.parse(time); ZoneId.of(zone); }
-            catch (java.time.DateTimeException invalid) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule"); }
-            arguments = Map.of("localTime", time, "zone", zone, "title", title, "content", content);
-        } else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_automation_rule");
+    private Map<String,String> arguments(String trigger,String action,String time,String zone,String title,String content,Map<String,String> conditions) {
+        var arguments=new TreeMap<String,String>();
+        if(trigger.equals("message.received") && action.equals("analyze_public_comment")) { /* Public-only validation also runs at dispatch/enqueue. */ }
+        else if((trigger.equals("schedule.daily")||trigger.equals("message.received"))&&action.equals("notify_device")) {
+            if(title==null||title.isBlank()||title.length()>160||content==null||content.isBlank()||content.length()>8192)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+            arguments.put("title",title);arguments.put("content",content);
+            if(trigger.equals("schedule.daily")) {
+                if(time==null||!time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")||zone==null||zone.isBlank())
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+                try{LocalTime.parse(time);ZoneId.of(zone);}catch(java.time.DateTimeException invalid){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");}
+                arguments.put("localTime",time);arguments.put("zone",zone);
+            }
+        }else throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+        if(conditions!=null) {
+            if(conditions.size()>4||!List.of("source","eventType","keyword","priority").containsAll(conditions.keySet())||!trigger.equals("message.received")&&!conditions.isEmpty())
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+            for(var condition:conditions.entrySet()) {
+                String key=condition.getKey(),value=condition.getValue();
+                if(value==null||value.length()>(key.equals("keyword")?160:key.equals("source")?32:64))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+                if(value.isEmpty())continue;
+                if(!key.equals("keyword")&&!value.matches("[a-zA-Z0-9_.-]+")||key.equals("priority")&&!List.of("low","normal","high","critical").contains(value))
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_automation_rule");
+                arguments.put(key+"Filter",value);
+            }
+        }
         return arguments;
     }
     private String creationHash(String name,String trigger,String action,Map<String,String> arguments) {
@@ -91,12 +107,12 @@ public class AutomationService {
         return rows.getFirst();
     }
     @Transactional
-    public Map<String,Object> edit(UUID id, int expectedVersion, String name, String time, String zone, String title, String content) {
+    public Map<String,Object> edit(UUID id, int expectedVersion, String name, String time, String zone, String title, String content,Map<String,String> conditions) {
         var rows = db.queryForList("SELECT name,trigger_type,action_id,enabled,version,deleted_at,arguments::text AS arguments FROM automation_rules WHERE rule_id=? FOR UPDATE", id);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         var current = rows.getFirst();
         if (current.get("deleted_at") != null) throw new ResponseStatusException(HttpStatus.GONE, "rule_deleted");
-        var arguments = arguments((String)current.get("trigger_type"), (String)current.get("action_id"), time, zone, title, content);
+        var arguments = arguments((String)current.get("trigger_type"), (String)current.get("action_id"), time, zone, title, content,conditions);
         boolean same = name.equals(current.get("name")) && json.valueToTree(arguments).equals(json.readTree((String)current.get("arguments")));
         int version = (Integer)current.get("version");
         if (version != expectedVersion && !(version == (long)expectedVersion + 1 && same && Boolean.FALSE.equals(current.get("enabled"))))
@@ -214,9 +230,16 @@ public class AutomationService {
         db.update("""
             INSERT INTO automation_runs(run_id,rule_id,rule_version,event_id)
             SELECT gen_random_uuid(),r.rule_id,r.version,e.event_id FROM core_events e JOIN automation_rules r ON r.trigger_type=e.type
+            LEFT JOIN inbox_messages m ON m.message_id=(e.payload->>'messageId')::uuid
             WHERE r.enabled AND e.created_at>=r.enabled_at
-              AND ((e.type='message.received' AND e.source='halo' AND e.payload->>'dataClass'='public_comment')
+              AND ((e.type='message.received' AND m.content_purged_at IS NULL AND m.expires_at>now()
+                  AND ((r.action_id='analyze_public_comment' AND e.source='halo' AND e.payload->>'dataClass'='public_comment')
+                    OR (r.action_id='notify_device' AND e.source<>'automation')))
                 OR (e.type='schedule.daily' AND e.target_rule_id=r.rule_id AND e.rule_version=r.version))
+              AND (COALESCE(r.arguments->>'sourceFilter','')='' OR m.source=r.arguments->>'sourceFilter')
+              AND (COALESCE(r.arguments->>'eventTypeFilter','')='' OR m.event_type=r.arguments->>'eventTypeFilter')
+              AND (COALESCE(r.arguments->>'keywordFilter','')='' OR position((r.arguments->>'keywordFilter') IN (m.title||E'\\n'||m.content))>0)
+              AND (COALESCE(r.arguments->>'priorityFilter','')='' OR m.priority=r.arguments->>'priorityFilter')
               AND NOT EXISTS(SELECT 1 FROM automation_runs x WHERE x.rule_id=r.rule_id AND x.rule_version=r.version AND x.event_id=e.event_id)
             ORDER BY e.created_at LIMIT 100 ON CONFLICT(rule_id,rule_version,event_id) DO NOTHING
             """);

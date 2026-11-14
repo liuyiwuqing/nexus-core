@@ -226,10 +226,14 @@ async function createRule(input: Omit<RuleSubmission,'requestKey'>): Promise<boo
     }
   }, '规则已保存；是否启用请在列表中核对。');
 }
+function editableRule(rule:AutomationRule):RuleEditInput {
+  return {expectedVersion:rule.version,name:rule.name,
+    ...(rule.action==='notify_device'?{title:rule.arguments.title,content:rule.arguments.content}:{}),
+    ...(rule.trigger==='schedule.daily'?{localTime:rule.arguments.localTime,zone:rule.arguments.zone}:{conditions:Object.fromEntries(['source','eventType','keyword','priority'].map(k=>[k,rule.arguments[k+'Filter']||'']))})};
+}
 function beginRuleEdit(rule: AutomationRule) {
   if (busy.value || ruleSubmission.value || ruleDeletion.value || !rule.canEdit) return;
-  ruleEdit.value = { rule, draft: { expectedVersion: rule.version, name: rule.name,
-    ...(rule.trigger === 'schedule.daily' ? rule.arguments : {}) }, pending: null, uncertain: false, observed: null };
+  ruleEdit.value = { rule, draft: editableRule(rule), pending: null, uncertain: false, observed: null };
 }
 function changeRuleEdit(draft: RuleEditInput) { if (ruleEdit.value && !ruleEdit.value.pending && !busy.value) ruleEdit.value.draft = draft; }
 function closeRuleEdit() {
@@ -257,9 +261,11 @@ async function deleteRule(checkOnly = false): Promise<boolean> {
     }
   }, '规则已删除，执行历史保留。');
 }
-function ruleMatchesEdit(rule: AutomationRule, input: RuleEditInput) {
-  return !rule.deleted && rule.name === input.name && (rule.trigger === 'message.received' ||
-    ['localTime', 'zone', 'title', 'content'].every(key => rule.arguments[key] === input[key as keyof RuleEditInput]));
+function ruleMatchesEdit(rule:AutomationRule,input:RuleEditInput) {
+  return !rule.deleted&&rule.name===input.name&&
+    (rule.action!=='notify_device'||['title','content'].every(k=>rule.arguments[k]===input[k as 'title'|'content']))&&
+    (rule.trigger!=='schedule.daily'||['localTime','zone'].every(k=>rule.arguments[k]===input[k as 'localTime'|'zone']))&&
+    (rule.trigger!=='message.received'||['source','eventType','keyword','priority'].every(k=>(rule.arguments[k+'Filter']||'')===(input.conditions?.[k]||'')));
 }
 async function saveRuleEdit(): Promise<boolean> {
   const session = ruleEdit.value;
@@ -294,8 +300,7 @@ async function checkRuleEdit(reload = false): Promise<boolean> {
       throw new ApiFailure(502, 'invalid_rule_snapshot');
     if (reload) {
       // This is an explicit discard/load action, never a polling overwrite of the draft.
-      ruleEdit.value = { rule: current, draft: { expectedVersion: current.version, name: current.name,
-        ...(current.trigger === 'schedule.daily' ? current.arguments : {}) }, pending: null, uncertain: false, observed: null };
+      ruleEdit.value = { rule: current, draft: editableRule(current), pending: null, uncertain: false, observed: null };
     } else if (session.pending && current.version >= session.pending.expectedVersion && ruleMatchesEdit(current, session.pending)) ruleEdit.value = null;
     else session.observed = current;
   }, reload ? '已载入当前版本。' : session.pending ? '已核对当前规则，请以当前定义和启停状态为准。' : '已读取当前规则。');

@@ -10,8 +10,9 @@ const props = defineProps<{ api: Api; busy: boolean; pending: RuleSubmission | n
   editor: RuleEditSession | null; beginEdit: (rule: AutomationRule) => void; changeEdit: (input: RuleEditInput) => void; closeEdit: () => void; saveEdit: () => Promise<boolean>; checkEdit: (reload?: boolean) => Promise<boolean>;
   deletion: RuleDeletion | null; beginDelete: (rule: AutomationRule) => void; closeDelete: () => void; deleteRule: (checkOnly?: boolean) => Promise<boolean> }>();
 const rules = ref<AutomationRule[]>([]), runs = ref<Run[]>([]), error = ref(''), loading = ref(false), ai = ref(false);
-const compose = ref(!!props.pending), name = ref(props.pending?.name || ''), kind = ref(props.pending?.trigger === 'schedule.daily' ? 'daily' : 'comment'), time = ref(props.pending?.localTime || '08:00'), zone = ref(props.pending?.zone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai');
+const compose = ref(!!props.pending), name = ref(props.pending?.name || ''), kind = ref(props.pending?.trigger === 'schedule.daily' ? 'daily' : props.pending?.action==='notify_device'?'incoming':'comment'), time = ref(props.pending?.localTime || '08:00'), zone = ref(props.pending?.zone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai');
 const title = ref(props.pending?.title || ''), content = ref(props.pending?.content || '');
+const conditions=ref<Record<string,string>>({...props.pending?.conditions});
 const currentRules = computed(() => new Map(rules.value.map(rule => [rule.ruleId,rule])));
 const deleteName = ref(''), preview = ref<RulePreview | null>(null), previewError = ref(''), previewLoading = ref(false);
 const states: Record<string,string> = { pending: '等待处理', executing: '正在入队', enqueued: '已加入队列', failed: '入队失败', cancelled: '已取消' };
@@ -27,8 +28,8 @@ async function load(keepVisible = false) {
 }
 async function save() {
   if (!operate.value || loading.value || error.value || props.busy) return;
-  const body = kind.value === 'comment' ? { name: name.value, trigger: 'message.received', action: 'analyze_public_comment' }
-    : { name: name.value, trigger: 'schedule.daily', action: 'notify_device', localTime: time.value, zone: zone.value, title: title.value, content: content.value };
+  const body = kind.value === 'comment' ? { name: name.value, trigger: 'message.received', action: 'analyze_public_comment',conditions:conditions.value }
+    : { name: name.value, trigger: kind.value==='daily'?'schedule.daily':'message.received', action: 'notify_device', ...(kind.value==='daily'?{localTime:time.value,zone:zone.value}:{conditions:conditions.value}),title:title.value,content:content.value };
   if (await props.create(body) && alive) { compose.value = false; name.value = ''; await load(); }
 }
 async function enable(rule: AutomationRule) {
@@ -79,7 +80,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
 
 <template>
   <section>
-    <div class="section-heading"><div><h1>自动化</h1><p>公开评论分析与每日设备提醒</p></div><div class="management-actions"><button class="text-button" :disabled="loading || busy" @click="load()">刷新</button><button class="secondary" :disabled="!operate || busy || loading || !!error || !!editor || !!deletion" :aria-expanded="compose" @click="compose = !compose">{{ compose ? '收起' : '创建规则' }}</button></div></div>
+    <div class="section-heading"><div><h1>自动化</h1><p>消息条件、评论分析与每日提醒</p></div><div class="management-actions"><button class="text-button" :disabled="loading || busy" @click="load()">刷新</button><button class="secondary" :disabled="!operate || busy || loading || !!error || !!editor || !!deletion" :aria-expanded="compose" @click="compose = !compose">{{ compose ? '收起' : '创建规则' }}</button></div></div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取自动化状态…</p>
     <p v-if="uncertain" class="scope-note" role="status">规则保存结果尚未确认，重试保持同一规则和参数。刷新或关闭页面后请先核对规则列表。</p>
@@ -94,15 +95,17 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
     <p v-if="previewError" class="feedback error" role="alert">{{ previewError }} <button class="text-button" @click="closePreview">关闭</button></p>
     <section v-if="preview" class="inline-form rule-preview" aria-label="规则预演结果"><div class="record-heading"><h2>{{ preview.rule.name }} · 版本 {{ preview.rule.version }}</h2><button class="text-button" @click="closePreview">关闭预演</button></div><p>预演未执行动作，不创建消息、分析任务或投递。</p><p v-if="preview.rule.action === 'notify_device'">候选启用设备：{{ preview.candidateDevices }}。离线和免打扰由实际投递时的既有规则处理。</p><p v-else>仅分析符合公开性与授权检查的 Halo 新评论。</p><p v-if="preview.block" class="scope-note">{{ errorNames[preview.block] || '当前条件未满足。' }}</p><p v-if="!preview.rule.enabled" class="muted">规则当前停用，预演不会将其启用。</p></section>
     <form v-if="compose && !error" class="inline-form" @submit.prevent="save">
-      <div class="form-columns"><label>名称<input v-model="name" maxlength="80" required :disabled="!operate || busy || loading || !!pending" /></label><label>规则<select v-model="kind" :disabled="!operate || busy || loading || !!pending"><option value="comment">Halo 新公开评论 → AI 分析</option><option value="daily">每日定时 → 设备提醒</option></select></label></div>
-      <template v-if="kind === 'daily'"><div class="form-columns spaced"><label>时间<input v-model="time" type="time" required :disabled="!operate || busy || loading || !!pending" /></label><label>时区<input v-model="zone" required maxlength="100" :disabled="!operate || busy || loading || !!pending" /></label></div><label class="spaced">提醒标题<input v-model="title" maxlength="160" required :disabled="!operate || busy || loading || !!pending" /></label><label class="spaced">提醒内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="!operate || busy || loading || !!pending"></textarea></label></template>
-      <div class="form-footer"><span>{{ kind === 'daily' ? '每天最多一次；启动后补发最近两小时内的当日提醒。新规则默认停用。' : '新规则默认停用。' }}</span><button class="primary" :disabled="busy || loading">{{ uncertain ? '重试保存同一规则' : '保存规则' }}</button></div>
+      <div class="form-columns"><label>名称<input v-model="name" maxlength="80" required :disabled="!operate || busy || loading || !!pending" /></label><label>规则<select v-model="kind" :disabled="!operate || busy || loading || !!pending"><option value="comment">Halo 新公开评论 → AI 分析</option><option value="daily">每日定时 → 设备提醒</option><option value="incoming">新消息条件 → 设备提醒</option></select></label></div>
+      <template v-if="kind !== 'comment'"><div v-if="kind === 'daily'" class="form-columns spaced"><label>时间<input v-model="time" type="time" required :disabled="!operate || busy || loading || !!pending" /></label><label>时区<input v-model="zone" required maxlength="100" :disabled="!operate || busy || loading || !!pending" /></label></div><label class="spaced">提醒标题<input v-model="title" maxlength="160" required :disabled="!operate || busy || loading || !!pending" /></label><label class="spaced">提醒内容<textarea v-model="content" maxlength="8192" rows="3" required :disabled="!operate || busy || loading || !!pending"></textarea></label></template>
+      <div v-if="kind !== 'daily'" class="form-columns spaced"><label v-for="(label,key) in {source:'匹配来源',eventType:'匹配事件类型',keyword:'包含关键词',priority:'匹配优先级'}" :key="key">{{label}}<select v-if="key==='priority'" v-model="conditions[key]" :aria-label="label" :disabled="busy||loading||!!pending"><option value="">不限</option><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select><input v-else v-model="conditions[key]" :aria-label="label" :maxlength="key==='keyword'?160:key==='source'?32:64" :disabled="busy||loading||!!pending" placeholder="留空不限制"></label></div>
+      <div class="form-footer"><span>{{ kind === 'daily' ? '每天最多一次；启动后补发最近两小时内的当日提醒。新规则默认停用。' : '条件为同时满足。新规则默认停用；不处理自动化生成的提醒。' }}</span><button class="primary" :disabled="busy || loading">{{ uncertain ? '重试保存同一规则' : '保存规则' }}</button></div>
     </form>
     <div v-if="!rules.length && !loading && !error" class="empty-state"><h2>暂无自动化规则</h2><p>规则启用后才处理新事件。</p></div>
     <div v-else class="record-list">
       <article v-for="rule in rules" :key="rule.ruleId" class="record-card"><div class="record-heading"><h2>{{ rule.name }}</h2><label class="checkbox-label"><input type="checkbox" :checked="rule.enabled" :disabled="!operate || busy || loading || !!editor || !!deletion || !rule.enabled && rule.action === 'analyze_public_comment' && !ai" @change="enable(rule)" />启用</label></div>
-        <p class="muted">{{ rule.trigger === 'message.received' ? 'Halo 新公开评论 → AI 分析' : `每日 ${rule.arguments.localTime}（${rule.arguments.zone}）→ 设备提醒` }}</p>
-        <p v-if="rule.trigger === 'schedule.daily'" class="record-target">{{ rule.arguments.title }}</p>
+        <p class="muted">{{ rule.trigger === 'message.received' ? (rule.action==='notify_device'?'新消息条件 → 设备提醒':'Halo 新公开评论 → AI 分析') : `每日 ${rule.arguments.localTime}（${rule.arguments.zone}）→ 设备提醒` }}</p>
+        <p v-if="rule.action === 'notify_device'" class="record-target">{{ rule.arguments.title }}</p>
+        <p v-if="rule.trigger === 'message.received'" class="muted">匹配：{{rule.arguments.sourceFilter||'全部来源'}} · {{rule.arguments.eventTypeFilter||'全部事件'}}{{rule.arguments.keywordFilter?' · 包含 '+rule.arguments.keywordFilter:''}}{{rule.arguments.priorityFilter?' · '+rule.arguments.priorityFilter:''}}</p>
         <p v-if="rule.action === 'analyze_public_comment' && !ai" class="scope-note">AI 服务未配置。</p>
         <div class="management-actions spaced"><button :id="`edit-rule-${rule.ruleId}`" class="text-button" :disabled="!operate || busy || loading || !!pending || !!editor || !!deletion || !rule.canEdit" :title="errorNames[rule.editBlock] || '编辑已停用规则'" @click="edit(rule)">编辑</button><button class="text-button" :disabled="busy || loading || previewLoading || !!editor || !!deletion" @click="test(rule)">测试预演</button><button :id="`delete-rule-${rule.ruleId}`" class="text-button" :disabled="!operate || busy || loading || !!pending || !!editor || !!deletion || !rule.canEdit" @click="remove(rule)">删除</button><span v-if="rule.editBlock" class="muted">{{ errorNames[rule.editBlock] }}</span></div>
       </article>

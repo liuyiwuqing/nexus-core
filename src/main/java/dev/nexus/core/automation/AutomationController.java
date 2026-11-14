@@ -16,19 +16,19 @@ public class AutomationController {
     private final AutomationService automation;
     public AutomationController(AutomationService automation) { this.automation = automation; }
     public record Rule(@NotBlank @Size(max=80) String name, @NotBlank String trigger, @NotBlank String action,
-                       String localTime, String zone, String title, String content, UUID requestKey) {}
+                       String localTime, String zone, String title, String content, UUID requestKey, Map<String,String> conditions) {}
     public record Enabled(boolean enabled, @Min(1) Integer expectedVersion) {}
     public record Preview(@NotNull @Min(1) Integer expectedVersion) {}
     public record Edit(@NotBlank @Size(max=80) String name, @NotNull @Min(1) Integer expectedVersion,
-                       String localTime, String zone, String title, String content) {}
+                       String localTime, String zone, String title, String content, Map<String,String> conditions) {}
     @GetMapping("/rules") Map<String,Object> rules() { return Map.of("items", automation.rules()); }
     @GetMapping("/rules/{id}") Map<String,Object> rule(@PathVariable UUID id) { return automation.rule(id); }
     @PostMapping("/rules") ResponseEntity<?> create(@Valid @RequestBody Rule rule) {
-        var result=automation.create(rule.name(), rule.trigger(), rule.action(), rule.localTime(), rule.zone(), rule.title(), rule.content(), rule.requestKey());
+        var result=automation.create(rule.name(), rule.trigger(), rule.action(), rule.localTime(), rule.zone(), rule.title(), rule.content(), rule.requestKey(),rule.conditions());
         return ResponseEntity.status(result.created()?201:200).body(Map.of("ruleId",result.ruleId()));
     }
     @PutMapping("/rules/{id}") Map<String,Object> edit(@PathVariable UUID id, @Valid @RequestBody Edit input) {
-        return automation.edit(id, input.expectedVersion(), input.name(), input.localTime(), input.zone(), input.title(), input.content());
+        return automation.edit(id, input.expectedVersion(), input.name(), input.localTime(), input.zone(), input.title(), input.content(),input.conditions());
     }
     @PutMapping("/rules/{id}/enabled") ResponseEntity<Void> enable(@PathVariable UUID id, @Valid @RequestBody Enabled enabled) {
         automation.enable(id, enabled.enabled(), enabled.expectedVersion()); return ResponseEntity.noContent().build();

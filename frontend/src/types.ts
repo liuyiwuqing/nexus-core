@@ -43,7 +43,7 @@ export interface DeliveryHistory extends Page<{
   attempts: number; lastError: string | null; nextAttemptAt: string; receivedAt: string | null; displayedAt: string | null; readAt: string | null;
 }> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
 export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
-export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string }
+export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
 export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
 export interface WebhookSource {id:string;name:string;enabled:boolean;version:number;deviceIds:string[];received:number;lastReceivedAt:string|null}
@@ -56,7 +56,7 @@ export interface TemplateSession {id:string;version:number;draft:TemplateDefinit
 export interface RouteRule {ruleId:string;version:number;deleted:boolean;definition:RouteDefinition}
 export interface RoutingSession {id:string;version:number;draft:RouteDefinition|null;pending:{expectedVersion:number;definition:RouteDefinition}|null;uncertain:boolean;test?:{requestKey:string;deviceIds:string[];title:string;content:string;priority:string;templateId?:string|null}|null;policy?:{mode:string;expectedVersion:number}|null}
 export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateDevices: number; block: string; asOf: string }
-export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string }
+export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
 export interface Overview {
