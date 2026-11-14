@@ -1,6 +1,6 @@
-# 消息与投递状态筛选
+# 消息、投递筛选与元数据导出
 
-2026-11-13。管理台消息页支持全部/未读/已读，投递页支持全部及现有八种投递状态。CONSOLE-03 的筛选只影响读取，没有新增数据库迁移；后续 CONSOLE-04 新增 `cancelled`、状态历史和受限取消，迁移/动作契约见[对应文档](console-delivery-history.md)。
+2026-11-14。消息支持状态、来源和收件时间，投递支持状态、设备 ID 和消息收件时间；同一组条件也用于元数据 CSV。CONSOLE-13 只增加读取与导出，没有数据库迁移。CONSOLE-04 的 `cancelled`、状态历史和受限取消见[对应文档](console-delivery-history.md)。
 
 ## HTTP 契约
 
@@ -8,23 +8,66 @@
 
 | 接口 | 可选参数 | 有效值 |
 | --- | --- | --- |
-| `GET /api/v1/messages` | `readStatus` | `read`、`unread` |
-| `GET /api/v1/deliveries` | `status` | `pending`、`sent`、`received`、`displayed`、`read`、`failed`、`expired`、`cancelled` |
+| `GET /api/v1/messages`、`/messages/export` | `readStatus` | `read`、`unread` |
+| 同上 | `source` | 精确匹配，`[a-zA-Z0-9_.-]{1,32}`，如 `halo`、`manual` |
+| `GET /api/v1/deliveries`、`/deliveries/export` | `status` | `pending`、`sent`、`received`、`displayed`、`read`、`failed`、`expired`、`cancelled` |
+| 同上 | `deviceId` | 精确匹配，`[a-zA-Z0-9_-]{1,40}` |
+| 以上四个接口 | `receivedFrom`、`receivedBefore` | 带显式时区的 ISO 日期时间，年份 1–9999；开始包含、截止不包含 |
 
-省略参数表示全部，保持既有调用；空字符串、`all` 或未知值返回 400，未鉴权仍返回 401。行与总数使用同一筛选谓词，`total` 是筛选后的总数；超出末页返回空 `items`、保留实际 `total` 和请求页码，不在服务端重写页码。两次 SQL 查询不提供跨并发写入的快照保证。
+表中接口均以 `/api/v1` 为前缀。省略参数表示不限制该维度，保持既有调用。空字符串、非法身份字符、未知状态、无时区或非法时间、开始不早于截止均返回 400；合法但不存在的来源/设备返回空结果。未鉴权或其他作用域令牌返回 401。
+
+所有时间条件均作用于 `inbox_messages.received_at`，即 CORE 收到消息的时间；不是来源创建时间、设备收到时间或 ACK 时间。只有一个边界也有效。URL 中 `+08:00` 的加号须编码为 `%2B`；页面按浏览器本地时间输入，再转换为带 `Z` 的 UTC 参数。
+
+行、总数与导出复用固定 SQL 谓词并绑定参数。`total` 是筛选后的总数；超出末页返回空 `items`、保留实际 `total` 和请求页码，不在服务端重写页码。列表的两次 SQL，以及列表和稍后导出的不同请求，不提供跨并发写入的共同快照保证。
 
 消息以 `read_at` 是否存在判定已读；投递读取原有 `status`，没有从发送次数或连接状态推断设备确认。投递“已结束”对应 `expired`，包括原有到期/停用/其他位置已读等原因，继续展示既有 `lastError`。
 
+## 元数据 CSV
+
+`GET /api/v1/messages/export`、`GET /api/v1/deliveries/export` 使用原管理员 Bearer，不新增角色或正文导出权限。读取当前条件的全部匹配行，不按 `page`/`size` 分页。最多 5000 行；查询第 5001 行后若超限返回 `409 {"error":"export_too_large"}`，要求缩小范围，不下载截断文件。空结果返回仅表头的 CSV，页面在结果为零时禁用导出。
+
+固定列及顺序：
+
+- 消息：`messageId,connectorId,source,eventType,priority,receivedAt,createdAt,expiresAt,readAt,readStatus,contentPurgedAt`。
+- 投递：`eventId,messageId,deviceId,status,attempts,messageReceivedAt,receivedAt,displayedAt,readAt,nextAttemptAt`。其中 `messageReceivedAt` 是上述筛选时间，`receivedAt` 是设备已保存时间。
+
+只导出仍保留的元数据；已清正文的消息仍可出现。不含标题、正文、摘要、发送者、原始 URL、payload、秘密或失败详情。UTF-8 BOM、CRLF、所有单元格双引号包裹，双引号翻倍；公式前缀 `= + - @`（包括前置空白/控制字符/BOM）以单引号中和，空值输出空单元格。时间输出为 UTC。响应含 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 和固定下载名 `messages-metadata.csv` / `deliveries-metadata.csv`。
+
+```bash
+curl --fail-with-body --get "$NEXUS_BASE_URL/api/v1/messages/export" \
+  -H "Authorization: Bearer $NEXUS_ADMIN_TOKEN" \
+  --data-urlencode 'source=manual' \
+  --data-urlencode 'readStatus=unread' \
+  --data-urlencode 'receivedFrom=2026-11-14T08:00:00Z' \
+  --data-urlencode 'receivedBefore=2026-11-14T09:00:00Z' \
+  --output messages-metadata.csv
+```
+
+请先核对 HTTP 退出状态，失败时输出文件可能是错误 JSON。
+
 ## 页面行为
 
-- 切换筛选时仅将对应列表回到第 1 页，重新读取筛选结果；翻页、刷新、轮询与切换导航保留当前条件。
+- 状态切换即时生效；来源/设备和时间通过“应用筛选”提交。应用或清空时将对应列表回到第 1 页；翻页、刷新、轮询与导航保留已应用条件。“清空筛选”同时清除状态、身份与时间。
 - 标记已读或重试后，仍使用当前条件。末页最后一项离开结果集时，根据新总数回到有效页并重新读取。
 - 切换条件后先清除旧行，分别呈现加载、失败与空结果；失败提供原有顶部重试，不用旧行或“无记录”冒充新结果。
-- 加载或操作期间禁用筛选与分页；退出登录重置条件，迟到的响应不能恢复旧会话。测试消息的待确认 ID/正文仍按[原规则](console-messages.md)保存在页面内存。
+- 草稿未应用、加载、读取失败、零结果或已有导出时禁用导出；日期倒置在页面提示且不发 HTTP。导出中禁用列表操作并暂停 App 轮询，重复点击只发一次；超限、HTTP 失败或无效 CSV 有明确错误，不自动重试。
+- 导航、退出或卸载取消在途导出，迟到响应不能下载文件；401 结束会话。退出重置所有条件。测试消息的待确认 ID/正文仍按[原规则](console-messages.md)保存在页面内存。
 
-来源/设备/时间筛选与导出仍待后续实现。状态时间线与受限取消另由 CONSOLE-04 提供，不改变筛选条件和分页规则。
+来源和设备按标识精确输入，不引入尚不存在的来源管理或全局设备选择器。正文导出、来源→设备路由和按消息批量取消仍未提供。
 
-## 验证
+## CONSOLE-13 验证
+
+`ConsoleMetadataExportFlowTest` 的 6 项实际 HTTP/独立 PostgreSQL 用例通过，覆盖组合状态、时区等价、收件边界、分页/越界、默认兼容、非法参数/鉴权、固定列/正文排除、清除后的元数据、CSV 引号/换行/公式前缀以及两类接口的 5001 行拒绝和恰好 5000 行成功。旧列表 3 项同时通过。旧实现先复现筛选计数错误及导出 404。
+
+配套 `bash tools/ci/test_metadata_export_ui.sh` 的实际 Vue/回环 RAM HTTP 专项 44 项通过，实际下载并读取消息/投递 CSV，覆盖当前页以外的筛选行、未应用/加载/空/失败状态、范围校验、恢复、导航/刷新、重复点击、迟到响应、401 和 390px。旧页面先失败于缺少来源控件。脚本修正重复下载覆盖同名文件、带空格选择器及复用旧页轮询影响初始化请求记录的问题后完整通过；这些调整没有改变产品源码。
+
+完整 `python3 tools/run_local.py build` 退出 0，Vue/类型检查、Maven verify/JAR 通过：85 条中 80 通过、5 条条件跳过、0 失败/错误。三个可选 C peer、真实模型与固定语音桥接仍跳过。当前 Java→固件 C 持久化/回执→Java 源码契约通过，其 SQL/传输边界仍为明确替身；没有生产迁移、真实消息、部署或实机结论。
+
+既有发送 33/管理记忆 38/OTA 22/成长 18/筛选 63/概览 17/时间线 62/工具规则 96 项再次通过，连同新增 44 项共 393 项浏览器检查，任务空间均关闭。JAR 的三份前端资源和 V14 与当前产物/源码逐字节一致。
+
+本项提交及远程 CI 另记[任务台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。旧 DEL-04 离线包保持原快照，不包含本次改动。
+
+## CONSOLE-03 历史验证
 
 `ConsoleListFilterFlowTest` 通过实际 HTTP 与独立 PostgreSQL 验证默认兼容、行/总数/分页、越界页、全部合法状态、非法值和鉴权，共 3 项通过。投递状态在隔离库中布置，断言通过 HTTP；该用例不声称设备已发送或已确认。
 

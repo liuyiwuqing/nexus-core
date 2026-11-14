@@ -1,6 +1,8 @@
 package dev.nexus.core.delivery;
 
 import dev.nexus.core.web.ApiRows;
+import dev.nexus.core.web.ConsoleListQuery;
+import dev.nexus.core.web.MetadataCsv;
 import dev.nexus.core.inbox.InboxService;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -114,15 +116,25 @@ public class DeliveryService {
         }
     }
 
-    public Map<String,Object> list(int page, int size, String status) {
-        String filter=" WHERE (?::text IS NULL OR d.status=?)";
+    public Map<String,Object> list(int page, int size, String status, String deviceId, String from, String before) {
+        var filter = ConsoleListQuery.deliveries(status, deviceId, from, before);
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
                    d.last_error AS "lastError",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",d.read_at AS "readAt",
                    d.next_attempt_at AS "nextAttemptAt",m.title,m.expires_at AS "expiresAt",
             """+"("+CAN_CANCEL+") AS \"canCancel\" FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)"+
-            filter+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", status, status, size, (page - 1) * size)),
-            "total", db.queryForObject("SELECT count(*) FROM deliveries d"+filter, Long.class, status, status), "page", page, "size", size);
+            filter.where()+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", filter.parameters(size, (page - 1) * size))),
+            "total", db.queryForObject("SELECT count(*) FROM deliveries d JOIN inbox_messages m USING(message_id)"+filter.where(), Long.class, filter.parameters()), "page", page, "size", size);
+    }
+
+    public List<Map<String,Object>> export(String status, String deviceId, String from, String before) {
+        var filter = ConsoleListQuery.deliveries(status, deviceId, from, before);
+        return db.queryForList("""
+            SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
+                m.received_at AS "messageReceivedAt",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",
+                d.read_at AS "readAt",d.next_attempt_at AS "nextAttemptAt"
+            FROM deliveries d JOIN inbox_messages m USING(message_id)
+            """+filter.where()+" ORDER BY m.received_at DESC,d.event_id LIMIT ?", filter.parameters(MetadataCsv.ROW_LIMIT + 1));
     }
 
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)

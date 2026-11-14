@@ -1,6 +1,8 @@
 package dev.nexus.core.inbox;
 
 import dev.nexus.core.web.ApiRows;
+import dev.nexus.core.web.ConsoleListQuery;
+import dev.nexus.core.web.MetadataCsv;
 import dev.nexus.core.events.EventJournal;
 import java.net.URI;
 import java.sql.Timestamp;
@@ -78,21 +80,30 @@ public class InboxService {
         return new IngestResult(id, true);
     }
 
-    public Map<String,Object> list(int page, int size, String readStatus) {
-        // HTTP 已校验枚举；这里只拼接固定谓词，列表和总数必须使用同一条件。
-        String filter=readStatus==null?"":" WHERE read_at IS "+("read".equals(readStatus)?"NOT NULL":"NULL");
+    public Map<String,Object> list(int page, int size, String readStatus, String source, String from, String before) {
+        var filter = ConsoleListQuery.messages(readStatus, source, from, before);
         List<Map<String,Object>> items = db.queryForList("""
             SELECT message_id AS "messageId",connector_id AS "connectorId",source,upstream_event_id AS "eventId",
                    event_type AS "eventType",title,content,summary,sender,original_url AS "originalUrl",priority,
                    created_at AS "createdAt",received_at AS "receivedAt",expires_at AS "expiresAt",read_at AS "readAt",
                    action_status AS "actionStatus",data_class AS "dataClass",metadata::text AS metadata,content_purged_at AS "contentPurgedAt"
-            FROM inbox_messages
-            """+filter+" ORDER BY received_at DESC,message_id LIMIT ? OFFSET ?", size, (page - 1) * size);
+            FROM inbox_messages m
+            """+filter.where()+" ORDER BY received_at DESC,message_id LIMIT ? OFFSET ?", filter.parameters(size, (page - 1) * size));
         items.forEach(row -> {
             row.put("readStatus", row.get("readAt") == null ? "unread" : "read");
             row.put("metadata", json.readTree((String) row.get("metadata")));
         });
-        return Map.of("items", ApiRows.normalize(items), "total", db.queryForObject("SELECT count(*) FROM inbox_messages"+filter, Long.class), "page", page, "size", size);
+        return Map.of("items", ApiRows.normalize(items), "total", db.queryForObject("SELECT count(*) FROM inbox_messages m"+filter.where(), Long.class, filter.parameters()), "page", page, "size", size);
+    }
+
+    public List<Map<String,Object>> export(String readStatus, String source, String from, String before) {
+        var filter = ConsoleListQuery.messages(readStatus, source, from, before);
+        return db.queryForList("""
+            SELECT message_id AS "messageId",connector_id AS "connectorId",source,event_type AS "eventType",priority,
+                received_at AS "receivedAt",created_at AS "createdAt",expires_at AS "expiresAt",read_at AS "readAt",
+                CASE WHEN read_at IS NULL THEN 'unread' ELSE 'read' END AS "readStatus",content_purged_at AS "contentPurgedAt"
+            FROM inbox_messages m
+            """+filter.where()+" ORDER BY received_at DESC,message_id LIMIT ?", filter.parameters(MetadataCsv.ROW_LIMIT + 1));
     }
 
     @Transactional

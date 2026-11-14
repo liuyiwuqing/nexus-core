@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import InboxPanel from './InboxPanel.vue';
 import DevicesPanel from './DevicesPanel.vue';
 import ConnectorsPanel from './ConnectorsPanel.vue';
@@ -9,7 +9,7 @@ import AutomationPanel from './AutomationPanel.vue';
 import PetPanel from './PetPanel.vue';
 import MemoryPanel from './MemoryPanel.vue';
 import OverviewPanel from './OverviewPanel.vue';
-import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab } from './types';
+import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
@@ -20,8 +20,12 @@ const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain 
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
 const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
+const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
+const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
+const exporting = ref<'messages' | 'deliveries' | null>(null);
 const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
+let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
 class ApiFailure extends Error { constructor(readonly status: number, code: string) { super(errorNames[code] || `请求失败（HTTP ${status}）`); } }
 
@@ -40,12 +44,25 @@ async function api<T>(path: string, method = 'GET', body?: unknown, signal?: Abo
 }
 
 function logout() {
+  cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
   messageSubmission.value = null; messageUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
+  messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
+}
+
+function querySuffix(kind: 'messages' | 'deliveries'): string {
+  const search = kind === 'messages' ? messageSearch.value : deliverySearch.value;
+  const state = kind === 'messages' ? messageReadStatus.value : deliveryStatus.value;
+  const query = new URLSearchParams();
+  if (state) query.set(kind === 'messages' ? 'readStatus' : 'status', state);
+  if (search.identity) query.set(kind === 'messages' ? 'source' : 'deviceId', search.identity);
+  if (search.receivedFrom) query.set('receivedFrom', new Date(search.receivedFrom).toISOString());
+  if (search.receivedBefore) query.set('receivedBefore', new Date(search.receivedBefore).toISOString());
+  return query.size ? '&' + query.toString() : '';
 }
 
 async function refresh(clearFeedback = false): Promise<boolean> {
@@ -54,10 +71,10 @@ async function refresh(clearFeedback = false): Promise<boolean> {
   loading.value = true;
   try {
     const result = await Promise.all([
-      api<Page<Message>>(`messages?page=${messages.value.page}${messageReadStatus.value ? '&readStatus=' + encodeURIComponent(messageReadStatus.value) : ''}`, 'GET', undefined, controller.signal),
+      api<Page<Message>>(`messages?page=${messages.value.page}${querySuffix('messages')}`, 'GET', undefined, controller.signal),
       api<{ items: Device[] }>('devices', 'GET', undefined, controller.signal),
       api<{ items: Connector[] }>('connectors', 'GET', undefined, controller.signal),
-      api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${deliveryStatus.value ? '&status=' + encodeURIComponent(deliveryStatus.value) : ''}`, 'GET', undefined, controller.signal),
+      api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${querySuffix('deliveries')}`, 'GET', undefined, controller.signal),
       api<Status>('status', 'GET', undefined, controller.signal),
     ]);
     if (requestId !== readGeneration || currentEpoch !== epoch) return false;
@@ -186,17 +203,59 @@ const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST')
 function messagePage(page: number) { messages.value.page = page; void refresh(); }
 function deliveryPage(page: number) { deliveries.value.page = page; void refresh(); }
 function filterMessages(value: Message['readStatus'] | '') {
-  if (loading.value || busy.value) return;
+  if (loading.value || busy.value || exporting.value) return;
   messageReadStatus.value = value; messages.value = { ...messages.value, items: [], total: 0, page: 1 };
   void refresh();
 }
 function filterDeliveries(value: string) {
-  if (loading.value || busy.value) return;
+  if (loading.value || busy.value || exporting.value) return;
   deliveryStatus.value = value; deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   void refresh();
 }
-onMounted(() => { interval = setInterval(() => { if (authenticated.value && !loading.value && !busy.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
-onUnmounted(() => { clearInterval(interval); controller?.abort(); });
+function searchMessages(value: ListSearch, clear = false) {
+  if (loading.value || busy.value || exporting.value) return;
+  messageSearch.value = value;
+  if (clear) messageReadStatus.value = '';
+  messages.value = { ...messages.value, items: [], total: 0, page: 1 }; void refresh();
+}
+function searchDeliveries(value: ListSearch, clear = false) {
+  if (loading.value || busy.value || exporting.value) return;
+  deliverySearch.value = value;
+  if (clear) deliveryStatus.value = '';
+  deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 }; void refresh();
+}
+function cancelExport() { exportGeneration++; exportController?.abort(); exporting.value = null; }
+watch(tab, cancelExport);
+async function exportMetadata(kind: 'messages' | 'deliveries') {
+  if (loading.value || busy.value || exporting.value || readFailed.value) return;
+  const currentEpoch = epoch, generation = ++exportGeneration;
+  exportController = new AbortController(); exporting.value = kind; error.value = ''; notice.value = '';
+  const query = querySuffix(kind).replace(/^&/, '?');
+  try {
+    const response = await fetch(`/api/v1/${kind}/export${query}`, { signal: exportController.signal, cache: 'no-store', headers: { Authorization: 'Bearer ' + token.value } });
+    if (currentEpoch !== epoch || generation !== exportGeneration) return;
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({ error: '' })) as { error?: string };
+      if (currentEpoch !== epoch || generation !== exportGeneration) return;
+      if (response.status === 401) logout();
+      throw new ApiFailure(response.status, problem.error || '');
+    }
+    if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'text/csv') throw new Error('invalid_export');
+    const blob = await response.blob();
+    if (currentEpoch !== epoch || generation !== exportGeneration) return;
+    if (!blob.size) throw new Error('invalid_export');
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = `${kind}-metadata.csv`; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notice.value = '元数据 CSV 已生成。';
+  } catch (failure) {
+    if (failure instanceof DOMException && failure.name === 'AbortError') return;
+    if (currentEpoch === epoch && generation === exportGeneration || failure instanceof ApiFailure && failure.status === 401)
+      error.value = failure instanceof ApiFailure ? failure.message : '未能导出元数据，请重试。';
+  } finally { if (generation === exportGeneration) exporting.value = null; }
+}
+onMounted(() => { interval = setInterval(() => { if (authenticated.value && !loading.value && !busy.value && !exporting.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
+onUnmounted(() => { clearInterval(interval); controller?.abort(); cancelExport(); });
 </script>
 
 <template>
@@ -222,10 +281,10 @@ onUnmounted(() => { clearInterval(interval); controller?.abort(); });
       <div class="content">
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
-        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @connectors="tab = 'connectors'" />
+        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <ConnectorsPanel v-else-if="tab === 'connectors'" :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
-        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy" :loading="loading" :failed="readFailed" :status="deliveryStatus" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @refresh="refresh" />
+        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />
         <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />
         <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
         <MemoryPanel v-else-if="tab === 'memory'" :api="api" />

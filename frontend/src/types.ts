@@ -1,4 +1,5 @@
 export interface Page<T> { items: T[]; total: number; page: number; size: number }
+export interface ListSearch { identity: string; receivedFrom: string; receivedBefore: string }
 export interface MessageSubmission { readonly eventId: string; readonly title: string; readonly content: string }
 export interface Message {
   messageId: string; connectorId: string; source: string; eventType: string;
@@ -70,6 +71,7 @@ export const deliveryNames: Record<string, string> = {
 };
 export const errorNames: Record<string, string> = {
   unauthorized: '管理令牌无效，请重新登录。', invalid_request: '请检查填写的内容。',
+  export_too_large: '结果超过 5000 条，请缩小筛选范围后导出。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',
   halo_not_configured: '请先在本机配置 Halo 只读令牌并启用接入。',
   halo_poll_in_progress: '正在同步，请稍后查看结果。',
