@@ -168,6 +168,8 @@ p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transpare
   .device-card.expanded > .management-panel { grid-column: 2; grid-row: 1 / span 9; margin-top: 0; padding-top: 0; border-top: 0; }
   /* 两栏后动作行上方就是开关行的分隔线，不再需要自己的顶线。 */
   .device-card.expanded > .device-actions { border-top: 0; padding-top: 0; }
+  /* 面板变窄后表单还排两列，字段只剩 140px，range 与 time 挤在一起；这一档改单列。 */
+  .device-card.expanded .management-panel .form-columns { grid-template-columns: minmax(0,1fr); gap: 16px; }
 }
 /* 面板嵌进卡片后是"这张卡的一段"，不再是"另一个盒子"：标题降一档，否则 16px 直接叠 16px。 */
 .device-card > .management-panel h2 { font-size: var(--text-md); }
@@ -259,7 +261,9 @@ button.mobile-back { display: none; }
 .management-panel h2 { font-size: var(--text-lg); }
 .management-actions, .management-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .management-status { margin: 18px 0; color: var(--muted); font-size: var(--text-sm); }
-.management-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 18px; margin: 22px 0; }
+/* 列数跟着可用宽度走：两栏后窄桌面上面板只有 302–492px，写死 4 列会让版本号断成 2–3 行。
+   140px 是"固件版本这类长串不断行"的实测下限。 */
+.management-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 18px; margin: 22px 0; }
 .management-metrics dt { font-size: var(--text-sm); }
 .management-metrics dd { margin: 8px 0 0; font-size: var(--text-2xl); font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .management-form fieldset { border: 0; margin: 0; padding: 0; }
