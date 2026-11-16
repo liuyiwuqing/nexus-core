@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -99,7 +100,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
 </script>
 <template>
   <section id="remote-ota-panel" class="management-panel" tabindex="-1" :aria-label="`${device.name}固件升级`">
-    <div class="record-heading"><h2>{{ device.name }} · 固件升级</h2><div class="management-actions"><button class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</button><button class="text-button" @click="emit('close')">收起</button></div></div>
+    <div class="record-heading"><h2>{{ device.name }} · 固件升级</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p><p v-else-if="loading && !data" role="status">正在读取升级状态…</p>
     <template v-if="data">
       <p v-if="!data.enabled" class="management-hint">远程升级尚未启用。</p>
@@ -111,19 +112,19 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
         <form class="management-form" @submit.prevent="send('install')">
           <label>可安装版本<select v-model="releaseId" :disabled="blocked || !data.canInstall"><option value="">请选择版本</option><option v-for="item in compatible" :key="item.releaseId" :value="item.releaseId">{{ item.target.version }} · {{ item.releaseId }}</option></select></label>
           <p v-if="!compatible.length" class="management-hint">没有匹配设备身份且序号更高的版本。</p>
-          <div class="form-footer"><span>安装完成后，需要另行确认重启。</span><button class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ sending ? '正在提交…' : '安装版本' }}</button></div>
+          <div class="form-footer"><span>安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ sending ? '正在提交…' : '安装版本' }}</NButton></div>
         </form>
-        <button class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</button>
-        <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><button class="secondary" :disabled="blocked || !manifest || !catalogId">登记</button></div></form>
-        <div v-if="pending" class="feedback" role="status"><span>保留原请求，等待核对。</span><button class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</button></div>
+        <NButton quaternary attr-type="button" class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</NButton>
+        <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton></div></form>
+        <div v-if="pending" class="feedback" role="status"><span>保留原请求，等待核对。</span><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></div>
         <p v-if="!data.deployments.length" class="management-hint">暂无升级记录。</p>
         <div v-for="item in data.deployments" :key="item.requestId" class="management-record">
           <div class="record-heading"><strong>{{ item.target.version }} · {{ item.releaseId }}</strong><span class="badge" :class="item.status === 'healthy' ? 'success' : ''">{{ names[item.status] || '等待核对' }}</span></div>
           <p>{{ formatTime(item.createdAt) }}<span v-if="data.observation?.requestId === item.requestId && data.observation.writtenBytes"> · 已写入 {{ Math.floor(data.observation.writtenBytes / 1024) }} / {{ Math.ceil(item.target.imageSize / 1024) }} KB</span></p>
           <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || '请核对设备状态与操作记录。' }}</p>
-          <button v-if="data.canReboot && data.observation?.requestId === item.requestId && !confirming" class="secondary compact" :disabled="blocked" @click="confirming = { requestId: item.requestId, bootId: data.observation.bootId }; confirmed = false">重启设备…</button>
-          <form v-if="confirming?.requestId === item.requestId" class="inline-form" @submit.prevent="send('reboot')" @keydown.esc="confirming = null; confirmed = false"><p>重启将中断设备当前任务，随后核验新镜像。</p><label class="checkbox-label"><input v-model="confirmed" type="checkbox" :disabled="blocked" />确认现在重启 {{ device.name }}</label><div class="management-actions"><button class="primary" :disabled="blocked || !confirmed || !data.canReboot">确认重启</button><button type="button" class="text-button" :disabled="sending" @click="confirming = null; confirmed = false">取消</button></div></form>
-          <button class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</button>
+          <NButton size="small" attr-type="button" v-if="data.canReboot && data.observation?.requestId === item.requestId && !confirming" class="secondary compact" :disabled="blocked" @click="confirming = { requestId: item.requestId, bootId: data.observation.bootId }; confirmed = false">重启设备…</NButton>
+          <form v-if="confirming?.requestId === item.requestId" class="inline-form" @submit.prevent="send('reboot')" @keydown.esc="confirming = null; confirmed = false"><p>重启将中断设备当前任务，随后核验新镜像。</p><label class="checkbox-label"><input v-model="confirmed" type="checkbox" :disabled="blocked" />确认现在重启 {{ device.name }}</label><div class="management-actions"><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !confirmed || !data.canReboot">确认重启</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="confirming = null; confirmed = false">取消</NButton></div></form>
+          <NButton quaternary attr-type="button" class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</NButton>
           <template v-if="auditId === item.requestId"><p v-if="auditLoading" role="status">正在读取…</p><p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p><ol v-else class="audit-list"><li v-for="entry in audit" :key="entry.sequence">{{ formatTime(entry.createdAt) }} · {{ events[entry.event] || names[entry.event] || '状态更新' }}<span v-if="errorNames[entry.detail]"> · {{ errorNames[entry.detail] }}</span></li></ol></template>
         </div>
       </template>

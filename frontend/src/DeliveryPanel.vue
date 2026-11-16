@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { operate } = useAccess();
 import { nextTick, ref } from 'vue';
@@ -17,7 +18,7 @@ async function closeHistory() {
 </script>
 <template>
   <section>
-    <div class="section-heading"><div><h1>投递</h1><p>{{ loading ? '正在加载…' : failed ? '未能读取投递' : `${data.total} 条投递 · 区分已发送、设备确认与用户已读` }}</p></div></div>
+    <div class="section-heading"><div><h1 tabindex="-1">投递</h1><p>{{ loading ? '正在加载…' : failed ? '未能读取投递' : `${data.total} 条投递 · 区分已发送、设备确认与用户已读` }}</p></div></div>
     <ListSearchForm kind="deliveries" :filters="search" :status-active="!!status" :disabled="loading || busy" :failed="failed" :total="data.total" :exporting="exporting" @apply="selected = null; emit('search', $event)" @clear="selected = null; emit('clear')" @export="emit('export')"><label>投递状态<select aria-label="投递状态" :value="status" :disabled="loading || busy" @change="filterChanged"><option value="">全部</option><option v-for="(name, value) in deliveryNames" :key="value" :value="value">{{ name }}</option></select></label></ListSearchForm>
     <div v-if="loading && !data.items.length" class="empty-state" role="status">正在加载投递…</div>
     <div v-else-if="failed" class="empty-state"><h2>投递读取失败</h2></div>
@@ -29,9 +30,9 @@ async function closeHistory() {
           <td><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
             <span v-if="delivery.lastError" class="cell-sub">{{ errorNames[delivery.lastError] || delivery.lastError }}</span>
             <span v-else-if="delivery.status === 'pending' || delivery.status === 'sent'" class="cell-sub">下次尝试 {{ formatTime(delivery.nextAttemptAt) }}</span></td>
-          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><button v-if="operate && delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</button><button :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</button></div></td>
+          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><NButton size="small" attr-type="button" v-if="operate && delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</NButton><NButton quaternary attr-type="button" :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</NButton></div></td>
         </tr></tbody></table>
-      <div class="pagination"><button :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">上一页</button><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><button :disabled="data.page * data.size >= data.total || loading || busy" @click="pageChanged(data.page + 1)">下一页</button></div>
+      <div class="pagination"><NButton quaternary attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">上一页</NButton><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><NButton quaternary attr-type="button" :disabled="data.page * data.size >= data.total || loading || busy" @click="pageChanged(data.page + 1)">下一页</NButton></div>
     </div>
     <DeliveryHistoryPanel v-if="selected" :key="selected" :event-id="selected" :api="api" :busy="busy" @close="closeHistory" @changed="emit('refresh')" />
   </section>

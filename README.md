@@ -33,6 +33,8 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 
 管理台提供[认证 SSE、轮询回退与首次接入引导](docs/console-events-and-setup.md)，登记、连接、接收与展示分别核对。
 
+管理台使用 [Naive UI 与统一界面约定](docs/console-ui.md)：十二个入口分组、手机抽屉导航、消息筛选/导出、设备卡片与统一动作状态；CSP 样式 nonce 随页面生成，接口和操作确认语义保留。
+
 消息页保留元数据导出，并提供[管理员显式确认的七天正文导出](docs/content-export.md)，最多 1000 条，不恢复已清理内容。
 
 1Panel 使用 [镜像部署](docs/1panel-deployment.md)：发布配套 CORE/初始化镜像，服务器直接拉取；一次性初始化工具生成私有配置和可粘贴的三服务编排，不上传源码，不依赖宿主 Python/Java/Node，不占用面板的 80/443。镜像发布和拉取验证以具体流水线结果为准，目标机尚未验收。

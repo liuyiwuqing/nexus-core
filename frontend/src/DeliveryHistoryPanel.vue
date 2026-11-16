@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { operate } = useAccess();
 import { onMounted, onUnmounted, ref } from 'vue';
@@ -70,7 +71,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
 
 <template>
   <section ref="panel" class="management-panel delivery-history-panel" tabindex="-1" aria-label="投递状态时间线">
-    <div class="record-heading"><h2>投递状态时间线</h2><div class="management-actions"><button class="text-button" :disabled="loading || sending" @click="load()">刷新时间线</button><button class="text-button" @click="emit('close')">收起时间线</button></div></div>
+    <div class="record-heading"><h2>投递状态时间线</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading || sending" @click="load()">刷新时间线</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起时间线</NButton></div></div>
     <p class="management-hint mono">{{ eventId }}</p>
     <p v-if="cancelError" :class="uncertain ? 'management-hint' : 'inline-error'" :role="uncertain ? 'status' : 'alert'">{{ cancelError }}</p>
     <p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
@@ -78,10 +79,10 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
     <p v-else-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <template v-else-if="data">
       <p v-if="loading" class="management-hint" role="status">正在更新时间线…</p>
-      <div class="management-status"><span class="badge">{{ deliveryNames[data.delivery.status] || data.delivery.status }}</span><span>本轮尝试 {{ data.delivery.attempts }}</span><button v-if="operate && data.delivery.canCancel && !confirmCancel && !uncertain" class="secondary compact" :disabled="busy || sending || loading" @click="confirmCancel = true">取消投递</button></div>
+      <div class="management-status"><span class="badge">{{ deliveryNames[data.delivery.status] || data.delivery.status }}</span><span>本轮尝试 {{ data.delivery.attempts }}</span><NButton size="small" attr-type="button" v-if="operate && data.delivery.canCancel && !confirmCancel && !uncertain" class="secondary compact" :disabled="busy || sending || loading" @click="confirmCancel = true">取消投递</NButton></div>
       <div v-if="operate && data.delivery.canCancel && (confirmCancel || uncertain)" class="delivery-cancel-confirm">
         <p>取消这条尚未开始发送的投递？不删除消息，也不影响其他设备。</p>
-        <div class="management-actions"><button class="secondary compact" :disabled="sending || busy || loading" @click="cancel">{{ sending ? '正在取消…' : uncertain ? '重试取消同一投递' : '确认取消' }}</button><button v-if="!uncertain" class="text-button" :disabled="sending" @click="confirmCancel = false">暂不取消</button></div>
+        <div class="management-actions"><NButton size="small" attr-type="button" class="secondary compact" :disabled="sending || busy || loading" @click="cancel">{{ sending ? '正在取消…' : uncertain ? '重试取消同一投递' : '确认取消' }}</NButton><NButton quaternary attr-type="button" v-if="!uncertain" class="text-button" :disabled="sending" @click="confirmCancel = false">暂不取消</NButton></div>
       </div>
       <p v-if="!data.includesCreation" class="management-hint" role="status">仅记录开始留存后的变化，此前历史未知。</p>
       <p v-if="!data.items.length" class="muted">尚无可读取的变化记录。</p>
@@ -90,7 +91,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
         <p><template v-if="item.previousStatus">{{ deliveryNames[item.previousStatus] || item.previousStatus }} → </template>{{ deliveryNames[item.status] || item.status }} · 本轮尝试 {{ item.attempts }}</p>
         <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || item.lastError }}</p>
       </li></ol>
-      <div class="pagination"><button :disabled="page <= 1 || loading || sending" @click="changePage(page - 1)">上一页</button><span>{{ page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><button :disabled="page * data.size >= data.total || loading || sending" @click="changePage(page + 1)">下一页</button></div>
+      <div class="pagination"><NButton quaternary attr-type="button" :disabled="page <= 1 || loading || sending" @click="changePage(page - 1)">上一页</NButton><span>{{ page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><NButton quaternary attr-type="button" :disabled="page * data.size >= data.total || loading || sending" @click="changePage(page + 1)">下一页</NButton></div>
       <p class="management-hint">记录 CORE 已提交的状态变化；预留尝试不代表发送成功，设备回执分别确认收到、展示与已读。时间按本地时区显示。</p>
     </template>
   </section>

@@ -3,7 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite --host 127.0.0.1", "check": "vue-tsc --noEmit", "build": "vite build" },
-  "dependencies": { "vue": "3.5.45" },
-  "devDependencies": { "@vitejs/plugin-vue": "6.0.10", "vite": "8.3.7", "typescript": "5.9.3", "vue-tsc": "3.3.14" }
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "vue-tsc --noEmit",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@lucide/vue": "1.73.0",
+    "naive-ui": "2.45.3",
+    "vue": "3.5.45"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.10",
+    "typescript": "5.9.3",
+    "vite": "8.3.7",
+    "vue-tsc": "3.3.14"
+  }
 }

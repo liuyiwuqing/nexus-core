@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -84,7 +85,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
 
 <template>
   <section id="device-management-panel" class="management-panel" tabindex="-1" :aria-label="`${device.name}设置与状态`">
-    <div class="record-heading"><h2>{{ device.name }} · 设置与状态</h2><div class="management-actions"><button class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</button><button class="text-button" @click="emit('close')">收起</button></div></div>
+    <div class="record-heading"><h2>{{ device.name }} · 设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
     <template v-if="data">
@@ -95,7 +96,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
         <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">本机语音策略与已保存设置不同，请在设备上核对静音选择。</p>
       </template>
       <p v-if="data.configBlock" class="management-hint" role="status">{{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}</p>
-      <div v-if="staleDraft" class="feedback" role="status"><span>设备设置已变化，你的编辑仍保留。</span><button class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</button></div>
+      <div v-if="staleDraft" class="feedback" role="status"><span>设备设置已变化，你的编辑仍保留。</span><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton></div>
       <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p><p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
       <form v-if="form" class="management-form" @submit.prevent="submit">
         <fieldset :disabled="disabled">
@@ -110,7 +111,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
           <div class="form-columns"><label>消息显示时长（秒）<input v-model.number="duration" type="number" min="5" max="30" step="any" required /></label></div>
           <p v-if="data.telemetry?.config && form.message.queueDepth < data.telemetry.config.message.queueDepth" class="management-hint">缩小容量不会删除已接收消息。</p>
         </fieldset>
-        <div class="form-footer"><span v-if="dirty && !uncertain">有未提交的修改</span><span v-else-if="!dirty">设置来自设备回读</span><button v-if="uncertain" type="button" class="primary" :disabled="sending || busy" @click="submit">{{ sending ? '正在核对…' : '重试同一请求' }}</button><button v-else class="primary" :disabled="disabled || !dirty">{{ sending ? '正在提交…' : '保存到设备' }}</button></div>
+        <div class="form-footer"><span v-if="dirty && !uncertain">有未提交的修改</span><span v-else-if="!dirty">设置来自设备回读</span><NButton type="primary" attr-type="button" v-if="uncertain" class="primary" :disabled="sending || busy" @click="submit">{{ sending ? '正在核对…' : '重试同一请求' }}</NButton><NButton type="primary" attr-type="submit" v-else class="primary" :disabled="disabled || !dirty">{{ sending ? '正在提交…' : '保存到设备' }}</NButton></div>
       </form>
       <details v-if="data.configRequests.length" class="management-history" open>
         <summary>最近配置记录</summary>
@@ -118,7 +119,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
           <div class="record-heading"><span>{{ formatTime(item.createdAt) }}</span><span class="badge" :class="item.status === 'applied' ? 'success' : ''">{{ stateNames[item.status] }}</span></div>
           <p>音量 {{ item.requestedConfig.volume }}% · 亮度 {{ item.requestedConfig.brightness }}%<span v-if="item.confirmationSource"> · {{ item.confirmationSource === 'ack' ? '设备回执确认' : '配置回读确认' }}</span></p>
           <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || '设备未能确认此次设置，请核对状态。' }}<span v-if="item.deviceCode !== null">（{{ item.deviceCode }}）</span></p>
-          <button type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</button>
+          <NButton quaternary attr-type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</NButton>
           <template v-if="auditId === item.requestId"><p v-if="auditLoading" role="status">正在读取…</p><p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p><ol v-else class="audit-list"><li v-for="entry in audit" :key="entry.sequence">{{ formatTime(entry.createdAt) }} · {{ eventNames[entry.event] || '状态更新' }}<span v-if="errorNames[entry.detail]"> · {{ errorNames[entry.detail] }}</span></li></ol></template>
         </div>
       </details>

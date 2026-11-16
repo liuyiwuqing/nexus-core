@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui';
 import { onUnmounted, ref } from 'vue';
 import { formatTime, type Api, type Overview } from './types';
 
@@ -24,7 +25,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); });
 
 <template>
   <section class="overview-panel" aria-label="运行概览">
-    <div class="section-heading"><div><h1>运行概览</h1><p v-if="snapshot">{{ snapshot.dayStart.slice(0, 10) }} · UTC</p></div><button class="text-button" :disabled="loading" @click="load">刷新概览</button></div>
+    <div class="section-heading"><div><h1 tabindex="-1">运行概览</h1><p v-if="snapshot">{{ snapshot.dayStart.slice(0, 10) }} · UTC</p></div><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="load">刷新概览</NButton></div>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取概览…</p>
     <p v-else-if="error" class="feedback error" role="alert">{{ error }}</p>
     <template v-else-if="snapshot">

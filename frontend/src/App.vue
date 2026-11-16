@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { NButton, NInput } from 'naive-ui';
 import { provide } from 'vue';
+import ConsoleShell from './ConsoleShell.vue';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import InboxPanel from './InboxPanel.vue';
 import DevicesPanel from './DevicesPanel.vue';
@@ -47,7 +49,6 @@ const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = 
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
 const exporting = ref<'messages' | 'deliveries' | null>(null);
-const tabs: { id: Tab; label: string; glyph: string }[] = [{ id: 'inbox', label: '消息', glyph: '✉' }, { id: 'pet', label: '成长', glyph: '✦' }, { id: 'devices', label: '设备', glyph: '◉' }, { id: 'connectors', label: '接入', glyph: '⇄' }, { id: 'deliveries', label: '投递', glyph: '↗' }, { id: 'tools', label: '工具', glyph: '⌘' }, { id: 'automation', label: '自动化', glyph: '◷' }, { id: 'memory', label: '记忆', glyph: '◇' }, { id: 'overview', label: '概览', glyph: '◈' }, { id: 'routing', label: '路由', glyph: '⇢' }, { id: 'access', label: '权限', glyph: '⚿' }, { id: 'templates', label: '模板', glyph: '▤' }];
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -382,28 +383,21 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
 
 <template>
   <main v-if="!authenticated" class="login-page">
+    <div class="login-intro"><div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">桌面伙伴管理台</span></span></div><div class="pet-illustration" aria-hidden="true"><span class="pet-symbol"><i></i><i></i></span></div></div>
     <form class="login-card" @submit.prevent="login">
-      <div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">PET CONSOLE</span></span></div>
-      <h1>连接你的桌面伙伴</h1><p>使用管理员或独立角色令牌登录。</p>
-      <label class="token-label">管理令牌<input v-model="token" :type="tokenVisible ? 'text' : 'password'" autocomplete="off" spellcheck="false" required :disabled="loading" /></label>
+      <h1 tabindex="-1">连接你的桌面伙伴</h1><p>使用管理员或独立角色令牌登录。</p>
+      <label class="token-label">管理令牌<NInput v-model:value="token" :type="tokenVisible ? 'text' : 'password'" :input-props="{ autocomplete: 'off', spellcheck: false, required: true }" :disabled="loading" /></label>
       <label class="checkbox-label"><input v-model="tokenVisible" type="checkbox" />显示令牌</label>
       <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
-      <button class="primary full-width" :disabled="loading">{{ loading ? '正在连接…' : '进入消息中心' }}</button>
+      <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading">{{ loading ? '正在连接…' : '进入消息中心' }}</NButton>
       <small>令牌仅保留在当前页面，退出后清除。</small>
     </form>
   </main>
-  <div v-else class="app-layout">
-    <aside class="sidebar">
-      <div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">PET CONSOLE</span></span></div>
-      <nav aria-label="主导航"><button v-for="item in tabs.filter(v=>role==='admin'||!['access','tools'].includes(v.id))" :key="item.id" :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id"><span aria-hidden="true">{{ item.glyph }}</span>{{ item.label }}</button></nav>
-      <div class="sidebar-bottom"><span class="local-indicator">本机控制台</span><button class="text-button" @click="logout">退出登录</button></div>
-    </aside>
-    <div class="workspace">
-      <header class="topbar"><span class="muted">{{role==='admin'?'管理员':role==='operator'?'操作员 · 消息与规则':'只读访问'}}</span><span class="connection-status" :class="status?.mqtt === 'ready' ? 'connected' : 'disconnected'"><i></i>{{ status?.mqtt === 'ready' ? '消息连接正常' : '消息连接不可用' }}</span><label class="device-view"><span class="sr-only">设备视图</span><select aria-label="设备视图" v-model="selectedDevice" @change="tab='devices'"><option value="">全部设备</option><option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">{{d.name}}</option></select></label><button class="text-button" @click="showGuide=!showGuide">接入引导</button><button class="text-button" :disabled="loading" @click="refresh(true)">{{ loading ? '刷新中…' : '刷新' }}</button></header>
-      <div class="content">
+  <ConsoleShell v-else v-model:tab="tab" v-model:selected-device="selectedDevice" :devices="devices" :role="role" :loading="loading" :connected="status?.mqtt === 'ready'" @logout="logout" @guide="showGuide = !showGuide" @refresh="refresh(true)">
+      <main id="main-content" class="content">
         <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
-        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><button class="text-button" @click="refresh(true)">重试</button></div>
-        <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><button class="text-button" aria-label="关闭提示" @click="notice = ''">×</button></div>
+        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><NButton quaternary attr-type="button" class="text-button" @click="refresh(true)">重试</NButton></div>
+        <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @content-export="exportMetadata('messages',true)" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
         <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><PullPanel :api="api" :busy="busy" :session="pullSession" :mutate="mutate" @messages="pullMessages" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
@@ -416,7 +410,6 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
         <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
         <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
         <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
-      </div>
-    </div>
-  </div>
+      </main>
+  </ConsoleShell>
 </template>

@@ -10,6 +10,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -18,6 +21,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE+20)
 public class AdminAuthentication extends OncePerRequestFilter {
+    private static final String POLICY = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+    private static final SecureRandom RANDOM = new SecureRandom();
     private final TokenCredentials credentials;
     private final MemoryToolAccess memoryTools;
     private final RoleTokens roles;
@@ -33,13 +38,30 @@ public class AdminAuthentication extends OncePerRequestFilter {
             throws ServletException, IOException {
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("Referrer-Policy", "no-referrer");
-        response.setHeader("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+        response.setHeader("Content-Security-Policy", POLICY);
         String path = request.getServletPath();
         // Only static GETs are public. Authenticate every application endpoint,
         // including URL spellings normalized by the servlet container.
         boolean publicAsset = request.getMethod().equals("GET") &&
             (path.equals("/") || path.equals("/index.html") || path.equals("/favicon.ico") || path.startsWith("/assets/"));
         if (publicAsset) {
+            // Naive UI mounts style elements. Authorize only this document's style
+            // nonce, keeping the script policy and all API authentication unchanged.
+            if (path.equals("/") || path.equals("/index.html")) {
+                var page = new ClassPathResource("static/index.html");
+                if (page.exists()) {
+                    byte[] random = new byte[24]; RANDOM.nextBytes(random);
+                    String nonce = Base64.getEncoder().encodeToString(random);
+                    String html;
+                    try (var input = page.getInputStream()) { html = new String(input.readAllBytes(), StandardCharsets.UTF_8); }
+                    if (!html.contains("__NEXUS_STYLE_NONCE__")) throw new ServletException("Console style nonce placeholder is missing");
+                    response.setHeader("Content-Security-Policy", POLICY + "; style-src 'self' 'nonce-" + nonce + "'");
+                    response.setHeader("Cache-Control", "no-store");
+                    response.setContentType("text/html"); response.setCharacterEncoding("UTF-8");
+                    response.getWriter().write(html.replace("__NEXUS_STYLE_NONCE__", nonce));
+                    return;
+                }
+            }
             chain.doFilter(request, response);
             return;
         }
