@@ -71,6 +71,7 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O23 | 嵌套面板 h2 降为 14px，标题去掉重复设备名 | 面板读作"这张卡的一段"而非卡中卡 | P1 | 已完成 |
 | O24 | `.record-heading` 去掉 ≤560 断点，改 `min-width:18ch` | 561–760 不再把标题压成两行，跨断点不跳变 | P1 | 已完成 |
 | O25 | 删 `.notice*` 死规则；`--topbar-h` 窄屏 63px；OTA 单提示 | 一套黄色块；吸顶工具栏不压顶栏边框；一个事实一段话 | P2 | 已完成 |
+| O26 | 点掉"未确认"提示后把焦点交给下一步要用的元素（权限/来源/模板三处） | 键盘用户不必从页面顶部重新 Tab；表单整块卸载时也能接上 | P1 | 已完成 |
 
 ## 四、首批落地内容
 
@@ -150,7 +151,7 @@ JS 由主题键增加 0.87 kB，再由代码分割降到 181.62 kB；CSS 增加 
 
 ## 六、仍未做与原因
 
-O1–O25 已全部落地或给出结论。以下是有意不做的部分：
+O1–O26 已全部落地或给出结论。以下是有意不做的部分：
 
 - **`confirm()` 二次确认**（OTA 重启、成长"完成并结算"）：OTA 保留"勾选 + 确认重启"两步；成长结算属正向完成，不用红色语义。
 - **五态 `StatusNote`**：实现为 info / warn / danger 三态 + `#actions` 插槽。原计划的 busy 与 action 没有独立视觉职责，硬造两档只会让人挑不出来。
@@ -219,4 +220,6 @@ npm --prefix frontend run build     # 退出 0，CSS 26.70 kB / 首屏 JS 181.62
 
 **这一批还补了守卫的缺口**。改上面第 2 条时我多写了一个 `}`：`vue-tsc` 通过、token 四条规则也通过，只有 lightningcss 在 build 阶段报 `Invalid empty selector` —— 坏 CSS 能一路走到构建才炸。`check-tokens.mjs` 因此加了规则 0（花括号必须成对），负例验证：追加一个 `}` 报 `style.css:393：多余的 }` 并退出 1，还原后退出 0。
 
-**验证**：`npm run check` 五条规则通过（53 个 token）；`npm run build` 退出 0。跨仓回归 20 个脚本 / 792 条断言全绿（`test_console_theme_ui` 加完 12 页标题指纹后由 21 增至 33），其中受本批直接影响并单独重跑的是 `test_message_compose_ui`（33）、`test_management_ui`（38）、`test_remote_ota_ui`（23）、`test_operations_ui`（96）、`test_automation_edit_ui`（99）、`test_growth_sync_ui`（18）。
+**O26 提示被点掉后的焦点去向**。这条比消息页那处更糟：消息页点掉提示时表单还在，这三处连上下文一起消失。落点按动作语义选，不搞统一套路 —— 权限页给名称输入框（下一步就是填名签发）、来源页给本区标题（动作本身就是"只读核对"）、模板页给重开入口「创建模板」（表单整块卸载）。只在用户主动点掉时转移，轮询让提示自然消失时不抢焦点。为此给 `roles_ui_fixture` 补了写失败通道（`next_write=drop_after` / `error`）：这个夹具此前没有任何签发失败的注入点，`pendingIssue` 那条路径在跨仓断言里是空白。
+
+**验证**：`npm run check` 五条规则通过（53 个 token）；`npm run build` 退出 0。跨仓回归 20 个脚本 / 805 条断言全绿（`test_console_theme_ui` 加完 12 页标题指纹后 21→33；O26 三处焦点断言使 roles 35→39、sources 34→38、templates 27→32），其中受本批直接影响并单独重跑的是 `test_message_compose_ui`（33）、`test_management_ui`（38）、`test_remote_ota_ui`（23）、`test_operations_ui`（96）、`test_automation_edit_ui`（99）、`test_growth_sync_ui`（18）。
