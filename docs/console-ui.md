@@ -43,14 +43,15 @@
 - `html { scroll-padding-top }` = `--topbar-h + --toolbar-h + 8px`：脚本 `focus()` 与锚点滚动都停在两根吸顶条之下，不被遮住。
 - 设备卡展开后撑满整行，宽度可达 1148px。`≥900px` 改两栏（左 `minmax(260px,34%)`、右 `minmax(0,1fr)`、`column-gap:32px`）：卡内三处 `space-between` 在超宽容器上会把「标签↔开关」拉到相距 1000px 以上，读起来像两端各钉了一个无关元素。窄屏仍单列。
 - 嵌套面板的标题降一档（`--text-md`）且不再重复卡片已有的设备名：16px 叠 16px 只能靠一条 1px 分隔线分层级，加了边框或底色反而变回"卡中卡"。设备名的唯一出处是 OTA 页脚那句"将安装到 X"。
-- 两栏会把面板压到 302–492px，所以面板内的栅格不能再写死列数：`.management-metrics` 用 `repeat(auto-fit,minmax(140px,1fr))`（140px 是固件版本这类长串不断行的实测下限），`.form-columns` 在 `≥900` 的两栏态降为单列。写死 4 列的后果是 900px 下每列 62px、版本号断成三行。
+- 两栏会把面板压到 302–492px，所以面板内的栅格不能再写死列数：`.management-metrics` 用 `repeat(auto-fit,minmax(140px,1fr))`（140px 是固件版本这类长串不断行的实测下限），`.form-columns` 在 `900–1150` 降为单列（只在这段里放不下并排字段；不限上界会把 1440 的音量滑杆拉成 693px、卡片高 +143px）。写死 4 列的后果是 900px 下每列 62px、版本号断成三行。
 - 标题与右侧动作挤在一起时用无断点规则（`flex-wrap` + `h2 { flex:1 1 auto; min-width:18ch }`），不要按宽度切断点：只切在 560 会漏掉 561–760 这段，跨断点还是跳变。
 - `--topbar-h` 在 `≤760` 是 `63px`（实测顶栏渲染 63px，移动菜单按钮把 `min-height:60` 撑开）。写 60 会让吸顶工具栏压掉它 3px 的底边框，滚动时两条栏的分隔线消失。
 
 ## 样式守卫（CONSOLE-17）
 
-`npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。四条规则：
+`npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。五条规则：
 
+0. `style.css` 与组件 `<style>` 块的花括号必须成对 —— 多一个 `}` 时 `vue-tsc` 与下面四条全过，只有 lightningcss 在 build 阶段报 `Invalid empty selector`，坏 CSS 能一路走到构建才炸；
 1. `style.css` 的 hex 只允许出现在 `:root` 定义里；
 2. 组件的 `<style>` 块里不允许出现任何 hex；
 3. `var(--x)` 必须已在 `:root` 定义（带 fallback 也算）；

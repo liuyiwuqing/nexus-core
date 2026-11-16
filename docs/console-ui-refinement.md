@@ -184,3 +184,37 @@ npm --prefix frontend run build     # 退出 0，CSS 26.70 kB / 首屏 JS 181.62
 跨仓回归（`04-ai-desktop-pet/tools/ci`）20 个控制台脚本 / 780 条断言全部通过，含 `test_console_theme_ui.sh`、`test_overview_ui.sh`、`test_events_ui.sh`、`test_list_filters_ui.sh`、`test_management_ui.sh`、`test_roles_ui.sh` 与 4 个自动化脚本。
 
 未执行：`tools/run_local.py build`（需独立 PostgreSQL/MQTT 与 Maven）、远程 CI、真实部署。上述结果仅为本地前端与环回夹具，不代表目标机与实机验收。
+
+## 九、第三批：只读评审驱动的可达性与视觉收口（O19–O25）
+
+前两批是自查，这一批的输入是两轮只读评审（交互侧与视觉侧各一轮，测量工具为 `getBoundingClientRect` / `getComputedStyle`，视口 1440×900、390×844，另补 559/560/600/700/899/900/1000/1100）。评审只读、不出补丁，改法与顺序由本文档落定。
+
+**可达性（O19–O21）**。三条同源：面板是脚本拉开的，但焦点与播报没跟着走。
+
+- `StatusNote` 暴露 `focus()`，失败分支把它接回来。原来提交期间按钮 `disabled`，Chrome 立刻把焦点丢到 `body`，键盘用户要从头 Tab 才能知道刚才发生了什么。
+- `warn`/`danger` 改 `role="alert"` + `aria-atomic`。这档提示只在提交失败那一刻插入，`polite` 会排在"正在加载"之类的播报之后被吞。
+- 内联面板 `@keydown.esc` 关闭；设置与升级互斥、再点收起。同开时 Tab 会从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起。
+
+**视觉（O22–O25）**。测量值前后对照：
+
+| 观察点 | 改前 | 改后 |
+|---|---|---|
+| 展开卡「在线」tag ↔ 头像 | 1012px | 287px |
+| 展开卡「接收新消息」标签 ↔ 开关 | 993px | 268px |
+| 左列 / column-gap / 右列 | 单栏 | 373 / 32 / 693 = 卡片内容宽，精确闭合 |
+| 展开卡横向结构线 | 2 条（动作行 + 面板） | 1 条 |
+| 嵌套面板标题字号 | 16px（与卡片标题同级） | 14px |
+| 560 与 559 两档 | h2 从 1 行跳到独占整行 | 两档一致（面板宽只差 1px） |
+| 390 顶栏与吸顶工具栏 | 63 / top:60（压掉 3px 底边框） | 63 / top:63，零重叠 |
+| OTA 提交未知 | 红字 + 黄块说同一件事 | `.inline-error` 0 个、`.status-note` 1 个 |
+
+顺带清掉 `.notice / .notice-dot / .notice-body / .notice-body p / .notice-inline` 五条死规则：与 `.status-note--warn` 逐值重复，且全仓 0 个调用点。
+
+**两栏带出的两个新问题（已修）**。评审在 900–1100 这段抓到回归，两处都是两栏本身引起的：
+
+1. `.management-metrics` 写死 4 列，面板被压到 302–492px 后每列只剩 62px，固件版本断成 3 行。改 `repeat(auto-fit,minmax(140px,1fr))`：1440 仍 4 列 / 1100 转 3 列 / 1000 与 900 转 2 列，各档都回到 1 行。
+2. 单列表单最初写在 `min-width:900px` 里，等于对所有两栏宽度生效，1440 的音量滑杆被拉成 693px、卡片高 670→813。收窄到 `900–1150`，1440 回到 2 列 335、卡高 670。
+
+**这一批还补了守卫的缺口**。改上面第 2 条时我多写了一个 `}`：`vue-tsc` 通过、token 四条规则也通过，只有 lightningcss 在 build 阶段报 `Invalid empty selector` —— 坏 CSS 能一路走到构建才炸。`check-tokens.mjs` 因此加了规则 0（花括号必须成对），负例验证：追加一个 `}` 报 `style.css:393：多余的 }` 并退出 1，还原后退出 0。
+
+**验证**：`npm run check` 五条规则通过（53 个 token）；`npm run build` 退出 0。跨仓回归 20 个脚本 / 780 条断言全绿，其中受本批直接影响并单独重跑的是 `test_message_compose_ui`（33）、`test_management_ui`（38）、`test_remote_ota_ui`（23）、`test_operations_ui`（96）、`test_automation_edit_ui`（99）、`test_growth_sync_ui`（18）。
