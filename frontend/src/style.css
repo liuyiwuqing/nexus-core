@@ -23,6 +23,8 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
+/* 脚本 focus 与锚点滚动都把内容停在两根吸顶条之下，不被遮住。 */
+html { scroll-padding-top: calc(var(--topbar-h) + var(--toolbar-h) + 8px); }
 #app, .n-config-provider { min-height: 100dvh; }
 button, input, textarea, select { font: inherit; }
 button, a, input, textarea { -webkit-tap-highlight-color: transparent; }
@@ -241,7 +243,9 @@ button.mobile-back { display: none; }
 .spaced { margin-top: 18px; }
 .automation-history { margin-top: 32px; }
 .automation-history h2 { margin-bottom: 16px; }
-.management-panel { margin-top: 24px; padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); outline: 2px solid var(--focus); outline-offset: 4px; }
+.management-panel { margin-top: 24px; padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); outline-offset: 4px; }
+/* 只在真正落焦时画环；常驻会把内联进卡片的面板又框成另一个盒子。 */
+.management-panel:focus { outline: 2px solid var(--focus); }
 .management-panel h2 { font-size: var(--text-lg); }
 .management-actions, .management-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .management-status { margin: 18px 0; color: var(--muted); font-size: var(--text-sm); }

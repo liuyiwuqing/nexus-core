@@ -4,6 +4,7 @@ import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement } from './types';
+import StatusNote from './StatusNote.vue';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
@@ -84,7 +85,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
 </script>
 
 <template>
-  <section id="device-management-panel" class="management-panel" tabindex="-1" :aria-label="`${device.name}设置与状态`">
+  <section id="device-management-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}设置与状态`">
     <div class="record-heading"><h2>{{ device.name }} · 设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
@@ -96,7 +97,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
         <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">本机语音策略与已保存设置不同，请在设备上核对静音选择。</p>
       </template>
       <p v-if="data.configBlock" class="management-hint" role="status">{{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}</p>
-      <div v-if="staleDraft" class="feedback" role="status"><span>设备设置已变化，你的编辑仍保留。</span><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton></div>
+      <StatusNote v-if="staleDraft" tone="warn">设备设置已变化，你的编辑仍保留。<template #actions><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton></template></StatusNote>
       <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p><p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
       <form v-if="form" class="management-form" @submit.prevent="submit">
         <fieldset :disabled="disabled">

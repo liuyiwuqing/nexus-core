@@ -3,7 +3,7 @@ import { NButton, NInput, NSkeleton } from 'naive-ui';
 import { Inbox, Mail, Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { formatTime, type Api, type Message, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
@@ -28,10 +28,13 @@ const content = ref('');
 watch(() => props.pending, submission => {
   if (submission) { title.value = submission.title; content.value = submission.content; compose.value = true; }
 }, { immediate: true });
+const note = ref<InstanceType<typeof StatusNote> | null>(null);
 async function send() {
   if (await props.create(title.value, content.value)) {
-    title.value = ''; content.value = ''; compose.value = false;
+    title.value = ''; content.value = ''; compose.value = false; return;
   }
+  // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
+  await nextTick(); note.value?.focus();
 }
 </script>
 
@@ -44,7 +47,7 @@ async function send() {
     <form v-if="compose" class="inline-form" @submit.prevent="send">
       <label>标题<NInput v-model:value="title" :maxlength="160" :input-props="{ required: true }" :disabled="busy" :readonly="!!pending" /></label>
       <label>内容<NInput v-model:value="content" type="textarea" :maxlength="8192" :rows="3" :input-props="{ required: true }" :disabled="busy" :readonly="!!pending" /></label>
-      <StatusNote v-if="uncertain" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>
+      <StatusNote v-if="uncertain" ref="note" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>
       <div class="form-footer"><span>发送到所有已启用的设备。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="busy">{{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}</NButton></div>
     </form>
     <div v-if="loading && !data.items.length" class="empty-state loading-state" role="status"><span>正在加载消息…</span><NSkeleton v-for="line in 4" :key="line" text /></div>

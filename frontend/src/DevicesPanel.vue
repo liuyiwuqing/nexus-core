@@ -30,8 +30,15 @@ async function saveName() {
   try { if (await props.rename(renameId.value, nameDraft.value, originalName.value)) await closeName(); }
   finally { nameSaving.value = false; }
 }
-async function manage(id: string) { selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus(); }
-async function upgrade(id: string) { otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus(); }
+// 设置与升级互斥：同开会让 Tab 从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起按钮。
+async function manage(id: string) {
+  if (selectedId.value === id) { await closeManagement(id); return; }
+  otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
+}
+async function upgrade(id: string) {
+  if (otaId.value === id) { await closeOta(); return; }
+  selectedId.value = ''; otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus();
+}
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
 async function closeManagement(id: string) { selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
 async function submit() {
