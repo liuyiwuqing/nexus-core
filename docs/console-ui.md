@@ -11,6 +11,14 @@
 - 所有页面动作按钮使用 Naive UI；登录和消息编辑使用 NInput。其他字段保留原生校验与日期输入，不改请求字段、时区转换或服务端分页。
 - 登录令牌仍仅保存在页面内存。消息、工具、规则和模板的未知结果、原请求身份、草稿与只读核对保持；关闭或刷新页面的恢复边界不变。
 
+## 样式基线（CONSOLE-15）
+
+`style.css` 的 `:root` 为唯一 token 来源，`theme.ts` 与之逐值对应（颜色/圆角/字阶/描边/焦点环）；诊断、度量对照与未落地清单见 [console-ui-refinement.md](console-ui-refinement.md)。
+
+- 按钮层级只由 Naive 的 `type` 与 `quaternary` 决定；`.primary/.secondary/.text-button/.compact` 定义为 0，不新增样式。红色仅用于"删除 / 撤销 / 永久失效"三类不可回退动作，全站 5 处。
+- 表格卡片化以 `data-label` 为开关（`:has(td[data-label])`），未标注的表格回退横向滚动。`dl>div` 默认两列网格，指标条用 `display:block` 覆盖。
+- 跨仓浏览器断言按行为写，不按条数写。
+
 ## 修改位置
 
 `frontend/src/theme.ts` 管理 Naive UI 主题；`style.css` 管理布局与已有原生字段；`navigation.ts` 保存导航分组和图标；`ConsoleNavigation.vue` 复用角色导航；`ConsoleShell.vue` 管理桌面框架和移动抽屉。App 继续拥有请求、权限会话与待确认提交，界面组件不另建 API 或持久化副本。

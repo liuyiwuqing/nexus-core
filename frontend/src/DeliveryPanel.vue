@@ -27,10 +27,10 @@ async function closeHistory() {
     <div v-else class="table-shell">
       <table><thead><tr><th>消息 / 设备</th><th>状态</th><th>尝试</th><th>操作</th></tr></thead>
         <tbody><tr v-for="delivery in data.items" :key="delivery.eventId"><td><strong>{{ delivery.title }}</strong><span class="cell-sub mono">{{ delivery.deviceId }}</span></td>
-          <td><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
+          <td data-label="状态"><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
             <span v-if="delivery.lastError" class="cell-sub">{{ errorNames[delivery.lastError] || delivery.lastError }}</span>
             <span v-else-if="delivery.status === 'pending' || delivery.status === 'sent'" class="cell-sub">下次尝试 {{ formatTime(delivery.nextAttemptAt) }}</span></td>
-          <td>{{ delivery.attempts }}</td><td><div class="management-actions"><NButton size="small" attr-type="button" v-if="operate && delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</NButton><NButton quaternary attr-type="button" :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</NButton></div></td>
+          <td data-label="尝试">{{ delivery.attempts }}</td><td><div class="management-actions"><NButton size="small" attr-type="button" v-if="operate && delivery.status === 'failed'" class="secondary compact" :disabled="busy" @click="retry(delivery.eventId)">重试</NButton><NButton quaternary attr-type="button" :id="`delivery-history-${delivery.eventId}`" class="text-button" :disabled="busy" @click="selected = delivery.eventId">时间线</NButton></div></td>
         </tr></tbody></table>
       <div class="pagination"><NButton quaternary attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">上一页</NButton><span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span><NButton quaternary attr-type="button" :disabled="data.page * data.size >= data.total || loading || busy" @click="pageChanged(data.page + 1)">下一页</NButton></div>
     </div>

@@ -98,9 +98,9 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
 </template>
 
 <style scoped>
-.delivery-timeline { padding-left: 22px; font-size: 13px; }
-.delivery-timeline li { padding: 14px 0; border-bottom: 1px solid #e5eaee; }
+.delivery-timeline { padding-left: 22px; font-size: var(--text-base); }
+.delivery-timeline li { padding: 14px 0; border-bottom: 1px solid var(--divider); }
 .delivery-timeline .record-heading { flex-wrap: wrap; }
-.delivery-timeline time { color: #7b8a94; font-size: 12px; }
-.delivery-cancel-confirm { padding: 14px; border: 1px solid #dce4e9; border-radius: 7px; margin-bottom: 18px; font-size: 13px; }
+.delivery-timeline time { color: var(--muted); font-size: var(--text-sm); }
+.delivery-cancel-confirm { padding: 14px; border: 1px solid var(--divider); border-radius: var(--radius-md); margin-bottom: 18px; font-size: var(--text-base); }
 </style>

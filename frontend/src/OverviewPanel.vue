@@ -55,8 +55,5 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); });
 </template>
 
 <style scoped>
-dl > div { display: block; margin-top: 0; }
-dd { text-align: left; }
-.management-metrics dd { white-space: nowrap; }
-.overview-stamp { margin-top: 18px; font-size: 12px; }
+.overview-stamp { margin-top: 16px; font-size: var(--text-sm); }
 </style>
