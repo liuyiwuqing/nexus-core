@@ -46,7 +46,7 @@ for (const [file, raw] of balanceTargets) {
   if (open.length) problems.push(`${relative(SRC, file)}:${lineOf(text, open[0])}：{ 未闭合`);
 }
 
-// 1) :root 里的 token 定义；其余位置一律不许出现 hex。
+// 1) :root 里的 token 定义；深色块只允许重定义同名 token，其余位置一律不许出现 hex。
 const declared = new Set();
 for (const file of styleSheets) {
   const text = readFileSync(file, 'utf8');
@@ -55,9 +55,19 @@ for (const file of styleSheets) {
   const body = rootBlock[1];
   const bodyStart = rootBlock.index + rootBlock[0].indexOf('{');
   for (const match of body.matchAll(VAR_DEF)) declared.add(match[1]);
+  // 深色主题块：`[data-theme="dark"]` 是唯一允许的第二个 hex 区域。
+  // 它只能重定义 :root 已有的名字 —— 新增 token 必须先进 :root，否则浅色与深色会分叉。
+  const allowed = [[bodyStart, bodyStart + body.length]];
+  for (const dark of text.matchAll(/:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/g)) {
+    const darkStart = dark.index + dark[0].indexOf('{');
+    allowed.push([darkStart, darkStart + dark[1].length]);
+    for (const match of dark[1].matchAll(VAR_DEF)) {
+      if (!declared.has(match[1])) problems.push(`${relative(SRC, file)}：深色块重定义了未在 :root 出现的 ${match[1]}`);
+    }
+  }
   for (const match of text.matchAll(HEX)) {
-    const insideRoot = match.index > bodyStart && match.index < bodyStart + body.length;
-    if (!insideRoot) problems.push(`${relative(SRC, file)}:${lineOf(text, match.index)}：:root 之外禁止硬编码颜色 ${match[0]}`);
+    if (!allowed.some(([from, to]) => match.index > from && match.index < to))
+      problems.push(`${relative(SRC, file)}:${lineOf(text, match.index)}：:root / 深色块之外禁止硬编码颜色 ${match[0]}`);
   }
 }
 

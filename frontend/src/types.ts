@@ -79,6 +79,20 @@ export function formatTime(value?: string | null): string {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date);
 }
+/** 设备"最近连接"读的是相对时长，绝对时间放在同一行的次要位置。
+    超过一周或时间在未来（设备时钟偏差）时退回绝对时间，避免"23 天前"这类没有信息量的表述。 */
+export function formatRelative(value?: string | null): string {
+  if (!value) return '从未连接';
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return '—';
+  const minutes = Math.floor((Date.now() - date.valueOf()) / 60000);
+  if (minutes < 0) return formatTime(value);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
+  if (minutes < 7 * 1440) return `${Math.floor(minutes / 1440)} 天前`;
+  return formatTime(value);
+}
 export const deliveryNames: Record<string, string> = {
   pending: '等待投递', sent: '等待设备确认', received: '设备已保存', displayed: '设备已展示',
   read: '用户已读', failed: '投递失败', expired: '已结束', cancelled: '已取消',

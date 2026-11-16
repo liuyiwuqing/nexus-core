@@ -1,9 +1,19 @@
 import { createApp } from 'vue';
-import { NConfigProvider, zhCN, dateZhCN } from 'naive-ui';
+import { NConfigProvider, darkTheme, zhCN, dateZhCN } from 'naive-ui';
 import { h } from 'vue';
 import App from './App.vue';
-import { consoleTheme, styleMountTarget } from './theme';
+import { darkConsoleTheme, lightConsoleTheme, styleMountTarget } from './theme';
+import { isDark } from './colorMode';
 import './style.css';
 
-createApp({ render: () => h(NConfigProvider, { themeOverrides: consoleTheme, locale: zhCN, dateLocale: dateZhCN,
-  inlineThemeDisabled: true, styleMountTarget: styleMountTarget() }, { default: () => h(App) }) }).mount('#app');
+// 主题在两套覆盖之间切换：Naive 的基础深色由 darkTheme 提供，品牌色与控件描边仍由这里的覆盖决定。
+const mountTarget = styleMountTarget();
+createApp({
+  setup() {
+    return () => h(NConfigProvider, {
+      theme: isDark.value ? darkTheme : null,
+      themeOverrides: isDark.value ? darkConsoleTheme : lightConsoleTheme,
+      locale: zhCN, dateLocale: dateZhCN, inlineThemeDisabled: true, styleMountTarget: mountTarget,
+    }, { default: () => h(App) });
+  },
+}).mount('#app');

@@ -443,7 +443,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
     </form>
   </main>
   <ConsoleShell v-else v-model:tab="tab" v-model:selected-device="selectedDevice" :devices="devices" :role="role" :loading="loading" :connected="status?.mqtt === 'ready'" @logout="logout" @guide="showGuide = !showGuide" @refresh="fullRefresh(true)">
-      <main id="main-content" class="content">
+      <main id="main-content" class="content" tabindex="-1">
         <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
         <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><NButton quaternary attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton></div>

@@ -46,7 +46,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <DeviceGrowthPanel :api="api" />
     <template v-if="profile">
-      <h2>CORE 专注档案</h2>
+      <h2 class="profile-heading">CORE 专注档案</h2>
       <dl class="pet-stats"><div><dt>等级</dt><dd>{{ profile.level }}</dd></div><div><dt>经验</dt><dd>{{ profile.experience }}</dd></div><div><dt>金币</dt><dd>{{ profile.coins }}</dd></div><div><dt>亲密度</dt><dd>{{ profile.bond }}<small> / 100</small></dd></div></dl>
       <div class="growth-progress"><progress :value="profile.levelProgress" max="100" :aria-label="`距离下一级还需 ${100-profile.levelProgress} 经验`"></progress><small>距下一级 {{ 100-profile.levelProgress }} 经验 · 已完成 {{ profile.completedFocus }} 次专注</small></div>
       <article v-if="active" class="record-card focus-card">

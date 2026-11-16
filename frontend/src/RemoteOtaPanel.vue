@@ -28,6 +28,18 @@ const compatible = computed(() => releases.value.filter(item => {
 const selectedVersion = computed(() => compatible.value.find(item => item.releaseId === releaseId.value)?.target.version ?? '');
 // 版本进按钮（选错版本最贵），设备进页脚（面板标题已写明设备，避免长名字撑破按钮）。
 const installLabel = computed(() => sending.value ? '正在提交…' : selectedVersion.value ? `安装 ${selectedVersion.value}` : '安装所选版本');const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
+/* 阶段只由设备上报的状态推导：安装失败或结果未确认时不猜测进度，条带整体不渲染。 */
+const phases = ['准备', '安装', '重启', '核验', '完成'];
+const phaseByState: Record<string, number> = { pending: 0, sent: 0, accepted: 0, installing: 1, pending_reboot: 2, rebooting: 2, verifying: 3, healthy: 4 };
+const phase = computed(() => data.value?.observation ? phaseByState[data.value.observation.state] ?? -1 : -1);
+const phaseLabel = computed(() => data.value?.observation ? names[data.value.observation.state] || '准备' : '准备');
+// 写入比例用设备上报的字节数与已登记镜像大小，两者都缺失时不画进度条。
+const writtenPercent = computed(() => {
+  const view = data.value, observation = view?.observation;
+  if (!view || !observation || observation.state !== 'installing' || observation.writtenBytes <= 0) return null;
+  const total = observation.target?.imageSize ?? view.deployments.find(item => item.requestId === observation.requestId)?.target.imageSize ?? 0;
+  return total > 0 ? Math.min(100, Math.floor(observation.writtenBytes / total * 100)) : null;
+});
 let alive = true, generation = 0, timer: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;
 async function refresh() {
   if (loading.value) return;
@@ -112,6 +124,12 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
       <template v-else>
         <p v-if="!data.observation" class="management-hint">尚未收到设备升级状态。</p>
         <div v-else class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span><span>{{ names[data.observation.state] || '等待核对' }}</span><span>{{ formatTime(new Date(data.observation.observedAt * 1000).toISOString()) }}</span></div>
+        <template v-if="data.observation && phase >= 0">
+          <ol class="ota-phases" :aria-label="`升级阶段：${phaseLabel}`">
+            <li v-for="(label, index) in phases" :key="label" :class="{ done: index < phase, current: index === phase }" :aria-current="index === phase ? 'step' : undefined"><i aria-hidden="true"></i>{{ label }}</li>
+          </ol>
+          <div v-if="writtenPercent !== null" class="ota-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="writtenPercent" :aria-label="`镜像写入 ${writtenPercent}%`"><span :style="{ width: writtenPercent + '%' }"></span></div>
+        </template>
         <p v-if="error && !pending" class="inline-error" role="alert">{{ error }}</p><p v-else-if="notice && !pending" class="management-hint" role="status">{{ notice }}</p>
         <p v-if="data.installBlock" class="management-hint" role="status">{{ errorNames[data.installBlock] || '请核对设备状态后再安装。' }}</p>
         <form class="management-form" @submit.prevent="send('install')">

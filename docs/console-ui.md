@@ -5,7 +5,7 @@
 ## 界面与使用
 
 - 十二个入口分为“日常”“消息与自动化”“系统”，管理员、操作员、只读角色的可见范围沿用原约定；默认仍进入消息页。
-- 桌面保留侧栏；760px 以下使用可滚动抽屉，支持 Escape、焦点约束和关闭后返回菜单按钮。选择页面后关闭抽屉并聚焦页面标题。
+- 桌面保留侧栏，可在 228px 与 64px（`--sidebar-w-collapsed`）间折叠，偏好写入 `nexus-sidebar-collapsed`；760px 以下使用可滚动抽屉，支持 Escape、焦点约束和关闭后返回菜单按钮。选择页面后关闭抽屉并聚焦页面标题。
 - 消息保留列表/详情联动，手机选择消息后显示详情并提供返回；筛选与导出分开组织，“导出”内保留元数据下载和管理员正文确认。未应用的筛选、读取错误、空结果与导出中继续禁止导出。
 - 设备卡片统一在线标记、接收开关、设置和固件入口；登记、重命名的版本核对、禁用新消息和 OTA 确认流程保留。界面状态不代表设备已收到或完成操作。
 - 所有页面动作按钮使用 Naive UI；登录和消息编辑使用 NInput。其他字段保留原生校验与日期输入，不改请求字段、时区转换或服务端分页。
@@ -48,6 +48,15 @@
 - 提示上带动作按钮的 `StatusNote`（「已核对，开始新的签发」「放弃重试并只读核对」「关闭模板草稿」）会把提示连同按钮一起卸载，Chrome 随即把焦点丢给 `body`。这类动作必须在 click 处理里 `await nextTick()` 后把焦点交给**下一步真正要用的元素**，按动作语义选，不要统一套路：权限页给名称输入框（下一步就是填名签发）、来源页给本区标题（动作本身就是"只读核对"，从标题往下读）、模板页给重开入口「创建模板」（表单整块卸载）。只在用户主动点掉这条路径转移焦点 —— 轮询/SSE 让提示自然消失时不要抢焦点，会打断正在输入的人。`NButton` 不暴露 `focus()`，需要按 id 取 DOM（与设备页同一做法）。
 - `--topbar-h` 在 `≤760` 是 `63px`（实测顶栏渲染 63px，移动菜单按钮把 `min-height:60` 撑开）。写 60 会让吸顶工具栏压掉它 3px 的底边框，滚动时两条栏的分隔线消失。
 
+## 主题、折叠与升级阶段（2026-11-16）
+
+- 明暗主题沿用 `colorMode.ts`：唯一真相是 `<html data-theme>`，`watch(isDark)` 同步 `color-scheme` meta；首次跟随系统，手动切换后写 `nexus-color-mode`。CSS token 与 `theme.ts` 两套覆盖都只读这一处，组件不得自行判断深浅。深色下 Naive 浮层、原生日期/滚动条与图表配色都已随 `color-scheme` 切换。
+- 侧栏折叠只收起视觉文字：`.nav-label`、分组标题和角色标记 `display:none`，文字仍留在 DOM 供读屏与测试使用；图标按钮补 `aria-label` 与原生 `title`。底部“退出登录”和“折叠/展开”在折叠态都是 30×30 圆形按钮、竖向 4px 间距，与导航图标对齐；`≤760px` 抽屉里隐藏折叠按钮（`.mobile-navigation .sidebar-collapse`），避免出现两套开合控制。
+- `.skip-link` 配合 `<main tabindex="-1">`：Tab 首站是“跳到主内容”，跳转后焦点落在内容区且不画常驻焦点环。
+- Naive 浮层（Dropdown/Popover）统一 12px 圆角与 `--floating-shadow`，Tooltip 8px；两者都由 `theme.ts` 的 `Palette` 驱动，不在页面里单独覆盖。
+- OTA 阶段条只由设备上报的 `observation.state` 推导：`pending/sent/accepted`→准备、`installing`→安装、`pending_reboot/rebooting`→重启、`verifying`→核验、`healthy`→完成。失败、结果未确认或未知状态整条不渲染，不猜进度；写入进度只在 `installing` 且拿到 `target.imageSize` 时按 `writtenBytes/imageSize` 画，缺镜像大小就不画，不用假动画代替设备确认。
+- 不要在 `.topbar` / 侧栏里使用 `NTooltip`：它经 `vueuc/binder` 直接往 `head` 注入不带 nonce 的样式，会触发 CSP `style-src-elem` 拦截（`styleMountTarget` 只覆盖 Naive 自身的挂载点）。需要悬停说明时用原生 `title`，或先扩展 nonce 注入范围再引入浮层。
+
 ## 样式守卫（CONSOLE-17）
 
 `npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。五条规则：
@@ -58,7 +67,7 @@
 3. `var(--x)` 必须已在 `:root` 定义（带 fallback 也算）；
 4. 定义过的 token 必须有人引用。
 
-失败即退出 1，`run_local.py build` 与 20 个跨仓 UI 脚本都会因此中断。本轮据此删掉 5 个死 token（`--accent-hover`、`--accent-pressed`、`--info`、`--info-soft`、`--radius-pill`），现存 53 个。
+失败即退出 1，`run_local.py build` 与 20 个跨仓 UI 脚本都会因此中断。CONSOLE-17 那轮删掉 5 个死 token（`--accent-hover`、`--accent-pressed`、`--info`、`--info-soft`、`--radius-pill`）；`--radius-pill` 已为 OTA 阶段胶囊和进度条重新引入，当前 78 个。
 
 `.primary/.secondary/.text-button/.compact` 保持零字节定义：视觉由 Naive 的 `type`/`quaternary` 决定，这几个类只作模板与断言的语义 hook，不做样式扩展。
 
@@ -89,3 +98,5 @@ bash tools/ci/test_console_theme_ui.sh
 实际结果与配套提交见 04 的 [当前台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。浏览器样例不接生产数据库、Broker、云端或设备；本地构建与页面检查不能代替目标机部署和用户最终视觉验收。旧镜像与不可变离线包保留原版本。
 
 本轮本地结果：原 19 组浏览器共 750 次、新增主题/导航 21 次检查通过；完整 CORE 118 条中 113 通过、5 条可选环境跳过，CLI 11 项通过。最终类型检查/生产前端与重新打包退出 0；JAR 恰含三份当前前端资源，20 份迁移逐字节匹配，无旧哈希资源混入。远程 CI 与部署按对应提交分别记录。
+
+2026-11-16 复跑：`npm run check`（78 个 token）与 `npm run build` 退出 0；跨仓 `test_console_theme_ui.sh` 33/33，覆盖 12 页标题、抽屉、导出折叠、逐响应 nonce 与零 CSP 违规；另跑折叠/明暗/OTA 专项 35/35（折叠 228↔64、偏好跨登录保留、`aria-label` 与 `title` 一致、1280/1366/1920/390 无横向溢出、阶段条随 `pending_reboot` 停在“重启”、无镜像大小时不画进度条），`securitypolicyviolation` 为空。以上均为回环 fixture，未接真实 CORE、数据库、Broker 或设备。
