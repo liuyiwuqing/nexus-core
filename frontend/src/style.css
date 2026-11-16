@@ -109,11 +109,6 @@ small { font-size: var(--text-sm); font-weight: 400; }
    静止时自然位置就在吸顶位之下，所以不改变任何现有布局。 */
 .feedback { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-size: var(--text-base); position: sticky; top: calc(var(--topbar-h) + var(--toolbar-h)); z-index: var(--z-sticky-feedback); box-shadow: var(--shadow-1); }
 .feedback.error { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
-.notice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-base); }
-.notice-dot { flex: 0 0 6px; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--warning); }
-.notice-body { flex: 1 1 auto; min-width: 0; }
-.notice-body p { line-height: 1.65; }
-.notice-inline { padding: 0; border: 0; background: none; }
 .inline-error { color: var(--danger); font-size: var(--text-base); }
 .list-filters { display: grid; grid-template-columns: minmax(110px,.8fr) minmax(140px,1fr) repeat(2,minmax(170px,1.1fr)); gap: 14px; padding: 18px 20px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .list-filters > label { min-width: 0; }
@@ -165,6 +160,17 @@ p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transpare
 /* 展开的设置/升级面板属于这张卡片：卡片撑满整行，面板去外框、用分隔线衔接，触发点与结果同屏。 */
 .device-card.expanded { grid-column: 1 / -1; }
 .device-card > .management-panel { margin-top: 20px; padding: 20px 0 0; border: 0; border-top: 1px solid var(--divider); border-radius: 0; background: none; }
+/* 卡片撑满整行后宽度可达 1148px，卡内三处 space-between 会把「标签↔开关」拉开到 1000px 以上，
+   读起来像两端各钉了一个无关元素。宽屏改成两栏：左 34% 放身份信息，右放面板，与 inbox 列表同比例。 */
+@media (min-width: 900px) {
+  .device-card.expanded { display: grid; grid-template-columns: minmax(260px,34%) minmax(0,1fr); column-gap: 32px; align-content: start; }
+  .device-card.expanded > :not(.management-panel) { grid-column: 1; min-width: 0; }
+  .device-card.expanded > .management-panel { grid-column: 2; grid-row: 1 / span 9; margin-top: 0; padding-top: 0; border-top: 0; }
+  /* 两栏后动作行上方就是开关行的分隔线，不再需要自己的顶线。 */
+  .device-card.expanded > .device-actions { border-top: 0; padding-top: 0; }
+}
+/* 面板嵌进卡片后是"这张卡的一段"，不再是"另一个盒子"：标题降一档，否则 16px 直接叠 16px。 */
+.device-card > .management-panel h2 { font-size: var(--text-md); }
 .device-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; }
 .device-top .pet-symbol { width: 48px; height: 48px; background: var(--accent-soft-weak); border-radius: var(--radius-lg); gap: 11px; }
 .device-top .pet-symbol i { width: 5px; height: 13px; background: var(--accent); }
@@ -193,9 +199,10 @@ dd { margin: 0; text-align: left; overflow-wrap: anywhere; }
 .scope-note { margin-top: 18px; }
 /* 状态提示三档：info 与原来的灰字脚注一致；warn/danger 带底色，因为它承载"结果未确认"这类要处理的信息。
    类名沿用 scope-note，跨仓断言以它为钩子。 */
-.status-note { display: flex; align-items: flex-start; gap: 12px; line-height: 1.7; }
+.status-note { display: flex; align-items: flex-start; gap: 12px; }
 .status-note-text { flex: 1 1 auto; min-width: 0; }
-.status-note-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+/* 提示里的按钮比正文高，靠顶对齐会把盒子重心压到上半部；单独让动作区在竖向上居中。 */
+.status-note-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; align-self: center; }
 .status-note--warn, .status-note--danger { padding: 12px 16px; border-radius: var(--radius-md); color: var(--ink-2); }
 .status-note--warn { border: 1px solid var(--warning-border); background: var(--warning-soft); }
 .status-note--danger { border: 1px solid var(--danger-border); background: var(--danger-soft); }
@@ -232,7 +239,10 @@ button.mobile-back { display: none; }
 .memory-results details { margin: 16px 0; }
 .record-list { display: grid; gap: 14px; }
 .record-card { padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-.record-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 8px; }
+.record-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; margin-bottom: 8px; }
+/* 标题与右侧动作挤在一起时会被压成两行断字。原来只在 ≤560 放开换行，实测 561–760 仍会把 h2
+   挤成两行、跨断点还是跳变；改成无断点的最小宽度，让它在任何宽度都先让标题占满一行。 */
+.record-heading h2 { flex: 1 1 auto; min-width: 18ch; }
 .record-heading .checkbox-label { margin: 0; }
 .record-card h2 { font-size: var(--text-lg); }
 .record-target { margin: 10px 0 5px; font-size: var(--text-md); overflow-wrap: anywhere; }
@@ -292,14 +302,11 @@ button.mobile-menu { display: none; }
   .workspace-actions { gap: 12px; }
   .session-role { padding-left: 12px; }
 }
-/* 面板标题与右侧动作在窄屏挤在一起时，标题会被压成两行断字；让标题独占一行、动作换到下一行。 */
-@media (max-width: 560px) {
-  .record-heading { flex-wrap: wrap; }
-  .record-heading h2 { flex: 1 1 100%; }
-}
 
 @media (max-width: 760px) {
-  :root { --gutter: 16px; --topbar-h: 60px; }
+  /* 390 实测顶栏渲染 63px（12+38+12+1，移动菜单按钮把 min-height:60 撑开），
+     写 60 会让吸顶工具栏压掉它 3px 的底边框。 */
+  :root { --gutter: 16px; --topbar-h: 63px; }
   .app-layout { display: block; }
   .app-layout > .sidebar { display: none; }
   button.mobile-menu { display: inline-flex; }

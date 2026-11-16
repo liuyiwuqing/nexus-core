@@ -27,7 +27,7 @@ const compatible = computed(() => releases.value.filter(item => {
 // 误装版本是这类操作最贵的错误：提交点必须自报"装哪个版本、装到哪台设备"。
 const selectedVersion = computed(() => compatible.value.find(item => item.releaseId === releaseId.value)?.target.version ?? '');
 // 版本进按钮（选错版本最贵），设备进页脚（面板标题已写明设备，避免长名字撑破按钮）。
-const installLabel = computed(() => sending.value ? '正在提交…' : selectedVersion.value ? `安装 ${selectedVersion.value}` : '安装版本');const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
+const installLabel = computed(() => sending.value ? '正在提交…' : selectedVersion.value ? `安装 ${selectedVersion.value}` : '安装所选版本');const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
 let alive = true, generation = 0, timer: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;
 async function refresh() {
   if (loading.value) return;
@@ -105,20 +105,20 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
 </script>
 <template>
   <section id="remote-ota-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}固件升级`">
-    <div class="record-heading"><h2>{{ device.name }} · 固件升级</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
+    <div class="record-heading"><h2>固件升级</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p><p v-else-if="loading && !data" role="status">正在读取升级状态…</p>
     <template v-if="data">
       <p v-if="!data.enabled" class="management-hint">远程升级尚未启用。</p>
       <template v-else>
         <p v-if="!data.observation" class="management-hint">尚未收到设备升级状态。</p>
         <div v-else class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span><span>{{ names[data.observation.state] || '等待核对' }}</span><span>{{ formatTime(new Date(data.observation.observedAt * 1000).toISOString()) }}</span></div>
-        <p v-if="error" class="inline-error" role="alert">{{ error }}</p><p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
+        <p v-if="error && !pending" class="inline-error" role="alert">{{ error }}</p><p v-else-if="notice && !pending" class="management-hint" role="status">{{ notice }}</p>
         <p v-if="data.installBlock" class="management-hint" role="status">{{ errorNames[data.installBlock] || '请核对设备状态后再安装。' }}</p>
         <form class="management-form" @submit.prevent="send('install')">
           <label>可安装版本<select v-model="releaseId" :disabled="blocked || !data.canInstall"><option value="">请选择版本</option><option v-for="item in compatible" :key="item.releaseId" :value="item.releaseId">{{ item.target.version }} · {{ item.releaseId }}</option></select></label>
           <p v-if="!compatible.length" class="management-hint">没有匹配设备身份且序号更高的版本。</p>
-          <StatusNote v-if="pending" tone="warn">保留原请求，等待核对。<template #actions><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></template></StatusNote>
-          <div class="form-footer"><span>将安装到 {{ device.name }}<template v-if="releaseId">，产物 {{ releaseId }}</template>；安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ installLabel }}</NButton></div>
+          <StatusNote v-if="pending" tone="warn">提交结果未确认，保留原请求，等待核对。<template #actions><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></template></StatusNote>
+          <div class="form-footer"><span>将安装到 {{ device.name }}；安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ installLabel }}</NButton></div>
         </form>
         <NButton quaternary attr-type="button" class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</NButton>
         <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton></div></form>

@@ -86,7 +86,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.
 
 <template>
   <section id="device-management-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}设置与状态`">
-    <div class="record-heading"><h2>{{ device.name }} · 设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
+    <div class="record-heading"><h2>设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
     <template v-if="data">
