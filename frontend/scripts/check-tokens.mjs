@@ -26,6 +26,26 @@ const styleSheets = files.filter(f => f.endsWith('.css'));
 const components = files.filter(f => f.endsWith('.vue'));
 const sources = [...styleSheets, ...components];
 
+// 0) 花括号必须成对。lightningcss 只在 build 阶段报"Invalid empty selector"，vue-tsc 与本文件
+//    其余规则都看不见，多一个 } 能一路通过 check 走到构建才炸（曾经真的发生过）。
+const stripComments = text => text.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ' '));
+const balanceTargets = [
+  ...styleSheets.map(file => [file, readFileSync(file, 'utf8')]),
+  ...components.flatMap(file => [...readFileSync(file, 'utf8').matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(match => [file, match[1]])),
+];
+for (const [file, raw] of balanceTargets) {
+  const text = stripComments(raw);
+  const open = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') open.push(i);
+    else if (text[i] === '}') {
+      if (!open.length) { problems.push(`${relative(SRC, file)}:${lineOf(text, i)}：多余的 }`); break; }
+      open.pop();
+    }
+  }
+  if (open.length) problems.push(`${relative(SRC, file)}:${lineOf(text, open[0])}：{ 未闭合`);
+}
+
 // 1) :root 里的 token 定义；其余位置一律不许出现 hex。
 const declared = new Set();
 for (const file of styleSheets) {

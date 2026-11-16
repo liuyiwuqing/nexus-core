@@ -32,6 +32,21 @@
 
 不要再用 `.inline-error` 表达"未确认"：红色留给确定失败。新增提示若只是补充说明，用 `tone="info"` 或直接写 `.scope-note`，避免满屏状态带。
 
+`tone ≠ info` 的根元素是 `role="alert"` + `aria-atomic="true"`，`info` 保持 `role="status"`。这不是语义偏好：warn/danger 只在提交失败那一刻插入，`polite` 会排在加载中之类的播报之后被吞掉，而这档信息是"不看就不能继续"的。同一事实只能出现一段提示 —— 提交未知时不要再单独渲染一句红字，把事实并进提示正文。
+
+根元素带 `tabindex="-1"` 并 `defineExpose({ focus })`：提交期间点按钮会 `disabled`，Chrome 立刻把焦点丢到 `body`，调用方在失败分支 `await nextTick(); note.value?.focus()` 把它接回来，键盘用户不必从头 Tab。
+
+## 焦点与展开态（CONSOLE-19）
+
+- 内联面板（`DeviceManagementPanel`、`RemoteOtaPanel`）根节点是 `tabindex="-1"`，打开时脚本 `focus()`，并监听 `@keydown.esc` 关闭。「设置与升级」互斥，再点同一按钮收起：同开会让 Tab 从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起。
+- 焦点环只在真正落焦时画（`.management-panel:focus`）。常驻 `outline` 会把内联进卡片的面板又框成第二个盒子，也让人误以为那是误留的焦点环。
+- `html { scroll-padding-top }` = `--topbar-h + --toolbar-h + 8px`：脚本 `focus()` 与锚点滚动都停在两根吸顶条之下，不被遮住。
+- 设备卡展开后撑满整行，宽度可达 1148px。`≥900px` 改两栏（左 `minmax(260px,34%)`、右 `minmax(0,1fr)`、`column-gap:32px`）：卡内三处 `space-between` 在超宽容器上会把「标签↔开关」拉到相距 1000px 以上，读起来像两端各钉了一个无关元素。窄屏仍单列。
+- 嵌套面板的标题降一档（`--text-md`）且不再重复卡片已有的设备名：16px 叠 16px 只能靠一条 1px 分隔线分层级，加了边框或底色反而变回"卡中卡"。设备名的唯一出处是 OTA 页脚那句"将安装到 X"。
+- 两栏会把面板压到 302–492px，所以面板内的栅格不能再写死列数：`.management-metrics` 用 `repeat(auto-fit,minmax(140px,1fr))`（140px 是固件版本这类长串不断行的实测下限），`.form-columns` 在 `≥900` 的两栏态降为单列。写死 4 列的后果是 900px 下每列 62px、版本号断成三行。
+- 标题与右侧动作挤在一起时用无断点规则（`flex-wrap` + `h2 { flex:1 1 auto; min-width:18ch }`），不要按宽度切断点：只切在 560 会漏掉 561–760 这段，跨断点还是跳变。
+- `--topbar-h` 在 `≤760` 是 `63px`（实测顶栏渲染 63px，移动菜单按钮把 `min-height:60` 撑开）。写 60 会让吸顶工具栏压掉它 3px 的底边框，滚动时两条栏的分隔线消失。
+
 ## 样式守卫（CONSOLE-17）
 
 `npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。四条规则：

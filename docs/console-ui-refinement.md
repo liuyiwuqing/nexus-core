@@ -64,6 +64,13 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O16 | token 守卫 `scripts/check-tokens.mjs` 接入 `npm run check` | 私有 hex、未定义 token、死 token 一律红 | P2 | 已完成 |
 | O17 | `.primary/.secondary/.text-button/.compact` 空挂类 | 已评估：保留为零字节语义 hook | P2 | 已完成 |
 | O18 | 横向滚动表格补 `tabindex="0" role="region" aria-label` | 键盘可进入并横滚全部列 | P0 | 已完成 |
+| O19 | `StatusNote` 暴露 `focus()`，提交失败后由调用方接回焦点 | 键盘用户不必从 `body` 从头 Tab | P1 | 已完成 |
+| O20 | warn/danger 改 `role="alert"` + `aria-atomic` | 只在失败时插入的提示不再被 polite 队列吞掉 | P1 | 已完成 |
+| O21 | 内联面板 Esc 关闭 + 设置/升级互斥 + 再点收起 | 同卡不再出现两组同名按钮，Tab 不串门 | P1 | 已完成 |
+| O22 | 展开态设备卡 `≥900px` 两栏（34% / 1fr） | 标签与控件间距从 1012px 回到同列 | P0 | 已完成 |
+| O23 | 嵌套面板 h2 降为 14px，标题去掉重复设备名 | 面板读作"这张卡的一段"而非卡中卡 | P1 | 已完成 |
+| O24 | `.record-heading` 去掉 ≤560 断点，改 `min-width:18ch` | 561–760 不再把标题压成两行，跨断点不跳变 | P1 | 已完成 |
+| O25 | 删 `.notice*` 死规则；`--topbar-h` 窄屏 63px；OTA 单提示 | 一套黄色块；吸顶工具栏不压顶栏边框；一个事实一段话 | P2 | 已完成 |
 
 ## 四、首批落地内容
 
@@ -143,7 +150,7 @@ JS 由主题键增加 0.87 kB，再由代码分割降到 181.62 kB；CSS 增加 
 
 ## 六、仍未做与原因
 
-O1–O18 已全部落地或给出结论。以下是有意不做的部分：
+O1–O25 已全部落地或给出结论。以下是有意不做的部分：
 
 - **`confirm()` 二次确认**（OTA 重启、成长"完成并结算"）：OTA 保留"勾选 + 确认重启"两步；成长结算属正向完成，不用红色语义。
 - **五态 `StatusNote`**：实现为 info / warn / danger 三态 + `#actions` 插槽。原计划的 busy 与 action 没有独立视觉职责，硬造两档只会让人挑不出来。

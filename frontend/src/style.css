@@ -168,7 +168,10 @@ p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transpare
   .device-card.expanded > .management-panel { grid-column: 2; grid-row: 1 / span 9; margin-top: 0; padding-top: 0; border-top: 0; }
   /* 两栏后动作行上方就是开关行的分隔线，不再需要自己的顶线。 */
   .device-card.expanded > .device-actions { border-top: 0; padding-top: 0; }
-  /* 面板变窄后表单还排两列，字段只剩 140px，range 与 time 挤在一起；这一档改单列。 */
+}
+/* 面板只在这段宽度上窄到放不下并排字段（900 档只剩 302px）；1440 上面板有 693px，
+   一并改单列会让音量滑杆拉成 693px、卡片高 +143px。上界复用文件里已有的 1150 断点。 */
+@media (min-width: 900px) and (max-width: 1150px) {
   .device-card.expanded .management-panel .form-columns { grid-template-columns: minmax(0,1fr); gap: 16px; }
 }
 /* 面板嵌进卡片后是"这张卡的一段"，不再是"另一个盒子"：标题降一档，否则 16px 直接叠 16px。 */
