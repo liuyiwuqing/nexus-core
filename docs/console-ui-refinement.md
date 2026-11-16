@@ -141,12 +141,19 @@ JS 由主题键增加 0.87 kB，再由代码分割降到 181.62 kB；CSS 增加 
 - 非设备类页面（消息/投递/概览等）的设备下拉依赖 SSE 失效或进入设备页才会更新；顶栏下拉只显示设备名，不含在线态，因此不构成状态误导。
 - `EmptyOutDir` 每次构建会删掉上一轮的 hashed 资产，本机沙箱对单轮批量删除有阈值，连续跑第三个脚本才构建时会被拦下；这是环境限制，不是构建失败。
 
-## 六、未落地与原因
+## 六、仍未做与原因
 
-- **错误文案与反馈吸顶**（O9/O10）：`mutate()` 的未确认分支被 750 次跨仓断言覆盖，不能与样式批次混做。
-- **`StatusNote`**（O11）：需在 5 个面板加 `app-error` 传参，属模板契约变更。
-- **`confirm()` 二次确认**（OTA、成长结算）：本轮不加。OTA 重启保留复选框确认，成长"完成并结算"属正向完成，不用红色。
-- **token 守卫脚本**（O16）：会给 build 增加失败面，下一批单独提交并接 `run_local.py`。
+O1–O18 已全部落地或给出结论。以下是有意不做的部分：
+
+- **`confirm()` 二次确认**（OTA 重启、成长"完成并结算"）：OTA 保留"勾选 + 确认重启"两步；成长结算属正向完成，不用红色语义。
+- **五态 `StatusNote`**：实现为 info / warn / danger 三态 + `#actions` 插槽。原计划的 busy 与 action 没有独立视觉职责，硬造两档只会让人挑不出来。
+- **登录后预取全部面板 chunk**：会让总下载量回到分割前，收益只剩"首帧更早"，与 O13 的目的相反。
+- **非设备页轮询设备清单**：只在 SSE 失效时补；顶栏下拉只显示设备名（无在线态），不会误导。
+
+下一步值得做的：
+
+- **12 页 `h1` 文本指纹断言**（`tabId → h1`）：标题回退到 `h2` 或文案漂移时会立刻红，也是 `focusContent()` 的兜底。
+- **`run_local.py build` 全链路**：需要独立 PostgreSQL / MQTT 与 Maven，本机未跑；目前只验证了前端产物 + 环回夹具。
 
 ## 七、规范约定
 
@@ -161,14 +168,12 @@ JS 由主题键增加 0.87 kB，再由代码分割降到 181.62 kB；CSS 增加 
 ## 八、验证
 
 ```sh
-npm --prefix frontend run check     # vue-tsc，退出 0
+npm --prefix frontend run check     # vue-tsc + token 守卫，退出 0
 npm --prefix frontend run build     # 退出 0，CSS 26.70 kB / 首屏 JS 181.62 + 共享 Button 142.26 kB，另按页 14 个 chunk
 ```
 
 浏览器实测通过：12 个导航项 / 3 个分组完整；导出折叠与 Escape 归还焦点；390px 抽屉可开合并把焦点交给 `h1`；三档视口 `document.documentElement.scrollWidth` 均等于视口宽（无横向溢出）；Naive 样式节点带本页 nonce；三张表格容器具备 `tabindex="0"`、`role="region"` 与 `aria-label`。
 
-下一轮建议加一条"标题随手写就能成立"的指纹断言（按 `tabId → h1 文本` 对 12 页逐项核对），这样标题回退到 `h2` 或文案漂移会立刻红，而不是等用户发现；`focusContent()` 只认 `h1`，该断言是它的兜底。
-
-跨仓回归（`04-ai-desktop-pet/tools/ci`）20 个控制台脚本 / 779 条断言全部通过，含 `test_console_theme_ui.sh`、`test_overview_ui.sh`、`test_events_ui.sh`、`test_list_filters_ui.sh`、`test_management_ui.sh`、`test_roles_ui.sh` 与 4 个自动化脚本。
+跨仓回归（`04-ai-desktop-pet/tools/ci`）20 个控制台脚本 / 780 条断言全部通过，含 `test_console_theme_ui.sh`、`test_overview_ui.sh`、`test_events_ui.sh`、`test_list_filters_ui.sh`、`test_management_ui.sh`、`test_roles_ui.sh` 与 4 个自动化脚本。
 
 未执行：`tools/run_local.py build`（需独立 PostgreSQL/MQTT 与 Maven）、远程 CI、真实部署。上述结果仅为本地前端与环回夹具，不代表目标机与实机验收。
