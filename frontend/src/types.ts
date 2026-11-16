@@ -36,6 +36,7 @@ export interface TelemetryPoint {
   audioUnderruns: number | null; inferenceMaxMs: number | null; displayMaxMs: number | null;
   audioFaulted: boolean | null;
 }
+export type TelemetryMetric = 'heap' | 'volume' | 'unread' | 'audio';
 export interface TelemetryHistory {
   deviceId: string; from: string; to: string; bucket: string;
   sampleSeconds: number; retentionDays: number; truncated: boolean; points: TelemetryPoint[];

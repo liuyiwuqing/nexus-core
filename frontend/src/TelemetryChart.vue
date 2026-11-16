@@ -1,21 +1,34 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { formatTime, type TelemetryPoint } from './types';
+import { formatTime, type TelemetryMetric, type TelemetryPoint } from './types';
 
-const props = defineProps<{ points: TelemetryPoint[]; from: string; to: string; bucketSeconds: number }>();
+const props = defineProps<{ points: TelemetryPoint[]; from: string; to: string; bucketSeconds: number; metric: TelemetryMetric }>();
 const W = 640, H = 190, L = 48, R = 16, T = 12, B = 26, TIP_W = 214;
-type Row = { at: number; heap: number; min: number; point: TelemetryPoint };
+type SeriesConfig = { label: string; short: string; pick: (point: TelemetryPoint) => number | null };
+type MetricConfig = { title: string; unit: string; zeroFloor?: boolean; primary: SeriesConfig; secondary?: SeriesConfig };
+const metrics: Record<TelemetryMetric, MetricConfig> = {
+  heap: { title: '可用内存', unit: 'KB', primary: { label: '可用内存', short: '可用', pick: point => point.freeHeap / 1024 },
+    secondary: { label: '启动以来最小', short: '最小', pick: point => point.minFreeHeap / 1024 } },
+  volume: { title: '音量', unit: '%', zeroFloor: true, primary: { label: '音量', short: '音量', pick: point => point.volume } },
+  unread: { title: '未读消息', unit: '条', zeroFloor: true, primary: { label: '未读消息', short: '未读', pick: point => point.unread } },
+  audio: { title: '音频欠载', unit: '次', zeroFloor: true, primary: { label: '音频欠载', short: '欠载', pick: point => point.audioUnderruns } },
+};
+const config = computed(() => metrics[props.metric]);
+type Row = { at: number; primary: number; secondary: number | null; faulted: boolean; point: TelemetryPoint };
 
-const rows = computed<Row[]>(() => props.points
-  .map(point => ({ at: Date.parse(point.observedAt), heap: point.freeHeap / 1024, min: point.minFreeHeap / 1024, point }))
-  .filter(row => Number.isFinite(row.at)));
+const rows = computed<Row[]>(() => props.points.flatMap(point => {
+  const at = Date.parse(point.observedAt), primary = config.value.primary.pick(point);
+  if (!Number.isFinite(at) || primary === null) return [];
+  return [{ at, primary, secondary: config.value.secondary?.pick(point) ?? null, faulted: point.audioFaulted === true, point }];
+}));
+const faults = computed(() => (props.metric === 'audio' ? rows.value.filter(row => row.faulted) : []));
 const scale = computed(() => {
   if (!rows.value.length) return null;
-  let low = Math.min(...rows.value.map(row => Math.min(row.heap, row.min)));
-  let high = Math.max(...rows.value.map(row => Math.max(row.heap, row.min)));
+  const values = rows.value.flatMap(row => (row.secondary === null ? [row.primary] : [row.primary, row.secondary]));
+  let low = Math.min(...values), high = Math.max(...values);
   if (high - low < 2) { low -= 2; high += 2; }
   const pad = (high - low) * 0.08;
-  return { low: low - pad, high: high + pad };
+  return { low: config.value.zeroFloor ? Math.max(0, low - pad) : low - pad, high: high + pad };
 });
 const domain = computed(() => {
   const from = Date.parse(props.from), to = Date.parse(props.to);
@@ -36,8 +49,9 @@ const segments = computed(() => {
   if (current.length) list.push(current);
   return list;
 });
-function line(segment: Row[], key: 'heap' | 'min') {
-  return segment.map((row, index) => `${index ? 'L' : 'M'}${x(row.at).toFixed(1)},${y(row[key]).toFixed(1)}`).join(' ');
+function line(segment: Row[], key: 'primary' | 'secondary') {
+  return segment.filter(row => row[key] !== null)
+    .map((row, index) => `${index ? 'L' : 'M'}${x(row.at).toFixed(1)},${y(row[key]!).toFixed(1)}`).join(' ');
 }
 const ticks = computed(() => {
   const value = scale.value;
@@ -57,6 +71,7 @@ const timeLabels = computed(() => {
 });
 const hovered = ref<number | null>(null);
 const selected = computed(() => (hovered.value === null ? null : rows.value[hovered.value] ?? null));
+const selectedFault = computed(() => props.metric === 'audio' && !!selected.value?.faulted);
 const tooltipX = computed(() => Math.min(W - TIP_W - 6, Math.max(6, x(selected.value!.at) - TIP_W / 2)));
 function move(event: MouseEvent) {
   if (!rows.value.length) return;
@@ -75,18 +90,25 @@ function step(delta: number) {
   const base = hovered.value ?? rows.value.length - 1;
   hovered.value = Math.min(rows.value.length - 1, Math.max(0, base + delta));
 }
-watch(() => props.points, () => { hovered.value = null; });
+watch([() => props.points, () => props.metric], () => { hovered.value = null; });
 const summary = computed(() => {
-  if (!rows.value.length) return '所选范围内没有遥测采样点。';
-  const last = rows.value[rows.value.length - 1];
-  const low = Math.min(...rows.value.map(row => row.min));
-  return `可用内存趋势，共 ${rows.value.length} 组采样。最后可用 ${Math.round(last.heap)} KB，期间启动以来最小 ${Math.round(low)} KB。`;
+  if (!rows.value.length) return '所选范围内没有可绘制的采样点。';
+  const last = rows.value[rows.value.length - 1], value = config.value;
+  let text = `${value.title}趋势，共 ${rows.value.length} 组采样。最后 ${value.primary.label} ${Math.round(last.primary)} ${value.unit}`;
+  if (value.secondary && last.secondary !== null) text += `，${value.secondary.label} ${Math.round(last.secondary)} ${value.unit}`;
+  if (faults.value.length) text += `，期间 ${faults.value.length} 个采样标记音频异常`;
+  return text + '。';
 });
 </script>
 
 <template>
   <div class="chart-wrap">
-    <div class="chart-legend" aria-hidden="true"><span><i class="swatch-heap"></i>可用内存</span><span><i class="swatch-min"></i>启动以来最小</span><span class="chart-unit">KB</span></div>
+    <div class="chart-legend" aria-hidden="true">
+      <span><i class="swatch-primary"></i>{{ config.primary.label }}</span>
+      <span v-if="config.secondary"><i class="swatch-secondary"></i>{{ config.secondary.label }}</span>
+      <span v-if="faults.length"><i class="swatch-fault"></i>音频异常</span>
+      <span class="chart-unit">{{ config.unit }}</span>
+    </div>
     <div class="chart-scroll">
       <svg class="telemetry-chart" :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summary" tabindex="0"
         @mousemove="move" @mouseleave="hovered = null" @keydown.left.prevent="step(-1)" @keydown.right.prevent="step(1)">
@@ -96,21 +118,22 @@ const summary = computed(() => {
         </g>
         <text v-for="label in timeLabels" :key="label.text" :x="label.x" :y="H - 6" :text-anchor="label.anchor" class="chart-axis">{{ label.text }}</text>
         <g v-for="(segment, index) in segments" :key="index">
-          <path class="series-heap" :d="line(segment, 'heap')" />
-          <path class="series-min" :d="line(segment, 'min')" />
+          <path class="series-primary" :d="line(segment, 'primary')" />
+          <path v-if="config.secondary" class="series-secondary" :d="line(segment, 'secondary')" />
           <template v-if="segment.length === 1">
-            <circle class="dot-heap" :cx="x(segment[0].at)" :cy="y(segment[0].heap)" r="3" />
-            <circle class="dot-min" :cx="x(segment[0].at)" :cy="y(segment[0].min)" r="3" />
+            <circle class="dot-primary" :cx="x(segment[0].at)" :cy="y(segment[0].primary)" r="3" />
+            <circle v-if="config.secondary && segment[0].secondary !== null" class="dot-secondary" :cx="x(segment[0].at)" :cy="y(segment[0].secondary)" r="3" />
           </template>
         </g>
+        <circle v-for="row in faults" :key="row.at" class="dot-fault" :cx="x(row.at)" :cy="y(row.primary)" r="3" />
         <g v-if="selected">
           <line class="chart-cursor" :x1="x(selected.at)" :x2="x(selected.at)" :y1="T" :y2="H - B" />
-          <circle class="dot-heap" :cx="x(selected.at)" :cy="y(selected.heap)" r="3.5" />
-          <circle class="dot-min" :cx="x(selected.at)" :cy="y(selected.min)" r="3.5" />
+          <circle :class="selectedFault ? 'dot-fault' : 'dot-primary'" :cx="x(selected.at)" :cy="y(selected.primary)" r="3.5" />
+          <circle v-if="config.secondary && selected.secondary !== null" class="dot-secondary" :cx="x(selected.at)" :cy="y(selected.secondary)" r="3.5" />
           <g class="chart-tooltip" :transform="`translate(${tooltipX}, 6)`">
             <rect :width="TIP_W" height="36" rx="6" />
             <text x="10" y="15">{{ formatTime(selected.point.observedAt) }}</text>
-            <text x="10" y="29">可用 {{ Math.round(selected.heap) }} KB · 最小 {{ Math.round(selected.min) }} KB</text>
+            <text x="10" y="29">{{ config.primary.short }} {{ Math.round(selected.primary) }} {{ config.unit }}<template v-if="config.secondary && selected.secondary !== null"> · {{ config.secondary.short }} {{ Math.round(selected.secondary) }} {{ config.unit }}</template><template v-if="selectedFault"> · 音频异常</template></text>
           </g>
         </g>
       </svg>
@@ -123,18 +146,20 @@ const summary = computed(() => {
 .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); color: var(--muted); font-size: var(--text-sm); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 14px; height: 2px; border-radius: 999px; }
-.swatch-heap { background: var(--accent); }
-.swatch-min { background: var(--info); }
+.swatch-primary { background: var(--accent); }
+.swatch-secondary { background: var(--info); }
+.swatch-fault { background: var(--danger); }
 .chart-unit { margin-left: auto; }
 .chart-scroll { overflow-x: auto; margin-top: var(--space-2); }
 .telemetry-chart { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; }
 .telemetry-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-grid line { stroke: var(--divider); stroke-width: 1; }
 .chart-grid text, .chart-axis, .chart-tooltip text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-.series-heap { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.series-min { fill: none; stroke: var(--info); stroke-width: 1.4; stroke-dasharray: 4 3; stroke-linecap: round; stroke-linejoin: round; }
-.dot-heap { fill: var(--accent); }
-.dot-min { fill: var(--info); }
+.series-primary { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.series-secondary { fill: none; stroke: var(--info); stroke-width: 1.4; stroke-dasharray: 4 3; stroke-linecap: round; stroke-linejoin: round; }
+.dot-primary { fill: var(--accent); }
+.dot-secondary { fill: var(--info); }
+.dot-fault { fill: var(--danger); stroke: var(--surface); stroke-width: 1; }
 .chart-cursor { stroke: var(--border-hover); stroke-width: 1; }
 .chart-tooltip rect { fill: var(--surface); stroke: var(--border); }
 .chart-tooltip text { fill: var(--ink-2); }

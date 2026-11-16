@@ -3,7 +3,7 @@ import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory } from './types';
+import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory, type TelemetryMetric } from './types';
 import StatusNote from './StatusNote.vue';
 import TelemetryChart from './TelemetryChart.vue';
 import { readFailure } from './failure';
@@ -35,6 +35,13 @@ type RangeId = (typeof ranges)[number]['id'];
 const bucketLabels: Record<string, string> = { '1m': '1 分钟桶', '5m': '5 分钟桶', '15m': '15 分钟桶', '1h': '1 小时桶', '1d': '1 天桶' };
 const range = ref<RangeId>('6h');
 const currentRange = computed(() => ranges.find(item => item.id === range.value)!);
+const metrics: { id: TelemetryMetric; label: string }[] = [
+  { id: 'heap', label: '内存' },
+  { id: 'volume', label: '音量' },
+  { id: 'unread', label: '未读' },
+  { id: 'audio', label: '音频' },
+];
+const metric = ref<TelemetryMetric>('heap');
 const history = ref<TelemetryHistory | null>(null), historyLoading = ref(false), historyError = ref('');
 const lastPoint = computed(() => history.value?.points[history.value.points.length - 1] ?? null);
 let historyGeneration = 0, historyRead: AbortController | undefined, historyTimer: ReturnType<typeof setInterval> | undefined;
@@ -145,12 +152,15 @@ onUnmounted(() => {
             <NButton v-for="item in ranges" :key="item.id" size="small" attr-type="button" :type="range === item.id ? 'primary' : 'default'" :quaternary="range !== item.id" @click="pickRange(item.id)">{{ item.label }}</NButton>
           </div>
         </div>
+        <div class="history-metrics" role="group" aria-label="历史指标">
+          <NButton v-for="item in metrics" :key="item.id" size="small" attr-type="button" :type="metric === item.id ? 'primary' : 'default'" :quaternary="metric !== item.id" @click="metric = item.id">{{ item.label }}</NButton>
+        </div>
         <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
         <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
         <template v-else-if="history">
           <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
           <template v-else>
-            <TelemetryChart :points="history.points" :from="history.from" :to="history.to" :bucket-seconds="currentRange.bucketSeconds" />
+            <TelemetryChart :points="history.points" :from="history.from" :to="history.to" :bucket-seconds="currentRange.bucketSeconds" :metric="metric" />
             <p class="management-hint">{{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}<template v-if="history.truncated"> · 仅显示最新 2000 个点</template><br>历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。</p>
           </template>
         </template>
