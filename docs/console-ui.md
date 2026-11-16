@@ -26,6 +26,19 @@
 - 面板一律通过 `src/panels.ts` 的 `asyncPanel(name)` 引入，不直接写 `defineAsyncComponent(() => import(...))`；新增面板要同时登记 `loaders` 与 `tabPanels`，否则意图预取拿不到。
 - `focusContent()` 按有限次轮询等 `.content h1`：面板是异步挂载的，一次 `nextTick` 不足以拿到标题。
 
+## 样式守卫（CONSOLE-17）
+
+`npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。四条规则：
+
+1. `style.css` 的 hex 只允许出现在 `:root` 定义里；
+2. 组件的 `<style>` 块里不允许出现任何 hex；
+3. `var(--x)` 必须已在 `:root` 定义（带 fallback 也算）；
+4. 定义过的 token 必须有人引用。
+
+失败即退出 1，`run_local.py build` 与 20 个跨仓 UI 脚本都会因此中断。本轮据此删掉 5 个死 token（`--accent-hover`、`--accent-pressed`、`--info`、`--info-soft`、`--radius-pill`），现存 53 个。
+
+`.primary/.secondary/.text-button/.compact` 保持零字节定义：视觉由 Naive 的 `type`/`quaternary` 决定，这几个类只作模板与断言的语义 hook，不做样式扩展。
+
 ## 修改位置
 
 `frontend/src/theme.ts` 管理 Naive UI 主题；`style.css` 管理布局与已有原生字段；`navigation.ts` 保存导航分组和图标；`ConsoleNavigation.vue` 复用角色导航；`ConsoleShell.vue` 管理桌面框架和移动抽屉。App 继续拥有请求、权限会话与待确认提交，界面组件不另建 API 或持久化副本。

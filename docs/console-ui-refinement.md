@@ -61,8 +61,8 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O13 | 面板异步加载 + 导航意图预取 + 骨架占位 | 首屏 JS 471.07→323.88 kB（−31%），其余按页 2.8–49.3 kB | P1 | 已完成 |
 | O14 | 设备设置面板内联到卡片下方 | 触发点与结果同屏 | P1 | 未开始 |
 | O15 | OTA 安装按钮带设备名与目标摘要 | 减少误装版本 | P1 | 未开始 |
-| O16 | token 守卫脚本接入 `run_local.py build` | 私有 hex 不再回潮 | P2 | 未开始 |
-| O17 | 清理 `.primary/.secondary/.text-button/.compact` 空挂类（24 处） | 样式意图与实际一致 | P2 | 未开始 |
+| O16 | token 守卫 `scripts/check-tokens.mjs` 接入 `npm run check` | 私有 hex、未定义 token、死 token 一律红 | P2 | 已完成 |
+| O17 | `.primary/.secondary/.text-button/.compact` 空挂类 | 已评估：保留为零字节语义 hook | P2 | 已完成 |
 | O18 | 横向滚动表格补 `tabindex="0" role="region" aria-label` | 键盘可进入并横滚全部列 | P0 | 已完成 |
 
 ## 四、首批落地内容

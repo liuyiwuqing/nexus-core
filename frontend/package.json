@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "check": "vue-tsc --noEmit",
+    "check": "vue-tsc --noEmit && node scripts/check-tokens.mjs",
+    "check:tokens": "node scripts/check-tokens.mjs",
     "build": "vite build"
   },
   "dependencies": {

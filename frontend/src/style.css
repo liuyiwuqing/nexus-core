@@ -8,13 +8,12 @@
   --canvas:#f4f7f5; --surface:#fff; --surface-subtle:#fafcfb; --surface-hover:#f0f5f1; --surface-disabled:#f1f4f2;
   --ink:#243b35; --ink-2:#465b54; --muted:#57675f; --placeholder:#697970; --faint:#a6b7ac;
   --border:#dce5e0; --border-strong:#b3c6bb; --border-hover:#7f9e8d; --divider:#e7ede8;
-  --accent:#245d4d; --accent-hover:#32715f; --accent-pressed:#194838; --accent-soft:#e7f0ea;
+  --accent:#245d4d; --accent-soft:#e7f0ea;
   --accent-soft-weak:#edf4ef; --on-accent:#fff;
   --success:#296247; --success-soft:#e6f1ea; --success-border:#c9ddce;
   --warning:#7c5b1d; --warning-soft:#faf1db; --warning-border:#e8d3a4;
   --danger:#9b3f35; --danger-soft:#fbece7; --danger-border:#eed3cb;
-  --info:#41626f; --info-soft:#edf4f0;
-  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px; --radius-pill:999px;
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px;
   --radius:12px; /* = --radius-lg 的别名，仅兼容存量引用，勿新增用途 */
   --pad-card:24px; --gutter:34px; --topbar-h:64px; --toolbar-h:62px;
   --text-xs:11px; --text-sm:12px; --text-base:13px; --text-md:14px; --text-lg:16px; --text-title:18px; --text-2xl:20px; --text-3xl:24px; --text-4xl:30px;
