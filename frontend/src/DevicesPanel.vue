@@ -9,8 +9,8 @@ import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatTime, type Api, type Device } from './types';
 const props = defineProps<{ items: Device[]; busy: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
 const adding = ref(false), deviceId = ref(''), name = ref('');
-const selectedId = ref(''), selected = computed(() => props.items.find(item => item.deviceId === selectedId.value));
-const otaId = ref(''), otaDevice = computed(() => props.items.find(item => item.deviceId === otaId.value));
+const selectedId = ref('');
+const otaId = ref('');
 const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
 const editingDevice = computed(() => props.items.find(item => item.deviceId === renameId.value));
@@ -33,6 +33,7 @@ async function saveName() {
 async function manage(id: string) { selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus(); }
 async function upgrade(id: string) { otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus(); }
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
+async function closeManagement(id: string) { selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
 async function submit() {
   if (await props.register(deviceId.value, name.value)) { adding.value = false; deviceId.value = ''; name.value = ''; }
 }
@@ -47,7 +48,7 @@ async function submit() {
     </form>
     <div v-if="!items.length" class="empty-state"><h2>还没有设备</h2><p>登记设备并完成本机配网后，即可接收提醒。</p></div>
     <div v-else class="device-grid">
-      <article v-for="device in items" :key="device.deviceId" class="device-card">
+      <article v-for="device in items" :key="device.deviceId" class="device-card" :class="{ expanded: selectedId === device.deviceId || otaId === device.deviceId }">
         <div class="device-top"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><NTag :type="device.online ? 'success' : 'default'" :bordered="false" size="small">{{ device.online ? '在线' : '离线' }}</NTag></div>
         <div class="device-name-heading"><h2>{{ device.name }}</h2><NButton quaternary attr-type="button" v-if="admin && renameId !== device.deviceId" :id="'device-rename-' + device.deviceId" class="text-button" :disabled="busy" @click="editName(device)">修改名称</NButton></div><p class="mono">{{ device.deviceId }}</p>
         <form v-if="renameId === device.deviceId" class="device-name-form" @submit.prevent="saveName">
@@ -57,11 +58,11 @@ async function submit() {
         </form>
         <dl><div><dt>最近连接</dt><dd>{{ formatTime(device.lastSeen) }}</dd></div></dl>
         <div class="switch-row"><span :id="'device-messages-' + device.deviceId">接收新消息</span><NSwitch :aria-labelledby="'device-messages-' + device.deviceId" :aria-disabled="busy || !admin" :value="device.enabled" :disabled="busy || !admin" @update:value="enable(device.deviceId, $event)" /></div>
-        <div class="device-actions"><NButton attr-type="button" class="secondary" :aria-expanded="selectedId === device.deviceId" aria-controls="device-management-panel" @click="manage(device.deviceId)"><template #icon><Settings2 :size="15" /></template>设置与状态</NButton>
+        <div class="device-actions"><NButton attr-type="button" :id="'device-manage-' + device.deviceId" class="secondary" :aria-expanded="selectedId === device.deviceId" aria-controls="device-management-panel" @click="manage(device.deviceId)"><template #icon><Settings2 :size="15" /></template>设置与状态</NButton>
         <NButton quaternary attr-type="button" :id="'device-ota-' + device.deviceId" class="text-button" :aria-expanded="otaId === device.deviceId" aria-controls="remote-ota-panel" @click="upgrade(device.deviceId)"><template #icon><Upload :size="15" /></template>固件升级</NButton></div>
+        <DeviceManagementPanel v-if="selectedId === device.deviceId" :key="'manage-' + device.deviceId" :device="device" :api="api" :busy="busy" @close="closeManagement(device.deviceId)" />
+        <RemoteOtaPanel v-if="otaId === device.deviceId" :key="'ota-' + device.deviceId" :device="device" :api="api" :busy="busy" @close="closeOta" />
       </article>
     </div>
-    <RemoteOtaPanel v-if="otaDevice" :key="otaDevice.deviceId" :device="otaDevice" :api="api" :busy="busy" @close="closeOta" />
-    <DeviceManagementPanel v-if="selected" :key="selected.deviceId" :device="selected" :api="api" :busy="busy" @close="selectedId = ''" />
   </section>
 </template>

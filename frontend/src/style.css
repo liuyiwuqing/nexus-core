@@ -160,6 +160,9 @@ p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transpare
 .badge.warning { color: var(--warning); background: var(--warning-soft); }
 .device-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 18px; }
 .device-card { padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+/* 展开的设置/升级面板属于这张卡片：卡片撑满整行，面板去外框、用分隔线衔接，触发点与结果同屏。 */
+.device-card.expanded { grid-column: 1 / -1; }
+.device-card > .management-panel { margin-top: 20px; padding: 20px 0 0; border: 0; border-top: 1px solid var(--divider); border-radius: 0; background: none; }
 .device-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; }
 .device-top .pet-symbol { width: 48px; height: 48px; background: var(--accent-soft-weak); border-radius: var(--radius-lg); gap: 11px; }
 .device-top .pet-symbol i { width: 5px; height: 13px; background: var(--accent); }
@@ -226,7 +229,7 @@ button.mobile-back { display: none; }
 .spaced { margin-top: 18px; }
 .automation-history { margin-top: 32px; }
 .automation-history h2 { margin-bottom: 16px; }
-.management-panel { margin-top: 24px; padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); outline-offset: 4px; }
+.management-panel { margin-top: 24px; padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); outline: 2px solid var(--focus); outline-offset: 4px; }
 .management-panel h2 { font-size: var(--text-lg); }
 .management-actions, .management-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .management-status { margin: 18px 0; color: var(--muted); font-size: var(--text-sm); }
@@ -273,6 +276,12 @@ button.mobile-menu { display: none; }
   .workspace-actions { gap: 12px; }
   .session-role { padding-left: 12px; }
 }
+/* 面板标题与右侧动作在窄屏挤在一起时，标题会被压成两行断字；让标题独占一行、动作换到下一行。 */
+@media (max-width: 560px) {
+  .record-heading { flex-wrap: wrap; }
+  .record-heading h2 { flex: 1 1 100%; }
+}
+
 @media (max-width: 760px) {
   :root { --gutter: 16px; --topbar-h: 60px; }
   .app-layout { display: block; }

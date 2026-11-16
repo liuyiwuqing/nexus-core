@@ -59,7 +59,7 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O11 | 统一 `StatusNote` 组件（info/warn/danger/busy/action 五态） | 5 个面板的未确认提示收敛为一种表达 | P1 | 未开始 |
 | O12 | 分级刷新：按当前页请求 + SSE 补齐外壳依赖 + 可见性暂停 | 概览页 16s 15→3 次；消息页 20→8 次 | P1 | 已完成 |
 | O13 | 面板异步加载 + 导航意图预取 + 骨架占位 | 首屏 JS 471.07→323.88 kB（−31%），其余按页 2.8–49.3 kB | P1 | 已完成 |
-| O14 | 设备设置面板内联到卡片下方 | 触发点与结果同屏 | P1 | 未开始 |
+| O14 | 设置/升级面板内联到所属设备卡片（卡片撑满整行，面板去外框） | 触发点与结果同屏 | P1 | 已完成 |
 | O15 | OTA 安装按钮报目标版本，页脚报设备名 | 提交点自报装哪个版本、装到哪台 | P1 | 已完成 |
 | O16 | token 守卫 `scripts/check-tokens.mjs` 接入 `npm run check` | 私有 hex、未定义 token、死 token 一律红 | P2 | 已完成 |
 | O17 | `.primary/.secondary/.text-button/.compact` 空挂类 | 已评估：保留为零字节语义 hook | P2 | 已完成 |
