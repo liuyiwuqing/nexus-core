@@ -3,8 +3,10 @@ import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement } from './types';
+import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory } from './types';
 import StatusNote from './StatusNote.vue';
+import TelemetryChart from './TelemetryChart.vue';
+import { readFailure } from './failure';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
@@ -23,6 +25,19 @@ const stateNames = { pending: '等待下发', sent: '等待设备确认', applie
 const eventNames: Record<string, string> = { created: '管理员提交', publish_attempt: '尝试下发', publish_unconfirmed: '下发结果未确认', applied: '设备设置已确认', rejected: '设备未接受', expired: '请求到期', unconfirmed: '等待配置回读' };
 let alive = true, generation = 0, interval: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;
 const path = `devices/${encodeURIComponent(props.device.deviceId)}/management`;
+const ranges = [
+  { id: '1h', label: '1 小时', bucket: '1m', bucketSeconds: 60, hours: 1 },
+  { id: '6h', label: '6 小时', bucket: '5m', bucketSeconds: 300, hours: 6 },
+  { id: '24h', label: '24 小时', bucket: '15m', bucketSeconds: 900, hours: 24 },
+  { id: '7d', label: '7 天', bucket: '1h', bucketSeconds: 3600, hours: 168 },
+] as const;
+type RangeId = (typeof ranges)[number]['id'];
+const bucketLabels: Record<string, string> = { '1m': '1 分钟桶', '5m': '5 分钟桶', '15m': '15 分钟桶', '1h': '1 小时桶', '1d': '1 天桶' };
+const range = ref<RangeId>('6h');
+const currentRange = computed(() => ranges.find(item => item.id === range.value)!);
+const history = ref<TelemetryHistory | null>(null), historyLoading = ref(false), historyError = ref('');
+const lastPoint = computed(() => history.value?.points[history.value.points.length - 1] ?? null);
+let historyGeneration = 0, historyRead: AbortController | undefined, historyTimer: ReturnType<typeof setInterval> | undefined;
 function resetDraft() {
   const current = data.value?.telemetry;
   if (!current?.config) return;
@@ -44,6 +59,25 @@ async function refresh() {
       loadError.value = error instanceof Error && 'status' in error ? error.message : '无法读取设备状态，请稍后刷新。';
   } finally { if (alive && current === generation) loading.value = false; }
 }
+async function loadHistory() {
+  historyRead?.abort(); historyRead = new AbortController(); const current = ++historyGeneration;
+  historyLoading.value = true; historyError.value = '';
+  const to = new Date(), from = new Date(to.valueOf() - currentRange.value.hours * 3600_000);
+  const query = `devices/${encodeURIComponent(props.device.deviceId)}/telemetry?from=${encodeURIComponent(from.toISOString())}`
+    + `&to=${encodeURIComponent(to.toISOString())}&bucket=${currentRange.value.bucket}`;
+  try {
+    const value = await props.api<TelemetryHistory>(query, 'GET', undefined, historyRead.signal);
+    if (alive && current === historyGeneration) history.value = value;
+  } catch (failure) {
+    if (alive && current === historyGeneration && !(failure instanceof DOMException && failure.name === 'AbortError'))
+      historyError.value = readFailure(failure, '历史读取失败，请稍后重试。');
+  } finally { if (alive && current === historyGeneration) historyLoading.value = false; }
+}
+function pickRange(id: RangeId) {
+  if (range.value === id) return;
+  range.value = id; history.value = null; void loadHistory();
+}
+function refreshAll() { void refresh(); void loadHistory(); }
 async function submit() {
   if (sending.value || props.busy) return;
   if (!uncertain.value) {
@@ -80,22 +114,47 @@ function setTime(key: 'startMinute' | 'endMinute', event: Event) {
 }
 const duration = computed({ get: () => (form.value?.message.durationMs ?? 8000) / 1000,
   set: (value: number) => { if (form.value) form.value.message.durationMs = Math.round(value * 1000); } });
-onMounted(() => { void refresh(); interval = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void refresh(); }, 3000); });
-onUnmounted(() => { alive = false; generation++; clearInterval(interval); read?.abort(); });
+onMounted(() => {
+  void refresh(); void loadHistory();
+  interval = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void refresh(); }, 3000);
+  historyTimer = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void loadHistory(); }, 60000);
+});
+onUnmounted(() => {
+  alive = false; generation++; historyGeneration++;
+  clearInterval(interval); clearInterval(historyTimer);
+  read?.abort(); historyRead?.abort();
+});
 </script>
 
 <template>
   <section id="device-management-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}设置与状态`">
-    <div class="record-heading"><h2>设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
+    <div class="record-heading"><h2>设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refreshAll">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
     <template v-if="data">
       <p v-if="!data.telemetry" class="management-status">尚未收到设备状态，连接设备后将自动显示。</p>
       <template v-else>
-        <div class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span><span>{{ formatTime(new Date(data.telemetry.observedAt * 1000).toISOString()) }}</span><span v-if="data.telemetry.muted">语音静音</span><span v-if="data.telemetry.dnd">免打扰中</span><span v-if="data.telemetry.audioFaulted" class="inline-error">音频异常</span></div>
+        <div class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''" :title="data.fresh ? '90 秒内收到的新遥测' : '超过 90 秒未收到新遥测'">{{ data.fresh ? '实时快照' : '快照已过期' }}</span><span>采样于 {{ formatTime(new Date(data.telemetry.observedAt * 1000).toISOString()) }}</span><span v-if="data.telemetry.muted">语音静音</span><span v-if="data.telemetry.dnd">免打扰中</span><span v-if="data.telemetry.audioFaulted" class="inline-error">音频异常</span></div>
         <dl class="management-metrics"><div><dt>固件</dt><dd>{{ data.telemetry.firmwareVersion }}</dd></div><div><dt>配置版本</dt><dd>{{ data.telemetry.configRevision }}</dd></div><div><dt>未读消息</dt><dd>{{ data.telemetry.unread }}</dd></div><div><dt>可用内存</dt><dd>{{ Math.floor(data.telemetry.freeHeap / 1024) }} KB</dd></div></dl>
         <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">本机语音策略与已保存设置不同，请在设备上核对静音选择。</p>
       </template>
+      <section class="telemetry-history" aria-label="遥测历史">
+        <div class="history-heading">
+          <div><h3>状态历史</h3><p>来自设备已上报的遥测</p></div>
+          <div class="history-range" role="group" aria-label="历史时间范围">
+            <NButton v-for="item in ranges" :key="item.id" size="small" attr-type="button" :type="range === item.id ? 'primary' : 'default'" :quaternary="range !== item.id" @click="pickRange(item.id)">{{ item.label }}</NButton>
+          </div>
+        </div>
+        <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
+        <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
+        <template v-else-if="history">
+          <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
+          <template v-else>
+            <TelemetryChart :points="history.points" :from="history.from" :to="history.to" :bucket-seconds="currentRange.bucketSeconds" />
+            <p class="management-hint">{{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}<template v-if="history.truncated"> · 仅显示最新 2000 个点</template><br>历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。</p>
+          </template>
+        </template>
+      </section>
       <p v-if="data.configBlock" class="management-hint" role="status">{{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}</p>
       <StatusNote v-if="staleDraft" tone="warn">设备设置已变化，你的编辑仍保留。<template #actions><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton></template></StatusNote>
       <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p><p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>

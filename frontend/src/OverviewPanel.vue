@@ -59,7 +59,7 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
           <p v-if="!snapshot.today.messages" class="overview-caption">今日尚未收件。</p>
         </article>
       </div>
-      <p class="overview-caption overview-stamp">快照 {{ formatTime(snapshot.asOf) }}（本地时间）· 每 5 秒更新</p>
+      <p class="overview-caption overview-stamp">数据库快照 {{ formatTime(snapshot.asOf) }}（本地时间）· 页面每 5 秒重新读取</p>
     </template>
   </section>
 </template>

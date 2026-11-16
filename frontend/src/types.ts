@@ -28,6 +28,18 @@ export interface DeviceManagement {
   deviceId: string; fresh: boolean; canConfigure: boolean; configBlock: string;
   telemetry: DeviceTelemetry | null; receivedAt: string | null; configRequests: ConfigRequest[];
 }
+export interface TelemetryPoint {
+  observedAt: string; receivedAt: string; count: number;
+  firmwareVersion: string; configRevision: number;
+  volume: number; brightness: number; muted: boolean; dnd: boolean; unread: number;
+  freeHeap: number; freeHeapMin: number; freeHeapMax: number; minFreeHeap: number;
+  audioUnderruns: number | null; inferenceMaxMs: number | null; displayMaxMs: number | null;
+  audioFaulted: boolean | null;
+}
+export interface TelemetryHistory {
+  deviceId: string; from: string; to: string; bucket: string;
+  sampleSeconds: number; retentionDays: number; truncated: boolean; points: TelemetryPoint[];
+}
 export interface OtaTarget { releaseId: string; version: string; imageSha256: string; imageSize: number; releaseSequence: number }
 export interface OtaRelease { releaseId: string; target: OtaTarget; identity: Record<string, string | number>; createdAt: string }
 export interface OtaView {

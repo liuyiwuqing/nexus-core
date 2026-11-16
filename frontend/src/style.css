@@ -371,6 +371,13 @@ button.mobile-back { display: none; }
 .management-hint { margin: var(--space-4) 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.8; }
 .management-history { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); }
 .management-history summary { cursor: pointer; font-size: var(--text-md); }
+/* 快照是最后一条设备遥测，历史是采样后的趋势；两块用同一边框层级但不同标题表达。 */
+.telemetry-history { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.history-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+.history-heading h3 { margin: 0; font-size: var(--text-md); }
+.history-heading p { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
+.history-range { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.history-empty { margin: var(--space-4) 0; color: var(--muted); font-size: var(--text-sm); }
 .management-record { padding: var(--space-4) 0; border-bottom: 1px solid var(--divider); font-size: var(--text-sm); }
 .management-record p { line-height: 1.8; }
 .pet-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin: 0 0 var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }

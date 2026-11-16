@@ -154,7 +154,7 @@ python3 tools/provision_device.py --port /dev/cu.usbmodemXXXX
 
 所有请求沿用管理员 Bearer 鉴权，单一共享令牌不提供多用户/RBAC。配置请求持久化后返回 202，不等于设备已保存；只有有效 ACK 或匹配完整回读才能确认。HTTP 中断保留原 requestId，重试不能换 ID。每设备最多一个 pending/sent/unconfirmed 请求，曾尝试发送后超时保留 unconfirmed，随后用新鲜配置核对。retained 遥测不把设备标为在线。详细状态与设备事务见 [管理契约](../04-ai-desktop-pet/integration/contracts/device-management-v1/README.md)。
 
-遥测历史单独保存为追加式样本，`GET /devices/{id}/telemetry` 支持原始点与 `1m`–`1d` 桶聚合。变化即记、5 秒变化下限、30 秒心跳封顶、30 天保留，缺失桶不补零；快照仍以 `management` 的 `fresh`/`observedAt` 为准。口径、字段语义与配置见[遥测历史与采样](docs/device-telemetry-history.md)。
+遥测历史单独保存为追加式样本，`GET /devices/{id}/telemetry` 支持原始点与 `1m`–`1d` 桶聚合。变化即记、5 秒变化下限、30 秒心跳封顶、30 天保留，缺失桶不补零；快照仍以 `management` 的 `fresh`/`observedAt` 为准。设备「设置与状态」提供 1 小时–7 天的状态历史图，只有快照标「实时」，历史最后一条不代表在线。口径、字段语义与配置见[遥测历史与采样](docs/device-telemetry-history.md)。
 
 新安装生成带管理主题的设备作用域 ACL；已有实例不会被 init_local.py 自动覆盖。先停 CORE、备份并在独立库验证可恢复，再允许新 JAR 的 Flyway 迁移（V8 远程管理、V9 消息保留、V10 记忆副本账本/删除队列）。Broker 在维护窗口执行：
 
