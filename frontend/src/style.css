@@ -16,7 +16,7 @@
   --info:#41626f; --info-soft:#edf4f0;
   --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px; --radius-pill:999px;
   --radius:12px; /* = --radius-lg 的别名，仅兼容存量引用，勿新增用途 */
-  --pad-card:24px; --gutter:34px; --topbar-h:64px;
+  --pad-card:24px; --gutter:34px; --topbar-h:64px; --toolbar-h:62px;
   --text-xs:11px; --text-sm:12px; --text-base:13px; --text-md:14px; --text-lg:16px; --text-title:18px; --text-2xl:20px; --text-3xl:24px; --text-4xl:30px;
   --text-read:15px; --text-clock:56px;
   --shadow-1:0 2px 8px #173f2c0f; --shadow-2:0 16px 48px #173f2c14; --focus:#467b69;
@@ -104,7 +104,9 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .section-heading p { margin-top: 7px; font-size: var(--text-sm); color: var(--muted); }
 .section-heading > div { min-width: 0; }
-.feedback { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-size: var(--text-base); }
+/* 操作结果吸在工具栏下方：长列表页滚到深处执行操作后，结果仍在视口内。
+   静止时自然位置就在吸顶位之下，所以不改变任何现有布局。 */
+.feedback { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-size: var(--text-base); position: sticky; top: calc(var(--topbar-h) + var(--toolbar-h)); z-index: var(--z-sticky-feedback); box-shadow: var(--shadow-1); }
 .feedback.error { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
 .notice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-base); }
 .notice-dot { flex: 0 0 6px; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--warning); }
