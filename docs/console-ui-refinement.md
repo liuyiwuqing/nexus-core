@@ -63,6 +63,7 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O15 | OTA 安装按钮带设备名与目标摘要 | 减少误装版本 | P1 | 未开始 |
 | O16 | token 守卫脚本接入 `run_local.py build` | 私有 hex 不再回潮 | P2 | 未开始 |
 | O17 | 清理 `.primary/.secondary/.text-button/.compact` 空挂类（24 处） | 样式意图与实际一致 | P2 | 未开始 |
+| O18 | 横向滚动表格补 `tabindex="0" role="region" aria-label` | 键盘可进入并横滚全部列 | P0 | 已完成 |
 
 ## 四、首批落地内容
 
@@ -105,6 +106,8 @@ JS 增加 0.87 kB 来自主题键；CSS 增加 4.94 kB 来自 token 定义与响
 3. **表格**：需要卡片化的表格给中间列加 `data-label`，`:has(td[data-label])` 才启用；未标注的表格自动回退横向滚动。不要把"三张表全卡片化"当默认。
 4. **dl**：默认两列网格（`minmax(96px,max-content) 1fr`），指标条与统计单元用 `display:block` 覆盖；不要再给 `dl>div` 加 `justify-content:space-between`。
 5. **验收方式**：跨仓浏览器断言按"行为"写，不按条数写（12 个 `[data-tab]` 改文案会红），资源体积按 gzip 且留 10 kB 余量。
+6. **卡片化覆盖**：三张表（投递、最近执行、操作审计）已给中间列加 `data-label`，`≤760` 全部转卡片行；新增表格若不标注 `data-label`，将自动回退横向滚动并由 O18 的 `role="region"` 提供键盘入口。
+7. **焦点与标题**：抽屉关闭后 `focusContent()` 只取 `.content h1`，不得放宽为 `.content h1, .content h2`（会把焦点退到区块标题）；`.section-heading` 上不再叠加 `:focus-visible` 轮廓（全局 `button/a/input/textarea/select` 已覆盖，重复样式会在非交互容器上画出焦点框）。
 
 ## 七、验证
 
@@ -113,6 +116,8 @@ npm --prefix frontend run check     # vue-tsc，退出 0
 npm --prefix frontend run build     # 退出 0，CSS 26.60 kB / JS 471.07 kB
 ```
 
-浏览器实测通过：12 个导航项 / 3 个分组完整；导出折叠与 Escape 归还焦点；390px 抽屉可开合并把焦点交给 `h1`；三档视口 `document.documentElement.scrollWidth` 均等于视口宽（无横向溢出）；Naive 样式节点带本页 nonce。
+浏览器实测通过：12 个导航项 / 3 个分组完整；导出折叠与 Escape 归还焦点；390px 抽屉可开合并把焦点交给 `h1`；三档视口 `document.documentElement.scrollWidth` 均等于视口宽（无横向溢出）；Naive 样式节点带本页 nonce；三张表格容器具备 `tabindex="0"`、`role="region"` 与 `aria-label`。
+
+下一轮建议加一条"标题随手写就能成立"的指纹断言（按 `tabId → h1 文本` 对 12 页逐项核对），这样标题回退到 `h2` 或文案漂移会立刻红，而不是等用户发现；`focusContent()` 只认 `h1`，该断言是它的兜底。
 
 未执行：`tools/run_local.py build`（需独立 PostgreSQL/MQTT 与 Maven）、远程 CI、真实部署。上述结果仅为本地前端与环回夹具，不代表目标机与实机验收。

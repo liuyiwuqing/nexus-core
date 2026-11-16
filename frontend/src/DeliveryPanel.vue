@@ -24,7 +24,7 @@ async function closeHistory() {
     <div v-else-if="failed" class="empty-state"><h2>投递读取失败</h2></div>
     <div v-else-if="!data.items.length && (status || Object.values(search).some(Boolean))" class="empty-state"><h2>没有符合条件的投递</h2></div>
     <div v-else-if="!data.items.length" class="empty-state"><h2>还没有投递记录</h2><p>消息到达后，会为已启用的设备建立投递记录。</p></div>
-    <div v-else class="table-shell">
+    <div v-else class="table-shell" tabindex="0" role="region" aria-label="投递记录，可用方向键横向滚动查看全部列">
       <table><thead><tr><th>消息 / 设备</th><th>状态</th><th>尝试</th><th>操作</th></tr></thead>
         <tbody><tr v-for="delivery in data.items" :key="delivery.eventId"><td><strong>{{ delivery.title }}</strong><span class="cell-sub mono">{{ delivery.deviceId }}</span></td>
           <td data-label="状态"><span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">{{ deliveryNames[delivery.status] || delivery.status }}</span>
