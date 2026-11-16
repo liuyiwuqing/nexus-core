@@ -19,6 +19,13 @@
 - 表格卡片化以 `data-label` 为开关（`:has(td[data-label])`），未标注的表格回退横向滚动。`dl>div` 默认两列网格，指标条用 `display:block` 覆盖。
 - 跨仓浏览器断言按行为写，不按条数写。
 
+## 取数与加载（CONSOLE-16）
+
+- 轮询只取当前标签页渲染的接口（`App.vue` 的 `tabResources`）；SSE 失效额外补 `devices`，因为顶栏"设备视图"是外壳级依赖；顶栏刷新、错误重试、登录走 `allResources`。新增页面必须同时登记 `tabResources`，否则该页数据不会轮询。
+- `refresh()` 的第二个参数是集合而不是布尔；`loading` 只在实际取数据时置位，纯 `status` 探测不占用它。筛选/搜索的守卫用 `busy || exporting`，竞态统一由 `readGeneration` 负责。
+- 面板一律通过 `src/panels.ts` 的 `asyncPanel(name)` 引入，不直接写 `defineAsyncComponent(() => import(...))`；新增面板要同时登记 `loaders` 与 `tabPanels`，否则意图预取拿不到。
+- `focusContent()` 按有限次轮询等 `.content h1`：面板是异步挂载的，一次 `nextTick` 不足以拿到标题。
+
 ## 修改位置
 
 `frontend/src/theme.ts` 管理 Naive UI 主题；`style.css` 管理布局与已有原生字段；`navigation.ts` 保存导航分组和图标；`ConsoleNavigation.vue` 复用角色导航；`ConsoleShell.vue` 管理桌面框架和移动抽屉。App 继续拥有请求、权限会话与待确认提交，界面组件不另建 API 或持久化副本。
@@ -38,6 +45,7 @@ Naive UI 会生成样式节点。`GET /` 和 `GET /index.html` 为每次响应�
 python3 tools/run_local.py build
 # 配套 04 工程：真实 Vue + 回环 RAM HTTP + 与正式页面一致的 CSP
 bash tools/ci/test_console_theme_ui.sh
+# 异步面板要求断言先等待再判断，20 个控制台脚本需整体回归
 ```
 
 沿用 04 的消息发送、设备/记忆、筛选/CSV、投递时间线、OTA/成长、角色、SSE/引导、工具/规则、路由、来源和模板等浏览器入口。新增检查覆盖导航完整性、SVG、每次独立 nonce、样式实际生效、导出折叠/键盘关闭、390px 抽屉与焦点、菜单范围和无 CSP 违规；后端 `ConsolePagePolicyTest` 校验静态页 nonce/缓存及资源原策略。

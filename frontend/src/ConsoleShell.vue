@@ -16,7 +16,17 @@ const breakpoint = window.matchMedia('(min-width: 761px)');
 function resize() { if (breakpoint.matches) menuOpen.value = false; }
 onMounted(() => breakpoint.addEventListener('change', resize));
 onUnmounted(() => breakpoint.removeEventListener('change', resize));
-function focusContent() { document.querySelector<HTMLElement>('.content h1')?.focus(); }
+// 面板是异步 chunk，标题可能晚一拍才挂载；按有限次轮询等它出现，同时用 token 让后一次导航作废前一次。
+let focusToken = 0;
+async function focusContent() {
+  const token = ++focusToken;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (token !== focusToken) return;
+    const heading = document.querySelector<HTMLElement>('.content h1');
+    if (heading) { heading.focus(); return; }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
 async function navigate(tab: Tab) {
   emit('update:tab', tab);
   if (menuOpen.value) { navigating = true; menuOpen.value = false; }

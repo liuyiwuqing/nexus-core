@@ -4,31 +4,33 @@ import { provide } from 'vue';
 import ConsoleShell from './ConsoleShell.vue';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import InboxPanel from './InboxPanel.vue';
-import DevicesPanel from './DevicesPanel.vue';
-import ConnectorsPanel from './ConnectorsPanel.vue';
-import DeliveryPanel from './DeliveryPanel.vue';
-import ToolsPanel from './ToolsPanel.vue';
-import AutomationPanel from './AutomationPanel.vue';
-import RoutingPanel from './RoutingPanel.vue';
+import { asyncPanel, prefetch, prefetchTab } from './panels';
 import type { RoutingSession, SourceSession, AccessSession, TemplateSession } from './types';
-import SourcesPanel from './SourcesPanel.vue';
-import PullPanel from './PullPanel.vue';
 import type {PullSession} from './types';
-import AccessPanel from './AccessPanel.vue';
-import TemplatesPanel from './TemplatesPanel.vue';
-import SetupGuide from './SetupGuide.vue';
 import { watchConsoleEvents } from './eventStream';
 import type { Role } from './access';
-import PetPanel from './PetPanel.vue';
-import MemoryPanel from './MemoryPanel.vue';
-import OverviewPanel from './OverviewPanel.vue';
 import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
+// 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
+const DevicesPanel = asyncPanel('devices');
+const ConnectorsPanel = asyncPanel('connectors');
+const DeliveryPanel = asyncPanel('deliveries');
+const ToolsPanel = asyncPanel('tools');
+const AutomationPanel = asyncPanel('automation');
+const RoutingPanel = asyncPanel('routing');
+const SourcesPanel = asyncPanel('sources');
+const PullPanel = asyncPanel('pull');
+const AccessPanel = asyncPanel('access');
+const TemplatesPanel = asyncPanel('templates');
+const SetupGuide = asyncPanel('guide');
+const PetPanel = asyncPanel('pet');
+const MemoryPanel = asyncPanel('memory');
+const OverviewPanel = asyncPanel('overview');
 
 const role=ref<Role>('viewer');provide('role',role);
 const showGuide=ref(false),selectedDevice=ref(''),eventsConnected=ref(false);
 let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|undefined,streamGeneration=0;
 function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
-function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh();}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
+function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh(false,invalidateScope());}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
@@ -95,29 +97,66 @@ function querySuffix(kind: 'messages' | 'deliveries'): string {
   return query.size ? '&' + query.toString() : '';
 }
 
-async function refresh(clearFeedback = false): Promise<boolean> {
+type Resource = 'messages' | 'deliveries' | 'devices' | 'connectors' | 'status';
+const allResources: readonly Resource[] = ['messages', 'devices', 'connectors', 'deliveries', 'status'];
+// 每个标签页实际渲染的集合。轮询只取当前页需要的接口，其余集合沿用上一次的值；
+// 设备清单只在设备 / 路由 / 接入页会被改写，登录时已建立快照，故不放进消息页的轮询里（失效事件会补）。
+const tabResources: Record<Tab, readonly Resource[]> = {
+  inbox: ['messages', 'status'],
+  deliveries: ['deliveries', 'status'],
+  devices: ['devices', 'status'],
+  routing: ['devices', 'status'],
+  connectors: ['connectors', 'devices', 'status'],
+  tools: ['status'],
+  pet: ['status'],
+  memory: ['status'],
+  overview: ['status'],
+  access: ['status'],
+  templates: ['status'],
+  automation: ['status'],
+};
+// SSE 只告知"有变化"，不说明变了什么；设备清单在外壳（设备视图）里始终可见，失效时必须一并补齐，
+// 否则停在消息页时新登记的设备不会出现在选择器里。普通轮询不含它，避免每 5 秒为下拉框多打一次请求。
+function invalidateScope(): readonly Resource[] {
+  const polled = tabResources[tab.value];
+  return polled.includes('devices') ? polled : [...polled, 'devices'];
+}
+
+async function refresh(clearFeedback = false, resources?: readonly Resource[]): Promise<boolean> {
   controller?.abort(); controller = new AbortController();
   const requestId = ++readGeneration, currentEpoch = epoch, previousError = error.value;
-  loading.value = true;
+  const need = resources ?? tabResources[tab.value], signal = controller.signal;
+  // 纯状态探测不改变任何可见集合，不占用 loading，避免顶栏每隔几秒闪一次"刷新中"。
+  const track = need.some(resource => resource !== 'status');
+  if (track) loading.value = true;
   try {
-    const result = await Promise.all([
-      api<Page<Message>>(`messages?page=${messages.value.page}${querySuffix('messages')}`, 'GET', undefined, controller.signal),
-      api<{ items: Device[] }>('devices', 'GET', undefined, controller.signal),
-      api<{ items: Connector[] }>('connectors', 'GET', undefined, controller.signal),
-      api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${querySuffix('deliveries')}`, 'GET', undefined, controller.signal),
-      api<Status>('status', 'GET', undefined, controller.signal),
+    const [messagePage, deviceList, connectorList, deliveryPage, liveStatus] = await Promise.all([
+      need.includes('messages') ? api<Page<Message>>(`messages?page=${messages.value.page}${querySuffix('messages')}`, 'GET', undefined, signal) : undefined,
+      need.includes('devices') ? api<{ items: Device[] }>('devices', 'GET', undefined, signal) : undefined,
+      need.includes('connectors') ? api<{ items: Connector[] }>('connectors', 'GET', undefined, signal) : undefined,
+      need.includes('deliveries') ? api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${querySuffix('deliveries')}`, 'GET', undefined, signal) : undefined,
+      need.includes('status') ? api<Status>('status', 'GET', undefined, signal) : undefined,
     ]);
     if (requestId !== readGeneration || currentEpoch !== epoch) return false;
-    const messageLast = Math.max(1, Math.ceil(result[0].total / result[0].size));
-    const deliveryLast = Math.max(1, Math.ceil(result[3].total / result[3].size));
-    // 已读/重试或后台更新可能移走末页最后一项；用同一筛选重新读取有效页。
-    if (result[0].page > messageLast || result[3].page > deliveryLast) {
-      messages.value.page = Math.min(result[0].page, messageLast);
-      deliveries.value.page = Math.min(result[3].page, deliveryLast);
-      return await refresh(clearFeedback);
+    // 已读/重试或后台更新可能移走末页最后一项；用同一筛选重新读取有效页，两个列表一起纠正后再重取。
+    let repaged = false;
+    if (messagePage) {
+      const messageLast = Math.max(1, Math.ceil(messagePage.total / messagePage.size));
+      if (messagePage.page > messageLast) { messages.value.page = messageLast; repaged = true; }
+      else messages.value = messagePage;
     }
-    [messages.value, { items: devices.value }, { items: connectors.value }, deliveries.value, status.value] = result;
-    if(selectedDevice.value&&!devices.value.some(d=>d.deviceId===selectedDevice.value))selectedDevice.value='';
+    if (deliveryPage) {
+      const deliveryLast = Math.max(1, Math.ceil(deliveryPage.total / deliveryPage.size));
+      if (deliveryPage.page > deliveryLast) { deliveries.value.page = deliveryLast; repaged = true; }
+      else deliveries.value = deliveryPage;
+    }
+    if (repaged) return await refresh(clearFeedback, resources);
+    if (deviceList) {
+      devices.value = deviceList.items;
+      if (selectedDevice.value && !devices.value.some(d => d.deviceId === selectedDevice.value)) selectedDevice.value = '';
+    }
+    if (connectorList) connectors.value = connectorList.items;
+    if (liveStatus) status.value = liveStatus;
     // 后台读取恢复只清理读取错误；操作错误留给用户主动核对或下一次操作。
     if ((readFailed.value || clearFeedback) && error.value === previousError) error.value = '';
     readFailed.value = false;
@@ -129,8 +168,11 @@ async function refresh(clearFeedback = false): Promise<boolean> {
       error.value = failure instanceof ApiFailure ? failure.message : '暂时无法连接 CORE，请检查服务后重试。';
     } else if (failure instanceof ApiFailure && failure.status === 401) error.value = failure.message;
     return false;
-  } finally { if (requestId === readGeneration) loading.value = false; }
+  } finally { if (track && requestId === readGeneration) loading.value = false; }
 }
+
+// 用户主动触发（顶栏刷新、错误重试、登录）才做全量拉取，避免"点了刷新却没刷新当前页"。
+const fullRefresh = (clearFeedback = false) => refresh(clearFeedback, allResources);
 
 async function login() {
   if(loading.value)return;
@@ -141,7 +183,7 @@ async function login() {
     if(!['admin','operator','viewer'].includes(session.role))throw new Error('Invalid session');
     if(currentEpoch!==epoch)return;
     role.value=session.role;
-    if(await refresh()){authenticated.value=true;showGuide.value=devices.value.length===0;startEvents();}
+    if(await refresh(false, allResources)){authenticated.value=true;showGuide.value=devices.value.length===0;startEvents();}
   } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=failure instanceof Error?failure.message:'登录失败';}
   finally{if(currentEpoch===epoch)loading.value=false;}
 }
@@ -323,29 +365,36 @@ const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST')
 function messagePage(page: number) { messages.value.page = page; void refresh(); }
 function deliveryPage(page: number) { deliveries.value.page = page; void refresh(); }
 function filterMessages(value: Message['readStatus'] | '') {
-  if (loading.value || busy.value || exporting.value) return;
+  if (busy.value || exporting.value) return;
   messageReadStatus.value = value; messages.value = { ...messages.value, items: [], total: 0, page: 1 };
   void refresh();
 }
 function filterDeliveries(value: string) {
-  if (loading.value || busy.value || exporting.value) return;
+  if (busy.value || exporting.value) return;
   deliveryStatus.value = value; deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   void refresh();
 }
 function searchMessages(value: ListSearch, clear = false) {
-  if (loading.value || busy.value || exporting.value) return;
+  if (busy.value || exporting.value) return;
   messageSearch.value = value;
   if (clear) messageReadStatus.value = '';
   messages.value = { ...messages.value, items: [], total: 0, page: 1 }; void refresh();
 }
 function searchDeliveries(value: ListSearch, clear = false) {
-  if (loading.value || busy.value || exporting.value) return;
+  if (busy.value || exporting.value) return;
   deliverySearch.value = value;
   if (clear) deliveryStatus.value = '';
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 }; void refresh();
 }
 function cancelExport() { exportGeneration++; exportController?.abort(); exporting.value = null; }
-watch(tab, cancelExport);
+watch(tab, next => {
+  cancelExport();
+  // 悬停预取没赶上的（键盘/程序化切换）在这里补一次；同一 chunk 只会请求一次。
+  prefetchTab(next);
+  if (authenticated.value && !busy.value && !exporting.value) void refresh();
+});
+// 接入引导会出现在任意标签页之上，单独预取，避免首次展开时闪骨架。
+watch(showGuide, open => { if (open) prefetch('guide'); });
 async function exportMetadata(kind: 'messages' | 'deliveries',content=false) {
   if(content&&(role.value!=='admin'||kind!=='messages'))return;
   if (loading.value || busy.value || exporting.value || readFailed.value) return;
@@ -393,10 +442,10 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
       <small>令牌仅保留在当前页面，退出后清除。</small>
     </form>
   </main>
-  <ConsoleShell v-else v-model:tab="tab" v-model:selected-device="selectedDevice" :devices="devices" :role="role" :loading="loading" :connected="status?.mqtt === 'ready'" @logout="logout" @guide="showGuide = !showGuide" @refresh="refresh(true)">
+  <ConsoleShell v-else v-model:tab="tab" v-model:selected-device="selectedDevice" :devices="devices" :role="role" :loading="loading" :connected="status?.mqtt === 'ready'" @logout="logout" @guide="showGuide = !showGuide" @refresh="fullRefresh(true)">
       <main id="main-content" class="content">
         <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
-        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><NButton quaternary attr-type="button" class="text-button" @click="refresh(true)">重试</NButton></div>
+        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><NButton quaternary attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton></div>
         <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton></div>
         <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @content-export="exportMetadata('messages',true)" @connectors="tab = 'connectors'" />
         <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />

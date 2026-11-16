@@ -5,6 +5,7 @@ import { computed } from 'vue';
 import type { Role } from './access';
 import type { Tab } from './types';
 import { visibleNavigation } from './navigation';
+import { prefetchTab } from './panels';
 const props = defineProps<{ tab: Tab; role: Role }>();
 defineEmits<{ navigate: [tab: Tab]; logout: [] }>();
 const groups = computed(() => visibleNavigation(props.role));
@@ -16,8 +17,10 @@ const groups = computed(() => visibleNavigation(props.role));
     <nav aria-label="主导航">
       <div v-for="group in groups" :key="group.label" class="nav-group">
         <p class="nav-group-label">{{ group.label }}</p>
+        <!-- 指针/键盘落到导航项即预取对应 chunk，点击时通常已在缓存里，切换不出现空窗。 -->
         <button v-for="item in group.items" :key="item.id" type="button" :data-tab="item.id"
-          :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="$emit('navigate', item.id)">
+          :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined"
+          @pointerenter="prefetchTab(item.id)" @focus="prefetchTab(item.id)" @click="$emit('navigate', item.id)">
           <component :is="item.icon" :size="18" :stroke-width="1.7" aria-hidden="true" /><span>{{ item.label }}</span>
         </button>
       </div>
