@@ -22,7 +22,11 @@ const compatible = computed(() => releases.value.filter(item => {
   return identity && Object.entries(item.identity).every(([key, value]) => identity[key] === value) &&
     item.target.releaseSequence > (data.value?.observation?.reservedSequence ?? 0);
 }));
-const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
+
+// 误装版本是这类操作最贵的错误：提交点必须自报"装哪个版本、装到哪台设备"。
+const selectedVersion = computed(() => compatible.value.find(item => item.releaseId === releaseId.value)?.target.version ?? '');
+// 版本进按钮（选错版本最贵），设备进页脚（面板标题已写明设备，避免长名字撑破按钮）。
+const installLabel = computed(() => sending.value ? '正在提交…' : selectedVersion.value ? `安装 ${selectedVersion.value}` : '安装版本');const blocked = computed(() => !admin.value || props.busy || sending.value || !!pending.value || !!loadError.value);
 let alive = true, generation = 0, timer: ReturnType<typeof setInterval> | undefined, read: AbortController | undefined;
 async function refresh() {
   if (loading.value) return;
@@ -112,7 +116,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
         <form class="management-form" @submit.prevent="send('install')">
           <label>可安装版本<select v-model="releaseId" :disabled="blocked || !data.canInstall"><option value="">请选择版本</option><option v-for="item in compatible" :key="item.releaseId" :value="item.releaseId">{{ item.target.version }} · {{ item.releaseId }}</option></select></label>
           <p v-if="!compatible.length" class="management-hint">没有匹配设备身份且序号更高的版本。</p>
-          <div class="form-footer"><span>安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ sending ? '正在提交…' : '安装版本' }}</NButton></div>
+          <div class="form-footer"><span>将安装到 {{ device.name }}；安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ installLabel }}</NButton></div>
         </form>
         <NButton quaternary attr-type="button" class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</NButton>
         <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton></div></form>
