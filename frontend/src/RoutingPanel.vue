@@ -4,6 +4,7 @@ import { useAccess } from './access';
 const { operate }=useAccess();
 import { onUnmounted, ref } from 'vue';
 import type { Api, Device, RoutingSession, RouteRule, RouteDefinition, MessageTemplate } from './types';
+import StatusNote from './StatusNote.vue';
 const props=defineProps<{api:Api;busy:boolean;devices:Device[];session:RoutingSession;mutate:(action:()=>Promise<unknown>,notice:string)=>Promise<boolean>}>();
 const templates=ref<MessageTemplate[]>([]);
 const rules=ref<RouteRule[]>([]),policy=ref({mode:'broadcast',version:1}),loading=ref(false),error=ref(''),preview=ref<string[]|null>(null);
@@ -30,7 +31,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
  <div v-if="!loading&&!error" class="inline-form"><div class="record-heading"><h2>{{policy.mode==='broadcast'?'默认广播':'按规则路由'}}</h2><NButton attr-type="button" v-if="operate" class="secondary" :disabled="!operate||busy||!!session.draft" @click="confirmPolicy=true">切换模式</NButton></div><p>{{policy.mode==='broadcast'?'发给全部启用设备，兼容既有行为。':'只发给匹配规则选中的启用设备；无匹配则只保存消息。'}}</p>
  <div v-if="confirmPolicy||session.policy" class="spaced"><p>仅影响新消息；全部规则停用不会自动切回广播。待确认时重试固定目标，不反向切换。</p><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="confirmPolicy=false">取消</NButton><NButton type="primary" attr-type="button" class="primary" :disabled="busy" @click="switchPolicy">{{session.policy?'重试原目标模式':'确认切换模式'}}</NButton></div></div></div>
  <form v-if="session.draft" class="inline-form spaced" aria-label="路由编辑" @submit.prevent="save">
- <h2>{{session.version?'编辑路由':'创建路由'}}</h2><p v-if="session.uncertain" role="status">保存结果未确认；重试保持原版本和定义，或只读核对。</p>
+ <h2>{{session.version?'编辑路由':'创建路由'}}</h2><StatusNote v-if="session.uncertain" tone="warn">保存结果未确认；重试保持原版本和定义，或只读核对。</StatusNote>
  <fieldset :disabled="busy||loading||!!error||!!session.pending" style="border:0;padding:0;margin:0"><label>名称<input v-model="session.draft.name" required maxlength="80"></label><div class="form-columns spaced"><label>来源（* 为全部）<input v-model="session.draft.source" required maxlength="32"></label><label>事件类型（* 为全部）<input v-model="session.draft.eventType" required maxlength="64"></label></div>
  <div class="form-columns spaced"><label>匹配<select v-model="session.draft.match"><option value="all">全部</option><option value="keyword">包含关键词</option><option value="regex">受限正则</option></select></label><label v-if="session.draft.match!=='all'">表达式<input v-model="session.draft.expression" required maxlength="160"></label></div><p v-if="session.draft.match==='regex'" class="scope-note">支持文字、首尾锚点及一次 .*；不支持分组、回溯或其他量词。</p>
  <label class="spaced">目标设备<select v-model="session.draft.deviceIds" multiple required><option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">{{d.name}}（{{d.deviceId}}{{d.enabled?'':' · 停用'}}）</option></select></label><label class="spaced">消息模板<select v-model="session.draft.templateId"><option :value="null">保留来源文本与卡片</option><option v-for="t in templates" :key="t.templateId" :value="t.templateId">{{t.definition.name}}</option></select></label><label class="spaced">优先级<select v-model="session.draft.priority"><option value="">保留消息优先级</option><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select></label>

@@ -7,6 +7,7 @@ import RuleEditor from './RuleEditor.vue';
 import { errorNames, formatTime, type Api, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type RulePreview } from './types';
 
 import { readFailure } from './failure';
+import StatusNote from './StatusNote.vue';
 interface Run { runId: string; ruleId: string; ruleVersion: number; name: string; state: string; attempts: number; lastError: string; createdAt: string; result: { outcome?: string } | null }
 const props = defineProps<{ api: Api; busy: boolean; pending: RuleSubmission | null; uncertain: boolean; create: (input: Omit<RuleSubmission,'requestKey'>) => Promise<boolean>; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
   editor: RuleEditSession | null; beginEdit: (rule: AutomationRule) => void; changeEdit: (input: RuleEditInput) => void; closeEdit: () => void; saveEdit: () => Promise<boolean>; checkEdit: (reload?: boolean) => Promise<boolean>;
@@ -85,11 +86,11 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
     <div class="section-heading"><div><h1 tabindex="-1">自动化</h1><p>消息条件、评论分析与每日提醒</p></div><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton><NButton attr-type="button" class="secondary" :disabled="!operate || busy || loading || !!error || !!editor || !!deletion" :aria-expanded="compose" @click="compose = !compose">{{ compose ? '收起' : '创建规则' }}</NButton></div></div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取自动化状态…</p>
-    <p v-if="uncertain" class="scope-note" role="status">规则保存结果尚未确认，重试保持同一规则和参数。刷新或关闭页面后请先核对规则列表。</p>
+    <StatusNote v-if="uncertain" tone="warn">规则保存结果尚未确认，重试保持同一规则和参数。刷新或关闭页面后请先核对规则列表。</StatusNote>
     <RuleEditor v-if="editor" :key="editor.rule.ruleId + ':' + editor.rule.version" :session="editor" :current="currentRules.get(editor.rule.ruleId)" :disabled="busy || loading" :failed="!!error" @change="changeEdit" @close="closeEditor" @save="editorAction(saveEdit)" @check="reload => editorAction(() => checkEdit(reload))" />
     <form v-if="deletion" class="inline-form rule-delete" aria-label="删除规则确认" @submit.prevent="confirmDelete()">
       <h2>删除“{{ deletion.rule.name }}”</h2><p>仅删除已停用且无在途任务的规则；执行历史和已生成消息保留。</p>
-      <p v-if="deletion.uncertain" class="scope-note" role="status">删除结果尚未确认。可只读核对，或重试原版本删除。切换导航保留本次请求。</p>
+      <StatusNote v-if="deletion.uncertain" tone="warn">删除结果尚未确认。可只读核对，或重试原版本删除。切换导航保留本次请求。</StatusNote>
       <label>输入规则名称确认<input v-model="deleteName" aria-label="确认删除的规则名称" :disabled="busy" autocomplete="off" /></label>
       <div class="form-footer"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="closeDelete">关闭</NButton><div class="management-actions"><NButton attr-type="button" v-if="deletion.uncertain" class="secondary" :disabled="busy" @click="confirmDelete(true)">核对删除结果</NButton><NButton type="error" attr-type="submit" class="primary" :disabled="busy || loading || !!error || deleteName !== deletion.rule.name">{{ deletion.uncertain ? '重试原版本删除' : '确认删除规则' }}</NButton></div></div>
     </form>

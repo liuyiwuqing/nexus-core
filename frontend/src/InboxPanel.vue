@@ -8,6 +8,7 @@ import { formatTime, type Api, type Message, type MessageSubmission, type Page, 
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 
+import StatusNote from './StatusNote.vue';
 const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
@@ -43,7 +44,7 @@ async function send() {
     <form v-if="compose" class="inline-form" @submit.prevent="send">
       <label>标题<NInput v-model:value="title" :maxlength="160" :input-props="{ required: true }" :disabled="busy" :readonly="!!pending" /></label>
       <label>内容<NInput v-model:value="content" type="textarea" :maxlength="8192" :rows="3" :input-props="{ required: true }" :disabled="busy" :readonly="!!pending" /></label>
-      <p v-if="uncertain" class="inline-error" role="status">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</p>
+      <StatusNote v-if="uncertain" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>
       <div class="form-footer"><span>发送到所有已启用的设备。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="busy">{{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}</NButton></div>
     </form>
     <div v-if="loading && !data.items.length" class="empty-state loading-state" role="status"><span>正在加载消息…</span><NSkeleton v-for="line in 4" :key="line" text /></div>

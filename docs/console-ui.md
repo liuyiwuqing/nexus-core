@@ -26,6 +26,12 @@
 - 面板一律通过 `src/panels.ts` 的 `asyncPanel(name)` 引入，不直接写 `defineAsyncComponent(() => import(...))`；新增面板要同时登记 `loaders` 与 `tabPanels`，否则意图预取拿不到。
 - `focusContent()` 按有限次轮询等 `.content h1`：面板是异步挂载的，一次 `nextTick` 不足以拿到标题。
 
+## 状态提示（CONSOLE-18）
+
+"操作结果尚未确认"这类提示一律走 `StatusNote`：`tone="warn"`（需处理，带底色与圆点）、`tone="danger"`（失败）、`tone="info"`（只读说明，等同原来的灰字脚注），需要重试按钮时放进 `#actions` 插槽。根元素保留 `.scope-note` 类名，跨仓断言以它为钩子。
+
+不要再用 `.inline-error` 表达"未确认"：红色留给确定失败。新增提示若只是补充说明，用 `tone="info"` 或直接写 `.scope-note`，避免满屏状态带。
+
 ## 样式守卫（CONSOLE-17）
 
 `npm run check` = `vue-tsc --noEmit && node scripts/check-tokens.mjs`（单跑 `npm run check:tokens`）。四条规则：

@@ -56,7 +56,7 @@ python3 /tmp/nexus_ui_probe.py --frontend target/frontend --port 18841   # 环�
 | O8 | `--muted` 提到 #57675f | 正文灰对比度 4.75→5.55（canvas）/5.98（白底） | P0 | 已完成 |
 | O9 | 失败文案统一出口 `failure.ts`：未知码给处置建议并保留 `HTTP 状态 · 码`，网络层 `TypeError` 不再原样显示 | 不再出现裸 `HTTP 404` 或 `Failed to fetch` | P1 | 已完成 |
 | O10 | 反馈条吸顶（工具栏底缘，`--toolbar-h:62px`） | 长列表滚到深处操作后结果仍在视口内 | P1 | 已完成 |
-| O11 | 统一 `StatusNote` 组件（info/warn/danger/busy/action 五态） | 5 个面板的未确认提示收敛为一种表达 | P1 | 未开始 |
+| O11 | `StatusNote` 组件（info/warn/danger 三态 + actions 插槽） | 9 个面板的 11 处提示从三种重量收敛为一种 | P1 | 已完成 |
 | O12 | 分级刷新：按当前页请求 + SSE 补齐外壳依赖 + 可见性暂停 | 概览页 16s 15→3 次；消息页 20→8 次 | P1 | 已完成 |
 | O13 | 面板异步加载 + 导航意图预取 + 骨架占位 | 首屏 JS 471.07→323.88 kB（−31%），其余按页 2.8–49.3 kB | P1 | 已完成 |
 | O14 | 设置/升级面板内联到所属设备卡片（卡片撑满整行，面板去外框） | 触发点与结果同屏 | P1 | 已完成 |

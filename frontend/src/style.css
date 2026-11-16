@@ -189,6 +189,18 @@ dd { margin: 0; text-align: left; overflow-wrap: anywhere; }
 .connector-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-top: 22px; margin-top: 18px; border-top: 1px solid var(--divider); }
 .connector-footer > span, .scope-note { color: var(--muted); font-size: var(--text-sm); line-height: 1.8; }
 .scope-note { margin-top: 18px; }
+/* 状态提示三档：info 与原来的灰字脚注一致；warn/danger 带底色，因为它承载"结果未确认"这类要处理的信息。
+   类名沿用 scope-note，跨仓断言以它为钩子。 */
+.status-note { display: flex; align-items: flex-start; gap: 12px; line-height: 1.7; }
+.status-note-text { flex: 1 1 auto; min-width: 0; }
+.status-note-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+.status-note--warn, .status-note--danger { padding: 12px 16px; border-radius: var(--radius-md); color: var(--ink-2); }
+.status-note--warn { border: 1px solid var(--warning-border); background: var(--warning-soft); }
+.status-note--danger { border: 1px solid var(--danger-border); background: var(--danger-soft); }
+.status-note--warn, .status-note--danger { font-size: var(--text-base); }
+.status-note-dot { flex: 0 0 6px; width: 6px; height: 6px; margin-top: 8px; border-radius: 50%; }
+.status-note--warn .status-note-dot { background: var(--warning); }
+.status-note--danger .status-note-dot { background: var(--danger); }
 .import-comment { margin-top: 22px; font-size: var(--text-sm); color: var(--ink-2); }
 .import-comment summary { cursor: pointer; }
 .import-comment form { margin-top: 16px; }

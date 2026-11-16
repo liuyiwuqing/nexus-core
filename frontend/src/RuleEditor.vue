@@ -2,6 +2,7 @@
 import { NButton } from 'naive-ui';
 import { computed, onMounted, ref } from 'vue';
 import { errorNames, type AutomationRule, type RuleEditInput, type RuleEditSession } from './types';
+import StatusNote from './StatusNote.vue';
 const props = defineProps<{ session: RuleEditSession; current?: AutomationRule; disabled: boolean; failed: boolean }>();
 const emit = defineEmits<{ change: [input: RuleEditInput]; save: []; check: [reload: boolean]; close: [] }>();
 const nameInput = ref<HTMLInputElement>();
@@ -17,7 +18,7 @@ onMounted(() => nameInput.value?.focus());
 <template>
   <form class="inline-form rule-editor" aria-label="编辑规则" @submit.prevent="emit('save')">
     <div class="record-heading"><h2>编辑规则</h2><span class="muted">{{ session.rule.trigger === 'schedule.daily' ? '每日设备提醒' : session.rule.action==='notify_device'?'新消息条件提醒':'公开评论分析' }} · 版本 {{ session.rule.version }}</span></div>
-    <p v-if="session.uncertain" class="scope-note" role="status">保存结果尚未确认。重试保持原版本和参数；也可只读核对当前规则。刷新或关闭页面后请先核对规则列表。</p>
+    <StatusNote v-if="session.uncertain" tone="warn">保存结果尚未确认。重试保持原版本和参数；也可只读核对当前规则。刷新或关闭页面后请先核对规则列表。</StatusNote>
     <p v-else-if="changed" class="inline-error" role="alert">规则版本已变化，请核对后载入当前版本；草稿仍保留。</p>
     <p v-else-if="current?.editBlock" class="scope-note" role="status">{{ errorNames[current.editBlock] || '当前规则不可编辑。' }}</p>
     <label class="spaced">名称<input ref="nameInput" aria-label="编辑规则名称" :value="session.draft.name" maxlength="80" required :disabled="frozen" @input="change('name', $event)" /></label>

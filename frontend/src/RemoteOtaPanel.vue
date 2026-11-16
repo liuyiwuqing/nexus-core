@@ -4,6 +4,7 @@ import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { errorNames, formatTime, type Api, type Device, type OtaRelease, type OtaView } from './types';
+import StatusNote from './StatusNote.vue';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<OtaView | null>(null), releases = ref<OtaRelease[]>([]), releaseId = ref('');
@@ -120,7 +121,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
         </form>
         <NButton quaternary attr-type="button" class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</NButton>
         <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton></div></form>
-        <div v-if="pending" class="feedback" role="status"><span>保留原请求，等待核对。</span><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></div>
+        <StatusNote v-if="pending" tone="warn">保留原请求，等待核对。<template #actions><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></template></StatusNote>
         <p v-if="!data.deployments.length" class="management-hint">暂无升级记录。</p>
         <div v-for="item in data.deployments" :key="item.requestId" class="management-record">
           <div class="record-heading"><strong>{{ item.target.version }} · {{ item.releaseId }}</strong><span class="badge" :class="item.status === 'healthy' ? 'success' : ''">{{ names[item.status] || '等待核对' }}</span></div>

@@ -4,6 +4,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { errorNames, formatTime, type Api, type ToolSubmission } from './types';
 
 import { readFailure } from './failure';
+import StatusNote from './StatusNote.vue';
 interface Tool { id: string; title: string; risk: string; argument: string }
 interface Capability { id: string; available: boolean; projectIds?: string[]; applicationIds?: string[] }
 interface Catalog { configured: boolean; state: string; tools: Tool[]; bridge?: { tools: Capability[] } }
@@ -61,7 +62,7 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
     <div class="section-heading"><div><h1 tabindex="-1">Mac 工具</h1><p>{{ error ? 'Bridge 状态未知' : !catalog ? '正在读取 Bridge 状态' : catalog.state === 'ready' ? 'Bridge 已连接' : catalog.configured ? 'Bridge 暂不可用' : 'Bridge 未启用' }}</p></div><NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton></div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取工具状态…</p>
-    <p v-if="uncertain" class="scope-note" role="status">工具请求结果尚未确认，重试将核对同一请求和参数。刷新或关闭页面后请先核对请求列表。</p>
+    <StatusNote v-if="uncertain" tone="warn">工具请求结果尚未确认，重试将核对同一请求和参数。刷新或关闭页面后请先核对请求列表。</StatusNote>
     <form v-if="catalog && !error" class="inline-form" @submit.prevent="prepare">
       <div class="form-columns"><label>工具<select v-model="toolId" :disabled="busy || loading || !!pending"><option v-for="tool in catalog?.tools || []" :key="tool.id" :value="tool.id">{{ tool.title }}{{ tool.risk === 'confirmation' ? ' · 需确认' : '' }}</option></select></label>
         <label v-if="selected?.argument">{{ selected.argument === 'projectId' ? '项目白名单' : '应用白名单' }}<select v-model="argument" required :disabled="busy || loading || !!pending"><option value="" disabled>请选择</option><option v-if="pending && argument && !choices.includes(argument)" :value="argument">{{ argument }}</option><option v-for="choice in choices" :key="choice">{{ choice }}</option></select></label></div>
