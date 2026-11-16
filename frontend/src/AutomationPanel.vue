@@ -6,6 +6,7 @@ import { computed, nextTick, onUnmounted, ref } from 'vue';
 import RuleEditor from './RuleEditor.vue';
 import { errorNames, formatTime, type Api, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type RulePreview } from './types';
 
+import { readFailure } from './failure';
 interface Run { runId: string; ruleId: string; ruleVersion: number; name: string; state: string; attempts: number; lastError: string; createdAt: string; result: { outcome?: string } | null }
 const props = defineProps<{ api: Api; busy: boolean; pending: RuleSubmission | null; uncertain: boolean; create: (input: Omit<RuleSubmission,'requestKey'>) => Promise<boolean>; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
   editor: RuleEditSession | null; beginEdit: (rule: AutomationRule) => void; changeEdit: (input: RuleEditInput) => void; closeEdit: () => void; saveEdit: () => Promise<boolean>; checkEdit: (reload?: boolean) => Promise<boolean>;
@@ -24,7 +25,7 @@ async function load(keepVisible = false) {
   try {
     const [list, history, model] = await Promise.all([props.api<{ items: AutomationRule[] }>('automation/rules', 'GET', undefined, controller.signal), props.api<{ items: Run[] }>('automation/runs', 'GET', undefined, controller.signal), props.api<{ configured: boolean }>('ai', 'GET', undefined, controller.signal)]);
     if (request === generation) { rules.value = list.items; runs.value = history.items; ai.value = model.configured; error.value = ''; }
-  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) { rules.value = []; runs.value = []; ai.value = false; error.value = failure instanceof Error ? failure.message : '读取自动化状态失败。'; } }
+  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) { rules.value = []; runs.value = []; ai.value = false; error.value = readFailure(failure, '读取自动化状态失败。'); } }
   finally { if (request === generation) loading.value = false; }
 }
 async function save() {
@@ -71,7 +72,7 @@ async function test(rule: AutomationRule) {
     if (!result?.dryRun || result.rule?.ruleId !== rule.ruleId || result.rule.version !== rule.version) throw new Error('未能读取有效的预演结果。');
     if (alive && previewController === control) preview.value = result;
   } catch (failure) {
-    if (alive && !control.signal.aborted) previewError.value = failure instanceof Error ? failure.message : '预演失败，请重新读取规则后重试。';
+    if (alive && !control.signal.aborted) previewError.value = readFailure(failure, '预演失败，请重新读取规则后重试。');
   } finally { if (alive && previewController === control) previewLoading.value = false; }
 }
 void load();

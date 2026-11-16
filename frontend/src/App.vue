@@ -8,8 +8,9 @@ import { asyncPanel, prefetch, prefetchTab } from './panels';
 import type { RoutingSession, SourceSession, AccessSession, TemplateSession } from './types';
 import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
+import { ApiFailure, readFailure } from './failure';
 import type { Role } from './access';
-import { errorNames, type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
+import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
 const ConnectorsPanel = asyncPanel('connectors');
@@ -54,7 +55,6 @@ const exporting = ref<'messages' | 'deliveries' | null>(null);
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
-class ApiFailure extends Error { constructor(readonly status: number, code: string) { super(errorNames[code] || `请求失败（HTTP ${status}）`); } }
 
 async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch('/api/v1/' + path, { method, signal, cache: 'no-store',
@@ -184,7 +184,7 @@ async function login() {
     if(currentEpoch!==epoch)return;
     role.value=session.role;
     if(await refresh(false, allResources)){authenticated.value=true;showGuide.value=devices.value.length===0;startEvents();}
-  } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=failure instanceof Error?failure.message:'登录失败';}
+  } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=readFailure(failure,'登录失败：请确认 CORE 正在运行。');}
   finally{if(currentEpoch===epoch)loading.value=false;}
 }
 

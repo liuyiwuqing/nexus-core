@@ -5,6 +5,7 @@ const { admin } = useAccess();
 import { computed, onUnmounted, ref } from 'vue';
 import { formatTime, type Api } from './types';
 import DeviceGrowthPanel from './DeviceGrowthPanel.vue';
+import { readFailure } from './failure';
 interface Focus { sessionId: string; durationMinutes: number; state: string; startedAt: string; dueAt: string;
   remainingSeconds: number; experienceReward: number; coinReward: number }
 interface Profile { level: number; levelProgress: number; experience: number; coins: number; bond: number; completedFocus: number; activeSession: Focus | null }
@@ -21,7 +22,7 @@ async function load() {
   try {
     const [pet, records] = await Promise.all([props.api<Profile>('pet','GET',undefined,controller.signal),props.api<{items: Focus[]}>('pet/focus','GET',undefined,controller.signal)]);
     if (request === generation) { profile.value = pet; sessions.value = records.items; error.value = ''; loadedAt.value = Date.now(); now.value = Date.now(); }
-  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = failure instanceof Error ? failure.message : '读取成长数据失败。'; }
+  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = readFailure(failure, '读取成长数据失败。'); }
   finally { if (request === generation) loading.value = false; }
 }
 async function start() {

@@ -3,6 +3,7 @@ import { NButton } from 'naive-ui';
 import { onUnmounted, ref, watch } from 'vue';
 import { formatTime, type Api } from './types';
 
+import { readFailure } from './failure';
 interface Health { configured: boolean; storedCopies: number; pendingDeletions: number; deletionErrors: number; identityBlockedCopies?: number }
 interface Hit { messageId: string; content: string; summary: string; originalUrl: string; verifiedAt: string }
 const props = defineProps<{ api: Api }>();
@@ -26,7 +27,7 @@ async function load() {
     if (!result.configured) { generation++; controller?.abort(); loading.value = false; clearResults(); }
   } catch (failure) {
     if (current === checkGeneration && !(failure instanceof DOMException && failure.name === 'AbortError')) {
-      healthError.value = failure instanceof Error ? failure.message : '读取记忆状态失败。';
+      healthError.value = readFailure(failure, '读取记忆状态失败。');
       health.value = null; generation++; controller?.abort(); loading.value = false; clearResults();
     }
   } finally { if (current === checkGeneration) checking.value = false; }
@@ -43,7 +44,7 @@ async function search() {
     expiry = setTimeout(() => { clearResults(); expired.value = true; }, 60000);
   } catch (failure) {
     if (current === generation && !(failure instanceof DOMException && failure.name === 'AbortError'))
-      error.value = failure instanceof Error ? failure.message : '记忆检索失败，请重试。';
+      error.value = readFailure(failure, '记忆检索失败，请重试。');
   } finally { if (current === generation) loading.value = false; }
 }
 watch(query, () => { clearResults(); error.value = ''; });

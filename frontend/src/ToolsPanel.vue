@@ -3,6 +3,7 @@ import { NButton } from 'naive-ui';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { errorNames, formatTime, type Api, type ToolSubmission } from './types';
 
+import { readFailure } from './failure';
 interface Tool { id: string; title: string; risk: string; argument: string }
 interface Capability { id: string; available: boolean; projectIds?: string[]; applicationIds?: string[] }
 interface Catalog { configured: boolean; state: string; tools: Tool[]; bridge?: { tools: Capability[] } }
@@ -27,7 +28,7 @@ async function load(keepVisible = false) {
   try {
     const [tools, records] = await Promise.all([props.api<Catalog>('tools', 'GET', undefined, controller.signal), props.api<{ items: Job[] }>('tool-jobs', 'GET', undefined, controller.signal)]);
     if (request === generation) { catalog.value = tools; jobs.value = records.items; error.value = ''; }
-  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) { catalog.value = null; jobs.value = []; error.value = failure instanceof Error ? failure.message : '读取工具状态失败。'; } }
+  } catch (failure) { if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) { catalog.value = null; jobs.value = []; error.value = readFailure(failure, '读取工具状态失败。'); } }
   finally { if (request === generation) loading.value = false; }
 }
 async function prepare() {
@@ -46,7 +47,7 @@ async function history(job: Job) {
   if (auditId.value === job.jobId) { auditId.value = ''; return; }
   const id = job.jobId; auditId.value = id; auditLoading.value = true; auditController = new AbortController();
   try { const result = await props.api<{ items: Audit[] }>(`tool-jobs/${id}/audit`, 'GET', undefined, auditController.signal); if (alive && request === auditGeneration) audit.value = result.items; }
-  catch (failure) { if (alive && request === auditGeneration && !(failure instanceof DOMException && failure.name === 'AbortError')) auditError.value = failure instanceof Error ? failure.message : '读取审计失败。'; }
+  catch (failure) { if (alive && request === auditGeneration && !(failure instanceof DOMException && failure.name === 'AbortError')) auditError.value = readFailure(failure, '读取审计失败。'); }
   finally { if (alive && request === auditGeneration) auditLoading.value = false; }
 }
 watch(toolId, () => { argument.value = ''; });

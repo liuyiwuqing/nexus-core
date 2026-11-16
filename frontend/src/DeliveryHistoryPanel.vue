@@ -5,6 +5,7 @@ const { operate } = useAccess();
 import { onMounted, onUnmounted, ref } from 'vue';
 import { deliveryNames, errorNames, type Api, type DeliveryHistory } from './types';
 
+import { readFailure } from './failure';
 const props = defineProps<{ eventId: string; api: Api; busy: boolean }>();
 const emit = defineEmits<{ close: []; changed: [] }>();
 const panel = ref<HTMLElement | null>(null), data = ref<DeliveryHistory | null>(null), page = ref(1);
@@ -40,7 +41,7 @@ async function load(keepVisible = false) {
     }
   } catch (failure) {
     if (alive && current === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) {
-      data.value = null; loadError.value = failure instanceof Error ? failure.message : '时间线读取失败，请重试。';
+      data.value = null; loadError.value = readFailure(failure, '时间线读取失败，请重试。');
     }
   } finally { if (alive && current === generation) loading.value = false; }
 }

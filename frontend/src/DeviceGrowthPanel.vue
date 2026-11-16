@@ -2,6 +2,7 @@
 import { NButton } from 'naive-ui';
 import { onUnmounted, ref } from 'vue';
 import { formatTime, type Api } from './types';
+import { readFailure } from './failure';
 interface Growth {
   level: number; experience: number; experienceToNext: number; coins: number; intimacy: number;
   energy: number; hunger: number; health: number; state: string; timeReady: boolean;
@@ -21,7 +22,7 @@ async function load() {
     const result = await props.api<{enabled: boolean; items: DeviceGrowth[]}>('pet/devices','GET',undefined,controller.signal);
     if (request === generation) { enabled.value = result.enabled; items.value = result.items; loaded.value = true; error.value = ''; }
   } catch (failure) {
-    if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = failure instanceof Error ? failure.message : '读取设备成长数据失败。';
+    if (request === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = readFailure(failure, '读取设备成长数据失败。');
   } finally { if (request === generation) loading.value = false; }
 }
 void load();

@@ -3,6 +3,7 @@ import { NButton } from 'naive-ui';
 import { onUnmounted, ref } from 'vue';
 import { formatTime, type Api, type Overview } from './types';
 
+import { readFailure } from './failure';
 const props = defineProps<{ api: Api }>();
 const snapshot = ref<Overview | null>(null), loading = ref(false), error = ref('');
 let generation = 0, controller: AbortController | undefined;
@@ -15,7 +16,7 @@ async function load() {
     if (current === generation) snapshot.value = result;
   } catch (failure) {
     if (current === generation && !(failure instanceof DOMException && failure.name === 'AbortError'))
-      error.value = failure instanceof Error ? failure.message : '概览读取失败，请重试。';
+      error.value = readFailure(failure, '概览读取失败，请重试。');
   } finally { if (current === generation) loading.value = false; }
 }
 void load();

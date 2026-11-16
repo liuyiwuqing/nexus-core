@@ -5,6 +5,7 @@ const { admin, operate } = useAccess();
 import { onUnmounted, ref, watch } from 'vue';
 import { errorNames, type Analysis, type Api } from './types';
 
+import { readFailure } from './failure';
 const props = defineProps<{ messageId: string; api: Api; busy: boolean;
   mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean> }>();
 const state = ref<Analysis | null>(null), error = ref(''), loading = ref(false);
@@ -25,7 +26,7 @@ async function load() {
     if (current !== generation) return;
     state.value = result; ai.value = model.configured; memory.value = store.configured; error.value = '';
   } catch (failure) {
-    if (current === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = failure instanceof Error ? failure.message : '读取分析状态失败。';
+    if (current === generation && !(failure instanceof DOMException && failure.name === 'AbortError')) error.value = readFailure(failure, '读取分析状态失败。');
   } finally { if (current === generation) loading.value = false; }
 }
 async function analyze() {
