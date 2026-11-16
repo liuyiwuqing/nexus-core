@@ -32,6 +32,11 @@ nexus:
   retention:
     enabled: ${NEXUS_RETENTION_ENABLED:false}
     cron: ${NEXUS_RETENTION_CRON:0 0 4 * * *}
+  telemetry:
+    sample-seconds: ${NEXUS_TELEMETRY_SAMPLE_SECONDS:30}
+    change-seconds: ${NEXUS_TELEMETRY_CHANGE_SECONDS:5}
+    retention-days: ${NEXUS_TELEMETRY_RETENTION_DAYS:30}
+    cleanup-cron: ${NEXUS_TELEMETRY_CLEANUP_CRON:0 20 4 * * *}
   admin-token: ${NEXUS_ADMIN_TOKEN:}
   mqtt:
     uri: ${NEXUS_MQTT_URI:ssl://localhost:8883}

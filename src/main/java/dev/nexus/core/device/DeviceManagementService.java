@@ -20,12 +20,13 @@ import tools.jackson.databind.ObjectMapper;
 public class DeviceManagementService {
     private final JdbcTemplate db;
     private final ObjectMapper json;
+    private final TelemetryHistoryService history;
     private final int lifetime,retrySeconds;
-    public DeviceManagementService(JdbcTemplate db,ObjectMapper json,
+    public DeviceManagementService(JdbcTemplate db,ObjectMapper json,TelemetryHistoryService history,
         @Value("${nexus.management.request-seconds:300}") int lifetime,
         @Value("${nexus.management.retry-seconds:15}") int retrySeconds) {
         if(lifetime<1||lifetime>300||retrySeconds<1||retrySeconds>60)throw new IllegalArgumentException("invalid_management_timing");
-        this.db=db;this.json=json;this.lifetime=lifetime;this.retrySeconds=retrySeconds;
+        this.db=db;this.json=json;this.history=history;this.lifetime=lifetime;this.retrySeconds=retrySeconds;
     }
 
     public Map<String,Object> view(String device) {
@@ -166,6 +167,7 @@ public class DeviceManagementService {
     public void telemetry(String device,byte[] bytes) {
         var value=ManagementCodec.telemetry(device,bytes);
         if(db.queryForList("SELECT device_id FROM devices WHERE device_id=? FOR UPDATE",device).isEmpty())return;
+        history.record(device,value);
         // Retained summaries are historical observations; only state/LWT owns online/last_seen.
         int changed=db.update("""
             INSERT INTO device_telemetry(device_id,body,observed_at)

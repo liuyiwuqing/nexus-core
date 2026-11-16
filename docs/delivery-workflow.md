@@ -47,3 +47,5 @@ CONSOLE-09-A 新增[停用后规则编辑](console-automation-editing.md)：固�
 CONSOLE-09-A 的 CORE `cb18ba2` 已正常推送并核对远端；[Docker CI 43576059029](https://github.com/liuyiwuqing/nexus-core/actions/runs/43576059029) 全步骤 success，含初始化 CLI 11 项、源码镜像及真实隔离 Compose。492 项浏览器及 87 通过/5 跳过的完整 Maven 为本地证据，不冒充远程专项或目标机/实机验收。
 
 CONSOLE-09-A 后续测试提交 `2ba3a84` 将调度断言限定到本规则的运行/结果消息，原 11 项专项再次通过；实现及最终 JAR 来源未变。该提交已推送并核对远端，对应 [Docker CI 43576489895](https://github.com/liuyiwuqing/nexus-core/actions/runs/43576489895) 全步骤 success；首次实现 CI `43576059029` 仍保留各自提交证据。
+
+TELEMETRY-01 新增[遥测历史与采样](device-telemetry-history.md)：V21 追加式样本表、变化即记（5 秒下限）与 30 秒心跳封顶、30 天分批清理，以及 `GET /devices/{id}/telemetry` 的 `raw`/`1m`–`1d` 查询。窗口、桶数、2000 点上限、空桶不补零、ISO-8601 与 400/404 语义已写入文档和 04 管理契约；快照、MQTT 主题、遥测 Schema、ACL 与管理台现有行为不变。新增 2 项真实 HTTP/PostgreSQL/MQTT 测试；完整构建 120 条中 115 通过、5 条条件跳过，V21 在隔离库成功应用。未迁移真实库，未实现图表页面，未做实机长期采样验收。

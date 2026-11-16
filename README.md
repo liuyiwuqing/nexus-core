@@ -10,7 +10,7 @@ Java 21 / Spring Boot 的模块化单进程服务，PostgreSQL 保存业务状�
 | --- | --- | --- |
 | Inbox | 统一消息、唯一事件去重、历史、已读、优先级、事务 outbox | 真实 HTTP / PostgreSQL / Mosquitto 集成测试 |
 | Halo | 官方 Console API 只读轮询；仅已审核、未隐藏且所属文章/页面公开发布的评论 | 现有博客真实 GET；历史评论需显式导入 |
-| 设备 | 注册、重命名、启停新投递、心跳、重试、回执分离；遥测/完整设置回读、配置 CAS/审计 | 真实 HTTP/PostgreSQL/MQTT 与 Java/C 配置回环；真实 ESP32 待烧录 |
+| 设备 | 注册、重命名、启停新投递、心跳、重试、回执分离；遥测/完整设置回读、配置 CAS/审计、遥测历史采样与查询 | 真实 HTTP/PostgreSQL/MQTT 与 Java/C 配置回环；真实 ESP32 待烧录 |
 | AI | 公开状态二次核验、摘要/分类/重要性/回复草稿、持久队列、失败重试 | 本机已有兼容模型真实调用通过；草稿不会发送 |
 | 记忆 | 显式保存、固定目录检索、源复核/失效删除、管理页及独立 MCP/stdio 工具 | HTTP/PostgreSQL 与浏览器夹具验证；默认关闭，真实身份/权限/删除及语音接入待验收 |
 | 工具 | 固定工具目录、参数校验、确认绑定、持久审计、未知结果核对 | 真实 Python Bridge 进程测试；本机只启用查询能力 |
@@ -154,6 +154,8 @@ python3 tools/provision_device.py --port /dev/cu.usbmodemXXXX
 
 所有请求沿用管理员 Bearer 鉴权，单一共享令牌不提供多用户/RBAC。配置请求持久化后返回 202，不等于设备已保存；只有有效 ACK 或匹配完整回读才能确认。HTTP 中断保留原 requestId，重试不能换 ID。每设备最多一个 pending/sent/unconfirmed 请求，曾尝试发送后超时保留 unconfirmed，随后用新鲜配置核对。retained 遥测不把设备标为在线。详细状态与设备事务见 [管理契约](../04-ai-desktop-pet/integration/contracts/device-management-v1/README.md)。
 
+遥测历史单独保存为追加式样本，`GET /devices/{id}/telemetry` 支持原始点与 `1m`–`1d` 桶聚合。变化即记、5 秒变化下限、30 秒心跳封顶、30 天保留，缺失桶不补零；快照仍以 `management` 的 `fresh`/`observedAt` 为准。口径、字段语义与配置见[遥测历史与采样](docs/device-telemetry-history.md)。
+
 新安装生成带管理主题的设备作用域 ACL；已有实例不会被 init_local.py 自动覆盖。先停 CORE、备份并在独立库验证可恢复，再允许新 JAR 的 Flyway 迁移（V8 远程管理、V9 消息保留、V10 记忆副本账本/删除队列）。Broker 在维护窗口执行：
 
 ```sh
@@ -192,6 +194,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
+| `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
 | `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史、失败重试与受限取消 |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |

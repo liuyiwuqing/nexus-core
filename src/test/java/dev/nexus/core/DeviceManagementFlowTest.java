@@ -63,7 +63,7 @@ class DeviceManagementFlowTest {
             pattern write nexus/v1/devices/%u/config_acks
             pattern write nexus/v1/devices/%u/telemetry
             """),"/mosquitto/config/acl")
-        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
+        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);
@@ -81,6 +81,8 @@ class DeviceManagementFlowTest {
         assertThat(response.statusCode()).isEqualTo(404);
     }
     @Autowired ObjectMapper json;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate db;
+    @Autowired dev.nexus.core.device.TelemetryHistoryService history;
     final HttpClient http=HttpClient.newHttpClient();
     HttpResponse<String> request(String method,String path,String body,String token)throws Exception {
         var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/"+path))
@@ -126,6 +128,29 @@ class DeviceManagementFlowTest {
             Thread.sleep(40);
         }while(System.nanoTime()<until);
         throw new AssertionError("Configuration did not become "+status+": "+last);
+    }
+    String historyWindow(long from,long to) {
+        return "from="+java.net.URLEncoder.encode(Instant.ofEpochSecond(from).toString(),StandardCharsets.UTF_8)
+            +"&to="+java.net.URLEncoder.encode(Instant.ofEpochSecond(to).toString(),StandardCharsets.UTF_8);
+    }
+    JsonNode telemetryHistory(String id,String query)throws Exception {
+        var response=request("GET","devices/"+id+"/telemetry?"+query,"",TOKEN);
+        assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);
+        return json.readTree(response.body());
+    }
+    JsonNode awaitHistoryPoints(String id,long from,long to,int count)throws Exception {
+        long until=System.nanoTime()+Duration.ofSeconds(8).toNanos();JsonNode last=null;
+        do {
+            last=telemetryHistory(id,historyWindow(from,to)+"&bucket=raw");
+            if(last.path("points").size()==count)return last;
+            Thread.sleep(40);
+        }while(System.nanoTime()<until);
+        throw new AssertionError("Expected "+count+" telemetry points: "+last);
+    }
+    void publishTelemetryAt(MqttClient d,String id,long observedAt,int volume)throws Exception {
+        String value=telemetry(id,0,CONFIG.replace("\"volume\":25","\"volume\":"+volume))
+            .replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observedAt);
+        d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
     }
     @Test void configurationReusesRequestAndOnlyDeviceAckConfirmsSaving()throws Exception {
         String id="dodo-update",path="devices/"+id+"/management",rid=UUID.randomUUID().toString();
@@ -326,5 +351,53 @@ class DeviceManagementFlowTest {
             for(var item:devices)if(item.path("deviceId").asText().equals("dodo-management"))assertThat(item.path("online").asBoolean()).isFalse();
             d.disconnect();
         }
+    }
+    @Test void telemetryHistoryRecordsChangesAndCapsStableHeartbeats()throws Exception {
+        String id="dodo-history",path="devices/"+id+"/telemetry";
+        assertThat(request("GET",path,"",null).statusCode()).isEqualTo(401);
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"遥测历史\"}",TOKEN).statusCode()).isEqualTo(201);
+        assertThat(request("GET","devices/missing-history/telemetry","",TOKEN).statusCode()).isEqualTo(404);
+        long base=Instant.now().getEpochSecond()-600;
+        try(var d=device(id)) {
+            waitForCore();
+            publishTelemetryAt(d,id,base,25);
+            awaitHistoryPoints(id,base-60,base+60,1);
+            publishTelemetryAt(d,id,base+3,40);   // changed, but below the 5s change floor
+            publishTelemetryAt(d,id,base+40,40);  // changed, accepted
+            publishTelemetryAt(d,id,base+50,40);  // unchanged, below the 30s heartbeat
+            publishTelemetryAt(d,id,base+80,40);  // unchanged heartbeat, accepted
+            var raw=awaitHistoryPoints(id,base-60,base+120,3);
+            assertThat(raw.path("bucket").asText()).isEqualTo("raw");
+            assertThat(raw.path("truncated").asBoolean()).isFalse();
+            assertThat(raw.path("sampleSeconds").asInt()).isEqualTo(30);
+            var points=raw.path("points");
+            assertThat(Instant.parse(points.get(0).path("observedAt").asText()).getEpochSecond()).isEqualTo(base);
+            assertThat(points.get(0).path("volume").asInt()).isEqualTo(25);
+            assertThat(points.get(0).path("count").asInt()).isEqualTo(1);
+            assertThat(Instant.parse(points.get(1).path("observedAt").asText()).getEpochSecond()).isEqualTo(base+40);
+            assertThat(points.get(1).path("volume").asInt()).isEqualTo(40);
+            assertThat(Instant.parse(points.get(2).path("observedAt").asText()).getEpochSecond()).isEqualTo(base+80);
+            assertThat(points.get(2).path("freeHeapMin").asLong()).isEqualTo(100000);
+            var grouped=telemetryHistory(id,historyWindow(base-60,base+120)+"&bucket=1m");
+            int samples=0;for(var point:grouped.path("points"))samples+=point.path("count").asInt();
+            assertThat(samples).isEqualTo(3);
+            assertThat(telemetryHistory(id,historyWindow(base+200,base+300)+"&bucket=1m").path("points").size()).isZero();
+            for(String query:new String[]{"bucket=2m","from=not-a-time","bucket=1m&"+historyWindow(base+100,base),
+                "bucket=1m&"+historyWindow(Instant.now().getEpochSecond()-8*86400,Instant.now().getEpochSecond()),
+                "bucket=raw&"+historyWindow(Instant.now().getEpochSecond()-13*3600,Instant.now().getEpochSecond())})
+                assertThat(request("GET",path+"?"+query,"",TOKEN).statusCode()).withFailMessage(query).isEqualTo(400);
+            d.disconnect();
+        }
+    }
+    @Test void telemetryHistoryCleanupHonoursTheConfiguredRetention()throws Exception {
+        String id="dodo-history-retention";
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"保留测试\"}",TOKEN).statusCode()).isEqualTo(201);
+        db.update("""
+            INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,volume,
+                brightness,muted,dnd,unread,free_heap,min_free_heap)
+            VALUES (?,now()-interval '40 days','0.4.0',0,25,80,false,false,0,100000,90000)
+            """,id);
+        history.cleanup();
+        assertThat(db.queryForObject("SELECT count(*) FROM device_telemetry_samples WHERE device_id=?",Integer.class,id)).isZero();
     }
 }
