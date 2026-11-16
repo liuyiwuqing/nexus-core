@@ -84,6 +84,28 @@ function pickRange(id: RangeId) {
   if (range.value === id) return;
   range.value = id; history.value = null; void loadHistory();
 }
+function exportHistory() {
+  const value = history.value;
+  if (!value?.points.length) return;
+  const header = ['采样时间', '接收时间', '样本数', '固件版本', '配置版本', '音量%', '亮度%', '静音', '免打扰', '未读',
+    '可用内存(B)', '桶内最小(B)', '桶内最大(B)', '启动以来最小(B)', '音频欠载', '推理最长(ms)', '显示最长(ms)', '音频异常'];
+  const cell = (item: unknown) => {
+    const text = item === null || item === undefined ? '' : String(item);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = ['\uFEFF' + header.join(','), ...value.points.map(point => [
+    point.observedAt, point.receivedAt, point.count, point.firmwareVersion, point.configRevision,
+    point.volume, point.brightness, point.muted, point.dnd, point.unread,
+    point.freeHeap, point.freeHeapMin, point.freeHeapMax, point.minFreeHeap,
+    point.audioUnderruns, point.inferenceMaxMs, point.displayMaxMs, point.audioFaulted,
+  ].map(cell).join(','))];
+  const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `telemetry-${props.device.deviceId}-${range.value}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}.csv`;
+  document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function refreshAll() { void refresh(); void loadHistory(); }
 async function submit() {
   if (sending.value || props.busy) return;
@@ -154,6 +176,7 @@ onUnmounted(() => {
         </div>
         <div class="history-metrics" role="group" aria-label="历史指标">
           <NButton v-for="item in metrics" :key="item.id" size="small" attr-type="button" :type="metric === item.id ? 'primary' : 'default'" :quaternary="metric !== item.id" @click="metric = item.id">{{ item.label }}</NButton>
+          <NButton size="small" quaternary attr-type="button" class="history-export" :disabled="!history?.points.length" @click="exportHistory">导出 CSV</NButton>
         </div>
         <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
         <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>

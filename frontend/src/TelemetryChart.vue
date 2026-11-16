@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { formatTime, type TelemetryMetric, type TelemetryPoint } from './types';
 
 const props = defineProps<{ points: TelemetryPoint[]; from: string; to: string; bucketSeconds: number; metric: TelemetryMetric }>();
 const W = 640, H = 190, L = 48, R = 16, T = 12, B = 26, TIP_W = 214;
+const clipId = `chart-clip-${Math.random().toString(36).slice(2, 8)}`;
 type SeriesConfig = { label: string; short: string; pick: (point: TelemetryPoint) => number | null };
 type MetricConfig = { title: string; unit: string; zeroFloor?: boolean; primary: SeriesConfig; secondary?: SeriesConfig };
 const metrics: Record<TelemetryMetric, MetricConfig> = {
@@ -22,19 +23,26 @@ const rows = computed<Row[]>(() => props.points.flatMap(point => {
   return [{ at, primary, secondary: config.value.secondary?.pick(point) ?? null, faulted: point.audioFaulted === true, point }];
 }));
 const faults = computed(() => (props.metric === 'audio' ? rows.value.filter(row => row.faulted) : []));
-const scale = computed(() => {
-  if (!rows.value.length) return null;
-  const values = rows.value.flatMap(row => (row.secondary === null ? [row.primary] : [row.primary, row.secondary]));
-  let low = Math.min(...values), high = Math.max(...values);
-  if (high - low < 2) { low -= 2; high += 2; }
-  const pad = (high - low) * 0.08;
-  return { low: config.value.zeroFloor ? Math.max(0, low - pad) : low - pad, high: high + pad };
-});
-const domain = computed(() => {
+const baseDomain = computed(() => {
   const from = Date.parse(props.from), to = Date.parse(props.to);
   if (Number.isFinite(from) && Number.isFinite(to) && to > from) return { from, to };
   const first = rows.value[0]?.at ?? 0, last = rows.value[rows.value.length - 1]?.at ?? first + 1;
   return { from: first, to: last > first ? last : first + 1 };
+});
+// 缩放只放大已取回的桶，不重新请求；窗口刷新后若仍在范围内则保留。
+const zoom = ref<{ from: number; to: number } | null>(null);
+const domain = computed(() => zoom.value ?? baseDomain.value);
+const windowRows = computed(() => {
+  const list = rows.value.filter(row => row.at >= domain.value.from && row.at <= domain.value.to);
+  return list.length ? list : rows.value;
+});
+const scale = computed(() => {
+  if (!windowRows.value.length) return null;
+  const values = windowRows.value.flatMap(row => (row.secondary === null ? [row.primary] : [row.primary, row.secondary]));
+  let low = Math.min(...values), high = Math.max(...values);
+  if (high - low < 2) { low -= 2; high += 2; }
+  const pad = (high - low) * 0.08;
+  return { low: config.value.zeroFloor ? Math.max(0, low - pad) : low - pad, high: high + pad };
 });
 const x = (at: number) => L + (W - L - R) * Math.min(1, Math.max(0, (at - domain.value.from) / (domain.value.to - domain.value.from)));
 const y = (value: number) => T + (H - T - B) * (1 - (value - scale.value!.low) / (scale.value!.high - scale.value!.low));
@@ -59,13 +67,14 @@ const ticks = computed(() => {
   return [value.high, (value.high + value.low) / 2, value.low].map(at => ({ value: Math.round(at), y: y(at) }));
 });
 const timeLabels = computed(() => {
+  const detailed = domain.value.to - domain.value.from < 3 * 3600_000;
   const format = (at: number) => new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    ...(detailed ? { second: '2-digit' as const } : {}), hour12: false,
   }).format(new Date(at));
-  const middle = (domain.value.from + domain.value.to) / 2;
   return [
     { x: L, text: format(domain.value.from), anchor: 'start' },
-    { x: (L + W - R) / 2, text: format(middle), anchor: 'middle' },
+    { x: (L + W - R) / 2, text: format((domain.value.from + domain.value.to) / 2), anchor: 'middle' },
     { x: W - R, text: format(domain.value.to), anchor: 'end' },
   ];
 });
@@ -73,68 +82,109 @@ const hovered = ref<number | null>(null);
 const selected = computed(() => (hovered.value === null ? null : rows.value[hovered.value] ?? null));
 const selectedFault = computed(() => props.metric === 'audio' && !!selected.value?.faulted);
 const tooltipX = computed(() => Math.min(W - TIP_W - 6, Math.max(6, x(selected.value!.at) - TIP_W / 2)));
+function atPointer(clientX: number, svg: SVGSVGElement) {
+  const rect = svg.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, ((clientX - rect.left) * (W / rect.width) - L) / (W - L - R)));
+  return { at: domain.value.from + ratio * (domain.value.to - domain.value.from), x: L + ratio * (W - L - R) };
+}
+const drag = ref<{ start: number; startX: number; current: number; currentX: number } | null>(null);
+const dragX = computed(() => (drag.value ? Math.min(drag.value.startX, drag.value.currentX) : 0));
+const dragWidth = computed(() => (drag.value ? Math.abs(drag.value.currentX - drag.value.startX) : 0));
+function begin(event: MouseEvent) {
+  if (event.button !== 0 || !rows.value.length) return;
+  const point = atPointer(event.clientX, event.currentTarget as SVGSVGElement);
+  if (point.x < L || point.x > W - R) return;
+  drag.value = { start: point.at, startX: point.x, current: point.at, currentX: point.x };
+  hovered.value = null;
+}
 function move(event: MouseEvent) {
+  const point = atPointer(event.clientX, event.currentTarget as SVGSVGElement);
+  if (drag.value) {
+    drag.value = { ...drag.value, current: point.at, currentX: point.x };
+    return;
+  }
   if (!rows.value.length) return;
-  const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
-  const ratio = Math.min(1, Math.max(0, ((event.clientX - rect.left) * (W / rect.width) - L) / (W - L - R)));
-  const at = domain.value.from + ratio * (domain.value.to - domain.value.from);
   let best = 0, distance = Infinity;
   rows.value.forEach((row, index) => {
-    const gap = Math.abs(row.at - at);
+    const gap = Math.abs(row.at - point.at);
     if (gap < distance) { distance = gap; best = index; }
   });
   hovered.value = best;
 }
+function end() {
+  const value = drag.value;
+  drag.value = null;
+  if (!value || Math.abs(value.currentX - value.startX) < 10) return;
+  const from = Math.min(value.start, value.current), to = Math.max(value.start, value.current);
+  if (to - from < (domain.value.to - domain.value.from) * 0.02) return;
+  zoom.value = { from, to };
+}
+function leave() { if (!drag.value) hovered.value = null; }
 function step(delta: number) {
   if (!rows.value.length) return;
   const base = hovered.value ?? rows.value.length - 1;
   hovered.value = Math.min(rows.value.length - 1, Math.max(0, base + delta));
 }
 watch([() => props.points, () => props.metric], () => { hovered.value = null; });
+watch([() => props.from, () => props.to], () => {
+  if (!zoom.value) return;
+  if (zoom.value.from < baseDomain.value.from || zoom.value.to > baseDomain.value.to) zoom.value = null;
+});
+onMounted(() => window.addEventListener('mouseup', end));
+onUnmounted(() => window.removeEventListener('mouseup', end));
 const summary = computed(() => {
   if (!rows.value.length) return '所选范围内没有可绘制的采样点。';
   const last = rows.value[rows.value.length - 1], value = config.value;
   let text = `${value.title}趋势，共 ${rows.value.length} 组采样。最后 ${value.primary.label} ${Math.round(last.primary)} ${value.unit}`;
   if (value.secondary && last.secondary !== null) text += `，${value.secondary.label} ${Math.round(last.secondary)} ${value.unit}`;
   if (faults.value.length) text += `，期间 ${faults.value.length} 个采样标记音频异常`;
+  if (zoom.value) text += '，当前为放大视图，可双击或点重置缩放恢复';
   return text + '。';
 });
 </script>
 
 <template>
   <div class="chart-wrap">
-    <div class="chart-legend" aria-hidden="true">
-      <span><i class="swatch-primary"></i>{{ config.primary.label }}</span>
-      <span v-if="config.secondary"><i class="swatch-secondary"></i>{{ config.secondary.label }}</span>
-      <span v-if="faults.length"><i class="swatch-fault"></i>音频异常</span>
-      <span class="chart-unit">{{ config.unit }}</span>
+    <div class="chart-meta">
+      <div class="chart-legend" aria-hidden="true">
+        <span><i class="swatch-primary"></i>{{ config.primary.label }}</span>
+        <span v-if="config.secondary"><i class="swatch-secondary"></i>{{ config.secondary.label }}</span>
+        <span v-if="faults.length"><i class="swatch-fault"></i>音频异常</span>
+        <span class="chart-unit">{{ config.unit }}</span>
+      </div>
+      <button v-if="zoom" type="button" class="chart-reset" @click="zoom = null">重置缩放</button>
     </div>
     <div class="chart-scroll">
       <svg class="telemetry-chart" :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summary" tabindex="0"
-        @mousemove="move" @mouseleave="hovered = null" @keydown.left.prevent="step(-1)" @keydown.right.prevent="step(1)">
+        :title="zoom ? '双击图表或点重置缩放恢复' : '拖动选择时间范围放大'" @mousedown.prevent="begin" @mousemove="move"
+        @mouseleave="leave" @dblclick="zoom = null" @keydown.left.prevent="step(-1)" @keydown.right.prevent="step(1)">
+        <defs><clipPath :id="clipId"><rect :x="L" :y="T" :width="W - L - R" :height="H - T - B" /></clipPath></defs>
         <g v-for="(tick, index) in ticks" :key="index" class="chart-grid">
           <line :x1="L" :x2="W - R" :y1="tick.y" :y2="tick.y" />
           <text :x="L - 8" :y="tick.y + 3.5" text-anchor="end">{{ tick.value }}</text>
         </g>
-        <text v-for="label in timeLabels" :key="label.text" :x="label.x" :y="H - 6" :text-anchor="label.anchor" class="chart-axis">{{ label.text }}</text>
-        <g v-for="(segment, index) in segments" :key="index">
-          <path class="series-primary" :d="line(segment, 'primary')" />
-          <path v-if="config.secondary" class="series-secondary" :d="line(segment, 'secondary')" />
-          <template v-if="segment.length === 1">
-            <circle class="dot-primary" :cx="x(segment[0].at)" :cy="y(segment[0].primary)" r="3" />
-            <circle v-if="config.secondary && segment[0].secondary !== null" class="dot-secondary" :cx="x(segment[0].at)" :cy="y(segment[0].secondary)" r="3" />
-          </template>
-        </g>
-        <circle v-for="row in faults" :key="row.at" class="dot-fault" :cx="x(row.at)" :cy="y(row.primary)" r="3" />
-        <g v-if="selected">
-          <line class="chart-cursor" :x1="x(selected.at)" :x2="x(selected.at)" :y1="T" :y2="H - B" />
-          <circle :class="selectedFault ? 'dot-fault' : 'dot-primary'" :cx="x(selected.at)" :cy="y(selected.primary)" r="3.5" />
-          <circle v-if="config.secondary && selected.secondary !== null" class="dot-secondary" :cx="x(selected.at)" :cy="y(selected.secondary)" r="3.5" />
-          <g class="chart-tooltip" :transform="`translate(${tooltipX}, 6)`">
-            <rect :width="TIP_W" height="36" rx="6" />
-            <text x="10" y="15">{{ formatTime(selected.point.observedAt) }}</text>
-            <text x="10" y="29">{{ config.primary.short }} {{ Math.round(selected.primary) }} {{ config.unit }}<template v-if="config.secondary && selected.secondary !== null"> · {{ config.secondary.short }} {{ Math.round(selected.secondary) }} {{ config.unit }}</template><template v-if="selectedFault"> · 音频异常</template></text>
+        <text v-for="label in timeLabels" :key="label.x" :x="label.x" :y="H - 6" :text-anchor="label.anchor" class="chart-axis">{{ label.text }}</text>
+        <g :clip-path="`url(#${clipId})`">
+          <g v-for="(segment, index) in segments" :key="index">
+            <path class="series-primary" :d="line(segment, 'primary')" />
+            <path v-if="config.secondary" class="series-secondary" :d="line(segment, 'secondary')" />
+            <template v-if="segment.length === 1">
+              <circle class="dot-primary" :cx="x(segment[0].at)" :cy="y(segment[0].primary)" r="3" />
+              <circle v-if="config.secondary && segment[0].secondary !== null" class="dot-secondary" :cx="x(segment[0].at)" :cy="y(segment[0].secondary)" r="3" />
+            </template>
           </g>
+          <circle v-for="row in faults" :key="row.at" class="dot-fault" :cx="x(row.at)" :cy="y(row.primary)" r="3" />
+          <template v-if="selected">
+            <line class="chart-cursor" :x1="x(selected.at)" :x2="x(selected.at)" :y1="T" :y2="H - B" />
+            <circle :class="selectedFault ? 'dot-fault' : 'dot-primary'" :cx="x(selected.at)" :cy="y(selected.primary)" r="3.5" />
+            <circle v-if="config.secondary && selected.secondary !== null" class="dot-secondary" :cx="x(selected.at)" :cy="y(selected.secondary)" r="3.5" />
+          </template>
+          <rect v-if="dragWidth >= 4" class="chart-brush" :x="dragX" :y="T" :width="dragWidth" :height="H - T - B" />
+        </g>
+        <g v-if="selected" class="chart-tooltip" :transform="`translate(${tooltipX}, 6)`">
+          <rect :width="TIP_W" height="36" rx="6" />
+          <text x="10" y="15">{{ formatTime(selected.point.observedAt) }}</text>
+          <text x="10" y="29">{{ config.primary.short }} {{ Math.round(selected.primary) }} {{ config.unit }}<template v-if="config.secondary && selected.secondary !== null"> · {{ config.secondary.short }} {{ Math.round(selected.secondary) }} {{ config.unit }}</template><template v-if="selectedFault"> · 音频异常</template></text>
         </g>
       </svg>
     </div>
@@ -143,15 +193,19 @@ const summary = computed(() => {
 
 <style scoped>
 .chart-wrap { margin-top: var(--space-3); }
-.chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); color: var(--muted); font-size: var(--text-sm); }
+.chart-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.chart-legend { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: var(--space-4); color: var(--muted); font-size: var(--text-sm); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 14px; height: 2px; border-radius: 999px; }
 .swatch-primary { background: var(--accent); }
 .swatch-secondary { background: var(--info); }
 .swatch-fault { background: var(--danger); }
 .chart-unit { margin-left: auto; }
+.chart-reset { border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); padding: 2px 8px; cursor: pointer; }
+.chart-reset:hover { border-color: var(--border-hover); color: var(--ink-2); }
+.chart-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-scroll { overflow-x: auto; margin-top: var(--space-2); }
-.telemetry-chart { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; }
+.telemetry-chart { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; cursor: crosshair; }
 .telemetry-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-grid line { stroke: var(--divider); stroke-width: 1; }
 .chart-grid text, .chart-axis, .chart-tooltip text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
@@ -161,6 +215,7 @@ const summary = computed(() => {
 .dot-secondary { fill: var(--info); }
 .dot-fault { fill: var(--danger); stroke: var(--surface); stroke-width: 1; }
 .chart-cursor { stroke: var(--border-hover); stroke-width: 1; }
+.chart-brush { fill: var(--accent); fill-opacity: 0.12; stroke: var(--accent); stroke-width: 1; }
 .chart-tooltip rect { fill: var(--surface); stroke: var(--border); }
 .chart-tooltip text { fill: var(--ink-2); }
 </style>
