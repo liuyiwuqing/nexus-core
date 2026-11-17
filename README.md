@@ -164,7 +164,7 @@ python3 tools/upgrade_broker_policy.py
 python3 tools/upgrade_broker_policy.py --apply
 ```
 
-工具备份到 config/.management-v1-backup，原权限保留，失败尽力回滚；自定义 ACL 拒绝覆盖并要求手工合并。没有在本次开发中运行真实 --apply 或迁移真实库。只有更新并重新加载 ACL 后，老 Broker 才允许管理主题。
+工具备份到 config/.management-v1-backup，原权限保留，失败尽力回滚；自定义 ACL 拒绝覆盖并要求手工合并。没有运行真实 `--apply`；本机真实库已于 2026-11-17 在备份并在临时库恢复验证后迁移到 V23，目标服务器仍未部署。只有更新并重新加载 ACL 后，老 Broker 才允许管理主题。
 
 ## Mac 工具、自动化和成长
 

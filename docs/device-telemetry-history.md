@@ -126,7 +126,7 @@ NEXUS_TELEMETRY_CLEANUP_CRON=0 20 4 * * *
 
 ## 迁移与验证
 
-Flyway `V21__device_telemetry_history.sql` 新增样本表和过期索引，`V22__device_telemetry_network.sql` 为样本表追加 `wifi_ip`/`wifi_rssi`，`V23__device_telemetry_wifi_quality.sql` 再追加 `wifi_ssid`/`wifi_channel`/`wifi_disconnect_reason`/`wifi_disconnected_at`，均不改既有表。已有实例按现有流程在独立库验证后迁移；本项未迁移真实数据库，未部署目标机。
+Flyway `V21__device_telemetry_history.sql` 新增样本表和过期索引，`V22__device_telemetry_network.sql` 为样本表追加 `wifi_ip`/`wifi_rssi`，`V23__device_telemetry_wifi_quality.sql` 再追加 `wifi_ssid`/`wifi_channel`/`wifi_disconnect_reason`/`wifi_disconnected_at`，均不改既有表。已有实例按现有流程在独立库验证后迁移。2026-11-17 本机真实库已按此流程执行：`pg_dump -Fc` 备份到忽略目录 `data/backups/`，在临时库恢复核对后由新 JAR 的 Flyway 应用 V21–V23（`flyway_schema_history` 全部 success，schema 到 v23）；目标服务器与实机上报仍未验收。
 
 `DeviceManagementFlowTest` 新增三项：
 
