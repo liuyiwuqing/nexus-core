@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { NButton } from 'naive-ui';
 import { formatTime, type TelemetryMetric, type TelemetryPoint } from './types';
 
 const props = defineProps<{ points: TelemetryPoint[]; from: string; to: string; bucketSeconds: number; metric: TelemetryMetric }>();
@@ -153,7 +154,7 @@ const summary = computed(() => {
         <span v-if="faults.length"><i class="swatch-fault"></i>音频异常</span>
         <span class="chart-unit">{{ config.unit }}</span>
       </div>
-      <button v-if="zoom" type="button" class="chart-reset" @click="zoom = null">重置缩放</button>
+      <NButton v-if="zoom" attr-type="button" size="small" class="chart-reset" @click="zoom = null">重置缩放</NButton>
     </div>
     <div class="chart-scroll">
       <svg class="telemetry-chart" :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summary" tabindex="0"
@@ -202,9 +203,6 @@ const summary = computed(() => {
 .swatch-secondary { background: var(--info); }
 .swatch-fault { background: var(--danger); }
 .chart-unit { margin-left: auto; }
-.chart-reset { border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); padding: 2px 8px; cursor: pointer; }
-.chart-reset:hover { border-color: var(--border-hover); color: var(--ink-2); }
-.chart-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-scroll { overflow-x: auto; margin-top: var(--space-2); }
 .telemetry-chart { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; cursor: crosshair; }
 .telemetry-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

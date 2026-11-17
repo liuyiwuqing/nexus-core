@@ -176,10 +176,13 @@ async function send() {
     </div>
     <div v-else class="inbox-layout" :class="{ 'has-selection': !!selected, 'short-list': data.items.length <= 4 }" :aria-busy="loading">
       <div class="message-list" aria-label="消息列表">
-        <button
+        <NButton
           v-for="message in data.items"
           :key="message.messageId"
           class="message-row"
+          attr-type="button" block
+          :type="selectedId === message.messageId ? 'primary' : 'default'"
+          :secondary="selectedId === message.messageId" :quaternary="selectedId !== message.messageId"
           :class="{ active: selectedId === message.messageId, unread: message.readStatus === 'unread' }"
           :aria-pressed="selectedId === message.messageId"
           @click="selectedId = message.messageId"
@@ -193,7 +196,7 @@ async function send() {
             {{ message.contentPurgedAt ? '内容已按保留期限清除' : message.title }}
           </span>
           <span class="message-preview">{{ message.summary }}</span>
-        </button>
+        </NButton>
         <div class="pagination">
           <NButton quaternary attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">
             上一页

@@ -19,12 +19,13 @@ const groups = computed(() => visibleNavigation(props.role));
         <p class="nav-group-label">{{ group.label }}</p>
         <!-- 指针/键盘落到导航项即预取对应 chunk，点击时通常已在缓存里，切换不出现空窗。
              折叠后文字由 CSS 收起，名称改由 aria-label 与 title 提供，图标按钮仍然可读、可悬停识别。 -->
-        <button v-for="item in group.items" :key="item.id" type="button" :data-tab="item.id" :class="{ active: tab === item.id }"
+        <NButton v-for="item in group.items" :key="item.id" attr-type="button" block :data-tab="item.id" :class="{ active: tab === item.id }"
+          :type="tab === item.id ? 'primary' : 'default'" :secondary="tab === item.id" :quaternary="tab !== item.id"
           :aria-current="tab === item.id ? 'page' : undefined" :aria-label="collapsed ? item.label : undefined"
           :title="collapsed ? item.label : undefined"
           @pointerenter="prefetchTab(item.id)" @focus="prefetchTab(item.id)" @click="$emit('navigate', item.id)">
-          <component :is="item.icon" :size="18" :stroke-width="1.7" aria-hidden="true" /><span class="nav-label">{{ item.label }}</span>
-        </button>
+          <template #icon><component :is="item.icon" :size="18" :stroke-width="1.7" aria-hidden="true" /></template><span class="nav-label">{{ item.label }}</span>
+        </NButton>
       </div>
     </nav>
     <div class="sidebar-bottom">

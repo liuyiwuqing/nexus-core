@@ -9,6 +9,7 @@ import { formatTime, errorNames, type Connector } from './types';
 import { ref } from 'vue';
 const props = defineProps<{ items: Connector[]; busy: boolean; poll: () => Promise<boolean>; importComment: (name: string) => Promise<boolean> }>();
 const commentName = ref('');
+const importOpen = ref<Record<string, boolean>>({});
 async function importOne() { if (await props.importComment(commentName.value.trim())) commentName.value = ''; }
 const stateNames: Record<string, string> = { ready: '连接正常', not_checked: '等待同步', not_configured: '尚未配置', error: '连接异常' };
 </script>
@@ -52,9 +53,10 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
           {{ busy ? '正在同步…' : '立即同步' }}
         </NButton>
       </div>
-      <details v-if="admin && connector.configured" class="import-comment">
-        <summary>导入一条历史公开评论</summary>
-        <ConsoleForm @submit.prevent="importOne">
+      <div v-if="admin && connector.configured" class="import-comment">
+        <NButton quaternary attr-type="button" class="import-toggle" :aria-expanded="!!importOpen[connector.id]"
+          :aria-controls="`import-${connector.id}`" @click="importOpen[connector.id] = !importOpen[connector.id]">导入一条历史公开评论</NButton>
+        <ConsoleForm v-show="importOpen[connector.id]" :id="`import-${connector.id}`" @submit.prevent="importOne">
           <ConsoleField
             path="field-1"
             :rule="fieldRule(() => commentName, { required: true, pattern: '[a-zA-Z0-9_.-]+', maxlength: 120, disabled: () => busy })"
@@ -73,7 +75,7 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
             <NButton size="small" attr-type="submit" class="secondary compact" :disabled="busy">导入</NButton>
           </div>
         </ConsoleForm>
-      </details>
+      </div>
     </article>
     <p class="scope-note">首次接入默认从当前时间开始接收。私信、邮件和录音保持关闭。</p>
   </section>
