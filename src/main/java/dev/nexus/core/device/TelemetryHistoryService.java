@@ -53,7 +53,7 @@ public class TelemetryHistoryService {
     void record(String device,JsonNode value) {
         long observed=value.get("observedAt").asLong();
         var rows=db.queryForList("""
-            SELECT observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,audio_faulted
+            SELECT observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,audio_faulted,wifi_ip
             FROM device_telemetry_samples WHERE device_id=? ORDER BY observed_at DESC LIMIT 1
             """,device);
         if(!rows.isEmpty()) {
@@ -66,8 +66,8 @@ public class TelemetryHistoryService {
         db.update("""
             INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,
                 volume,brightness,muted,dnd,unread,free_heap,min_free_heap,
-                audio_underruns,inference_max_ms,display_max_ms,audio_faulted)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                audio_underruns,inference_max_ms,display_max_ms,audio_faulted,wifi_ip,wifi_rssi)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(device_id,observed_at) DO NOTHING
             """,device,Timestamp.from(Instant.ofEpochSecond(observed)),
             value.get("firmwareVersion").asText(),value.get("configRevision").asLong(),
@@ -76,7 +76,8 @@ public class TelemetryHistoryService {
             value.get("freeHeap").asLong(),value.get("minFreeHeap").asLong(),
             optionalLong(value,"audioUnderruns"),optionalLong(value,"inferenceMaxMs"),
             optionalLong(value,"displayMaxMs"),
-            value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null);
+            value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null,
+            value.has("wifiIp")?value.get("wifiIp").asText():null,optionalLong(value,"wifiRssi"));
     }
 
     /** State changes are recorded immediately (rate-limited); heap jitter only follows the heartbeat. */
@@ -89,7 +90,9 @@ public class TelemetryHistoryService {
             || !last.get("dnd").equals(value.get("dnd").asBoolean())
             || ((Number)last.get("unread")).intValue()!=value.get("unread").asInt()
             || !java.util.Objects.equals(last.get("audio_faulted"),
-                value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null);
+                value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null)
+            || !java.util.Objects.equals(last.get("wifi_ip"),
+                value.has("wifiIp")?value.get("wifiIp").asText():null);
     }
 
     public Map<String,Object> query(String device,String fromValue,String toValue,String bucket) {
@@ -118,7 +121,7 @@ public class TelemetryHistoryService {
                     free_heap AS "freeHeap",free_heap AS "freeHeapMin",free_heap AS "freeHeapMax",
                     min_free_heap AS "minFreeHeap",audio_underruns AS "audioUnderruns",
                     inference_max_ms AS "inferenceMaxMs",display_max_ms AS "displayMaxMs",
-                    audio_faulted AS "audioFaulted"
+                    audio_faulted AS "audioFaulted",wifi_ip AS "wifiIp",wifi_rssi AS "wifiRssi"
                 FROM device_telemetry_samples
                 WHERE device_id=? AND observed_at>=? AND observed_at<?
                 ORDER BY observed_at DESC LIMIT ?
@@ -142,7 +145,9 @@ public class TelemetryHistoryService {
                     min(free_heap) AS "freeHeapMin",max(free_heap) AS "freeHeapMax",
                     min(min_free_heap) AS "minFreeHeap",max(audio_underruns) AS "audioUnderruns",
                     max(inference_max_ms) AS "inferenceMaxMs",max(display_max_ms) AS "displayMaxMs",
-                    bool_or(audio_faulted) AS "audioFaulted"
+                    bool_or(audio_faulted) AS "audioFaulted",
+                    (array_agg(wifi_ip ORDER BY observed_at DESC) FILTER (WHERE wifi_ip IS NOT NULL))[1] AS "wifiIp",
+                    round(avg(wifi_rssi))::int AS "wifiRssi"
                 FROM device_telemetry_samples
                 WHERE device_id=? AND observed_at>=? AND observed_at<?
                 GROUP BY 1 ORDER BY 1

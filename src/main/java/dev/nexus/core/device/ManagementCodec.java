@@ -74,7 +74,7 @@ final class ManagementCodec {
         var value=parse(bytes,2048);
         fields(value,Set.of("schemaVersion","deviceId","observedAt","firmwareVersion","configRevision","configWritable",
             "muted","dnd","volume","brightness","unread","freeHeap","minFreeHeap"),
-            Set.of("audioUnderruns","inferenceMaxMs","displayMaxMs","audioFaulted","config"));
+            Set.of("audioUnderruns","inferenceMaxMs","displayMaxMs","audioFaulted","wifiIp","wifiRssi","config"));
         integer(value.get("schemaVersion"),1,1);
         if(!text(value.get("deviceId"),40).equals(device))throw new IllegalArgumentException("device_mismatch");
         integer(value.get("observedAt"),1,Instant.now().getEpochSecond()+5);
@@ -84,6 +84,12 @@ final class ManagementCodec {
         for(String key:Set.of("freeHeap","minFreeHeap","audioUnderruns","inferenceMaxMs","displayMaxMs"))
             if(value.has(key))integer(value.get(key),0,4294967295L);
         if(value.has("audioFaulted"))bool(value.get("audioFaulted"));
+        if(value.has("wifiIp")) {
+            String ip=text(value.get("wifiIp"),15);
+            if(!ip.matches("((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"))
+                throw new IllegalArgumentException("invalid_telemetry_wifi_ip");
+        }
+        if(value.has("wifiRssi"))integer(value.get("wifiRssi"),-130,0);
         if(value.has("config")) {
             var settings=config(value.get("config"));
             if(settings.get("volume").asInt()!=value.get("volume").asInt()||settings.get("brightness").asInt()!=value.get("brightness").asInt())

@@ -63,7 +63,7 @@ class DeviceManagementFlowTest {
             pattern write nexus/v1/devices/%u/config_acks
             pattern write nexus/v1/devices/%u/telemetry
             """),"/mosquitto/config/acl")
-        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
+        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);
@@ -150,6 +150,12 @@ class DeviceManagementFlowTest {
     void publishTelemetryAt(MqttClient d,String id,long observedAt,int volume)throws Exception {
         String value=telemetry(id,0,CONFIG.replace("\"volume\":25","\"volume\":"+volume))
             .replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observedAt);
+        d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
+    }
+    void publishNetworkTelemetry(MqttClient d,String id,long observedAt,String ip,int rssi,int volume)throws Exception {
+        String value=telemetry(id,0,CONFIG.replace("\"volume\":25","\"volume\":"+volume))
+            .replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observedAt)
+            .replace("\"freeHeap\"","\"wifiIp\":\""+ip+"\",\"wifiRssi\":"+rssi+",\"freeHeap\"");
         d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
     }
     @Test void configurationReusesRequestAndOnlyDeviceAckConfirmsSaving()throws Exception {
@@ -386,6 +392,29 @@ class DeviceManagementFlowTest {
                 "bucket=1m&"+historyWindow(Instant.now().getEpochSecond()-8*86400,Instant.now().getEpochSecond()),
                 "bucket=raw&"+historyWindow(Instant.now().getEpochSecond()-13*3600,Instant.now().getEpochSecond())})
                 assertThat(request("GET",path+"?"+query,"",TOKEN).statusCode()).withFailMessage(query).isEqualTo(400);
+            d.disconnect();
+        }
+    }
+    @Test void telemetryHistoryKeepsNetworkAddressAndSignal()throws Exception {
+        String id="dodo-network";
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"网络遥测\"}",TOKEN).statusCode()).isEqualTo(201);
+        long base=Instant.now().getEpochSecond()/60*60-300;
+        try(var d=device(id)) {
+            waitForCore();
+            publishNetworkTelemetry(d,id,base,"192.168.1.23",-58,25);
+            var raw=awaitHistoryPoints(id,base-60,base+120,1);
+            assertThat(raw.path("points").get(0).path("wifiIp").asText()).isEqualTo("192.168.1.23");
+            assertThat(raw.path("points").get(0).path("wifiRssi").asInt()).isEqualTo(-58);
+            publishNetworkTelemetry(d,id,base+10,"192.168.1.24",-52,25); // 地址变化立即入库，不等待心跳
+            awaitHistoryPoints(id,base-60,base+120,2);
+            var grouped=telemetryHistory(id,historyWindow(base-60,base+120)+"&bucket=1m").path("points").get(0);
+            assertThat(grouped.path("wifiIp").asText()).isEqualTo("192.168.1.24");
+            assertThat(grouped.path("wifiRssi").asInt()).isEqualTo(-55);
+            publishNetworkTelemetry(d,id,base+20,"192.168.1.999",12,99); // 非法地址与信号整条拒绝
+            publishTelemetryAt(d,id,base+40,40);
+            var points=awaitHistoryPoints(id,base-60,base+120,3).path("points");
+            for(var point:points)assertThat(point.path("volume").asInt()).isNotEqualTo(99);
+            assertThat(points.get(2).hasNonNull("wifiIp")).isFalse();
             d.disconnect();
         }
     }

@@ -13,6 +13,7 @@ const metrics: Record<TelemetryMetric, MetricConfig> = {
   volume: { title: '音量', unit: '%', zeroFloor: true, primary: { label: '音量', short: '音量', pick: point => point.volume } },
   unread: { title: '未读消息', unit: '条', zeroFloor: true, primary: { label: '未读消息', short: '未读', pick: point => point.unread } },
   audio: { title: '音频欠载', unit: '次', zeroFloor: true, primary: { label: '音频欠载', short: '欠载', pick: point => point.audioUnderruns } },
+  network: { title: 'Wi-Fi 信号', unit: 'dBm', primary: { label: 'Wi-Fi 信号', short: '信号', pick: point => point.wifiRssi } },
 };
 const config = computed(() => metrics[props.metric]);
 type Row = { at: number; primary: number; secondary: number | null; faulted: boolean; point: TelemetryPoint };

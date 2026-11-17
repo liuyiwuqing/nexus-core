@@ -17,7 +17,8 @@ export interface DeviceConfig {
 export interface DeviceTelemetry {
   observedAt: number; firmwareVersion: string; configRevision: number; configWritable: boolean;
   muted: boolean; dnd: boolean; volume: number; brightness: number; unread: number;
-  freeHeap: number; minFreeHeap: number; audioUnderruns?: number; audioFaulted?: boolean; config?: DeviceConfig;
+  freeHeap: number; minFreeHeap: number; audioUnderruns?: number; audioFaulted?: boolean;
+  wifiIp?: string; wifiRssi?: number; config?: DeviceConfig;
 }
 export interface ConfigRequest {
   requestId: string; expectedRevision: number; status: 'pending' | 'sent' | 'applied' | 'rejected' | 'expired' | 'unconfirmed';
@@ -34,9 +35,9 @@ export interface TelemetryPoint {
   volume: number; brightness: number; muted: boolean; dnd: boolean; unread: number;
   freeHeap: number; freeHeapMin: number; freeHeapMax: number; minFreeHeap: number;
   audioUnderruns: number | null; inferenceMaxMs: number | null; displayMaxMs: number | null;
-  audioFaulted: boolean | null;
+  audioFaulted: boolean | null; wifiIp: string | null; wifiRssi: number | null;
 }
-export type TelemetryMetric = 'heap' | 'volume' | 'unread' | 'audio';
+export type TelemetryMetric = 'heap' | 'volume' | 'unread' | 'audio' | 'network';
 export interface TelemetryHistory {
   deviceId: string; from: string; to: string; bucket: string;
   sampleSeconds: number; retentionDays: number; truncated: boolean; points: TelemetryPoint[];
