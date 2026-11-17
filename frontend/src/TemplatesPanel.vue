@@ -166,7 +166,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </div>
       </article>
     </div>
-    <ConsoleForm v-if="deleting" class="inline-form spaced" @submit.prevent="remove">
+    <ConsoleForm v-if="deleting" class="inline-form spaced confirmation-panel is-destructive" @submit.prevent="remove">
       <ConsoleField path="field-5" :label-props="{ id: 'templatespanel-field-5' + '-label', for: 'templatespanel-field-5' }">
         <template #label>输入模板名“{{ deleting.definition.name }}”</template>
         <NInput

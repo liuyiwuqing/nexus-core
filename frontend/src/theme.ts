@@ -72,12 +72,24 @@ function build(p: Palette): GlobalThemeOverrides {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     },
     Input: { ...field },
-    Select: { peers: { InternalSelection: { ...selection } } },
+    Select: {
+      menuBoxShadow: p.floatingShadow,
+      peers: {
+        InternalSelection: { ...selection },
+        InternalSelectMenu: { borderRadius: '12px', color: p.popover, optionHeightMedium: '34px', optionFontSizeMedium: '13px' },
+      },
+    },
     Form: { labelFontSizeTopMedium: '13px', labelHeightMedium: '20px', labelPaddingVertical: '0 0 4px 0', blankHeightMedium: '34px' },
     InputNumber: { peers: { Input: { ...field } } },
-    TimePicker: { peers: { Input: { ...field } } },
+    TimePicker: {
+      panelColor: p.popover, panelBoxShadow: p.floatingShadow, panelActionPadding: '8px 12px',
+      borderRadius: '12px', itemHeight: '34px', itemFontSize: '13px', peers: { Input: { ...field } },
+    },
     AutoComplete: { peers: { Input: { ...field } } },
-    DatePicker: { peers: { Input: { ...field } } },
+    DatePicker: {
+      panelColor: p.popover, panelTextColor: p.ink, panelBorderRadius: '12px', panelBoxShadow: p.floatingShadow,
+      panelHeaderPadding: '8px 12px', panelActionPadding: '8px 12px', peers: { Input: { ...field } },
+    },
     Button: {
       fontWeight: '550', fontSizeMedium: '13px', borderRadiusMedium: '8px', heightMedium: '34px',
       heightSmall: '30px', heightLarge: '44px', paddingMedium: '0 12px',
@@ -89,10 +101,14 @@ function build(p: Palette): GlobalThemeOverrides {
     Tag: { borderRadius: '6px', heightSmall: '22px', fontSizeSmall: '12px' },
     Switch: { railColorActive: p.primary },
     Skeleton: { color: p.skeleton },
-    Drawer: { color: p.surface },
+    Drawer: {
+      color: p.surface, textColor: p.ink, titleTextColor: p.ink, titleFontSize: '16px', titleFontWeight: '600',
+      headerPadding: '12px 16px', bodyPadding: '12px 16px', footerPadding: '12px 16px',
+      headerBorderBottom: `1px solid ${p.border}`, footerBorderTop: `1px solid ${p.border}`, boxShadow: p.floatingShadow,
+    },
     /* 浮层与 --shadow-2 / --radius-lg — --radius-md 对应；默认值偏 Material 的深阴影，会和页面层级冲突。 */
     Dropdown: { color: p.popover, borderRadius: '12px', boxShadow: p.floatingShadow },
-    Popover: { color: p.popover, borderRadius: '12px', boxShadow: p.floatingShadow },
+    Popover: { color: p.popover, textColor: p.ink, borderRadius: '12px', padding: '12px', fontSize: '13px', boxShadow: p.floatingShadow },
     Tooltip: { color: p.popover, textColor: p.ink, borderRadius: '8px', boxShadow: p.floatingShadow },
     Pagination: { itemTextColor: p.ink2 },
   };

@@ -128,7 +128,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </NButton>
       </article>
     </div>
-    <ConsoleForm v-if="revoking" class="inline-form spaced" @submit.prevent="revoke">
+    <ConsoleForm v-if="revoking" class="inline-form spaced confirmation-panel is-destructive" @submit.prevent="revoke">
       <ConsoleField path="field-4" :label-props="{ id: 'accesspanel-field-4' + '-label', for: 'accesspanel-field-4' }">
         <template #label>输入名称“{{ revoking.name }}”确认撤销</template>
         <NInput
@@ -167,9 +167,9 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         <table>
           <thead>
             <tr>
-              <th>时间 / 角色</th>
-              <th>操作</th>
-              <th>结果</th>
+              <th scope="col">时间 / 角色</th>
+              <th scope="col">操作</th>
+              <th scope="col">结果</th>
             </tr>
           </thead>
           <tbody>

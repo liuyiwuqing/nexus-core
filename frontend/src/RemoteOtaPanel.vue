@@ -276,7 +276,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
           </NButton>
           <ConsoleForm
             v-if="confirming?.requestId === item.requestId"
-            class="inline-form"
+            class="inline-form confirmation-panel"
             @submit.prevent="send('reboot')"
             @keydown.esc="
               confirming = null;

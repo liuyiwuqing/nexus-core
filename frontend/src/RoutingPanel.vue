@@ -314,7 +314,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </div>
       </article>
     </div>
-    <ConsoleForm v-if="deleting" class="inline-form spaced" @submit.prevent="remove">
+    <ConsoleForm v-if="deleting" class="inline-form spaced confirmation-panel is-destructive" @submit.prevent="remove">
       <ConsoleField path="field-12" :label-props="{ id: 'routingpanel-field-12' + '-label', for: 'routingpanel-field-12' }">
         <template #label>输入路由名称“{{ deleting.definition.name }}”</template>
         <NInput

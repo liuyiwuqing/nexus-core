@@ -182,7 +182,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
     </div>
     <ConsoleForm
       v-if="rotateSource"
-      class="inline-form spaced"
+      class="inline-form spaced confirmation-panel is-destructive"
       @submit.prevent="execute(`sources/${rotateSource.id}/credentials`, 'POST', { expectedVersion: rotateSource.version })"
     >
       <p>轮换立即使旧令牌与签名失效；先保持来源停用，更新发送方后再启用。</p>

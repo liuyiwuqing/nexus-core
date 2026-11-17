@@ -119,7 +119,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
       @save="editorAction(saveEdit)"
       @check="(reload) => editorAction(() => checkEdit(reload))"
     />
-    <ConsoleForm v-if="deletion" class="inline-form rule-delete" aria-label="删除规则确认" @submit.prevent="confirmDelete()">
+    <ConsoleForm v-if="deletion" class="inline-form rule-delete confirmation-panel is-destructive" aria-label="删除规则确认" @submit.prevent="confirmDelete()">
       <h2>删除“{{ deletion.rule.name }}”</h2>
       <p>仅删除已停用且无在途任务的规则；执行历史和已生成消息保留。</p>
       <StatusNote v-if="deletion.uncertain" tone="warn">删除结果尚未确认。可只读核对，或重试原版本删除。切换导航保留本次请求。</StatusNote>
@@ -385,9 +385,9 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         <table>
           <thead>
             <tr>
-              <th>规则 / 时间</th>
-              <th>结果</th>
-              <th>操作</th>
+              <th scope="col">规则 / 时间</th>
+              <th scope="col">结果</th>
+              <th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>

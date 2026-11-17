@@ -76,10 +76,10 @@ async function closeHistory() {
       <table>
         <thead>
           <tr>
-            <th>消息 / 设备</th>
-            <th>状态</th>
-            <th>尝试</th>
-            <th>操作</th>
+            <th scope="col">消息 / 设备</th>
+            <th scope="col">状态</th>
+            <th scope="col">尝试</th>
+            <th scope="col">操作</th>
           </tr>
         </thead>
         <tbody>
