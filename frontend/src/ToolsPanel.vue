@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NSelect } from 'naive-ui';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { errorNames, formatTime, type Api, type ToolSubmission } from './types';
 
@@ -59,34 +62,157 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
 
 <template>
   <section>
-    <div class="section-heading"><div><h1 tabindex="-1">Mac 工具</h1><p>{{ error ? 'Bridge 状态未知' : !catalog ? '正在读取 Bridge 状态' : catalog.state === 'ready' ? 'Bridge 已连接' : catalog.configured ? 'Bridge 暂不可用' : 'Bridge 未启用' }}</p></div><NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton></div>
+    <div class="section-heading">
+      <div>
+        <h1 tabindex="-1">Mac 工具</h1>
+        <p>
+          {{
+            error
+              ? 'Bridge 状态未知'
+              : !catalog
+                ? '正在读取 Bridge 状态'
+                : catalog.state === 'ready'
+                  ? 'Bridge 已连接'
+                  : catalog.configured
+                    ? 'Bridge 暂不可用'
+                    : 'Bridge 未启用'
+          }}
+        </p>
+      </div>
+      <NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
+    </div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取工具状态…</p>
     <StatusNote v-if="uncertain" tone="warn">工具请求结果尚未确认，重试将核对同一请求和参数。刷新或关闭页面后请先核对请求列表。</StatusNote>
-    <form v-if="catalog && !error" class="inline-form" @submit.prevent="prepare">
-      <div class="form-columns"><label>工具<select v-model="toolId" :disabled="busy || loading || !!pending"><option v-for="tool in catalog?.tools || []" :key="tool.id" :value="tool.id">{{ tool.title }}{{ tool.risk === 'confirmation' ? ' · 需确认' : '' }}</option></select></label>
-        <label v-if="selected?.argument">{{ selected.argument === 'projectId' ? '项目白名单' : '应用白名单' }}<select v-model="argument" required :disabled="busy || loading || !!pending"><option value="" disabled>请选择</option><option v-if="pending && argument && !choices.includes(argument)" :value="argument">{{ argument }}</option><option v-for="choice in choices" :key="choice">{{ choice }}</option></select></label></div>
-      <div class="form-footer"><span>{{ !catalog?.configured ? '先完成本机 Bridge 配置。' : !available ? '此能力未加入 Bridge 白名单或尚不可用。' : selected?.risk === 'confirmation' ? '创建请求后核对目标，再确认打开应用。' : '仅查询，不修改项目文件。' }}</span><NButton type="primary" attr-type="submit" class="primary" :disabled="busy || loading || !pending && (!available || !!selected?.argument && !argument)">{{ uncertain ? '重试同一请求' : selected?.risk === 'confirmation' ? '创建打开请求' : '查询' }}</NButton></div>
-    </form>
-    <div v-if="!jobs.length && !loading && !error" class="empty-state"><h2>暂无工具请求</h2><p>执行状态和确认记录会保留在这里。</p></div>
+    <ConsoleForm v-if="catalog && !error" class="inline-form" @submit.prevent="prepare">
+      <div class="form-columns">
+        <ConsoleField path="field-1" :label-props="{ id: 'toolspanel-field-1' + '-label', for: 'toolspanel-field-1' }">
+          <template #label>工具</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!pending"
+            v-model:value="toolId"
+            :options="[
+              ...(catalog?.tools || []).map((tool) => ({
+                label: tool.title + (tool.risk === 'confirmation' ? ' · 需确认' : ''),
+                value: tool.id,
+              })),
+            ]"
+            :input-props="{ id: 'toolspanel-field-1', 'aria-label': '工具' }"
+          />
+        </ConsoleField>
+        <ConsoleField
+          v-if="selected?.argument"
+          path="field-2"
+          :rule="fieldRule(() => argument, { required: true, disabled: () => busy || loading || !!pending })"
+          :label-props="{ id: 'toolspanel-field-2' + '-label', for: 'toolspanel-field-2' }"
+        >
+          <template #label>{{ selected.argument === 'projectId' ? '项目白名单' : '应用白名单' }}</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!pending"
+            v-model:value="argument"
+            :options="[
+              { label: '请选择', value: '', disabled: true },
+              ...(pending && argument && !choices.includes(argument) ? [{ label: argument, value: argument }] : []),
+              ...choices.map((choice) => ({ label: choice, value: choice })),
+            ]"
+            :input-props="{ id: 'toolspanel-field-2', 'aria-label': selected.argument === 'projectId' ? '项目白名单' : '应用白名单' }"
+          />
+        </ConsoleField>
+      </div>
+      <div class="form-footer">
+        <span>
+          {{
+            !catalog?.configured
+              ? '先完成本机 Bridge 配置。'
+              : !available
+                ? '此能力未加入 Bridge 白名单或尚不可用。'
+                : selected?.risk === 'confirmation'
+                  ? '创建请求后核对目标，再确认打开应用。'
+                  : '仅查询，不修改项目文件。'
+          }}
+        </span>
+        <NButton
+          type="primary"
+          attr-type="submit"
+          class="primary"
+          :disabled="busy || loading || (!pending && (!available || (!!selected?.argument && !argument)))"
+        >
+          {{ uncertain ? '重试同一请求' : selected?.risk === 'confirmation' ? '创建打开请求' : '查询' }}
+        </NButton>
+      </div>
+    </ConsoleForm>
+    <div v-if="!jobs.length && !loading && !error" class="empty-state">
+      <h2>暂无工具请求</h2>
+      <p>执行状态和确认记录会保留在这里。</p>
+    </div>
     <div class="record-list">
       <article v-for="job in jobs" :key="job.jobId" class="record-card">
-        <div class="record-heading"><h2>{{ catalog?.tools.find(tool => tool.id === job.toolId)?.title || job.toolId }}</h2><span class="badge" :class="job.state === 'succeeded' ? 'success' : ['failed','unknown'].includes(job.state) ? 'danger' : ''">{{ names[job.state] }}</span></div>
+        <div class="record-heading">
+          <h2>{{ catalog?.tools.find((tool) => tool.id === job.toolId)?.title || job.toolId }}</h2>
+          <span class="badge" :class="job.state === 'succeeded' ? 'success' : ['failed', 'unknown'].includes(job.state) ? 'danger' : ''">
+            {{ names[job.state] }}
+          </span>
+        </div>
         <p v-if="Object.keys(job.arguments).length" class="record-target">{{ Object.values(job.arguments).join(' · ') }}</p>
-        <small>{{ formatTime(job.createdAt) }}<template v-if="job.state === 'awaiting_confirmation'"> · 确认期限 {{ formatTime(job.expiresAt) }}</template></small>
+        <small>
+          {{ formatTime(job.createdAt) }}
+          <template v-if="job.state === 'awaiting_confirmation'">· 确认期限 {{ formatTime(job.expiresAt) }}</template>
+        </small>
         <p v-if="job.lastError" class="inline-error">{{ errorNames[job.lastError] || '执行未完成，请检查 Bridge 配置与白名单。' }}</p>
         <p v-if="job.state === 'unknown'" class="scope-note">先核对原请求结果，避免重复执行。</p>
-        <dl v-if="job.result && Object.keys(job.result).length" class="tool-result"><div v-for="(value,key) in job.result" :key="key"><dt>{{ resultNames[key] || key }}</dt><dd>{{ typeof value === 'boolean' ? value ? '是' : '否' : value }}</dd></div></dl>
+        <dl v-if="job.result && Object.keys(job.result).length" class="tool-result">
+          <div v-for="(value, key) in job.result" :key="key">
+            <dt>{{ resultNames[key] || key }}</dt>
+            <dd>{{ typeof value === 'boolean' ? (value ? '是' : '否') : value }}</dd>
+          </div>
+        </dl>
         <div class="record-actions">
-          <NButton type="primary" size="small" attr-type="button" v-if="job.state === 'awaiting_confirmation'" class="primary compact" :disabled="busy || loading" @click="action(job,'confirm')">确认打开 {{ job.arguments.applicationId }}</NButton>
-          <NButton size="small" attr-type="button" v-if="['queued','awaiting_confirmation'].includes(job.state)" class="secondary compact" :disabled="busy || loading" @click="action(job,'cancel')">取消</NButton>
-          <NButton size="small" attr-type="button" v-if="job.state === 'unknown'" class="secondary compact" :disabled="busy || loading" @click="action(job,'reconcile')">核对原请求结果</NButton>
-          <NButton quaternary attr-type="button" class="text-button" @click="history(job)">{{ auditId === job.jobId ? '收起记录' : '查看记录' }}</NButton>
+          <NButton
+            type="primary"
+            size="small"
+            attr-type="button"
+            v-if="job.state === 'awaiting_confirmation'"
+            class="primary compact"
+            :disabled="busy || loading"
+            @click="action(job, 'confirm')"
+          >
+            确认打开 {{ job.arguments.applicationId }}
+          </NButton>
+          <NButton
+            size="small"
+            attr-type="button"
+            v-if="['queued', 'awaiting_confirmation'].includes(job.state)"
+            class="secondary compact"
+            :disabled="busy || loading"
+            @click="action(job, 'cancel')"
+          >
+            取消
+          </NButton>
+          <NButton
+            size="small"
+            attr-type="button"
+            v-if="job.state === 'unknown'"
+            class="secondary compact"
+            :disabled="busy || loading"
+            @click="action(job, 'reconcile')"
+          >
+            核对原请求结果
+          </NButton>
+          <NButton quaternary attr-type="button" class="text-button" @click="history(job)">
+            {{ auditId === job.jobId ? '收起记录' : '查看记录' }}
+          </NButton>
         </div>
         <p v-if="auditId === job.jobId && auditLoading" class="muted" role="status">正在读取记录…</p>
         <p v-else-if="auditId === job.jobId && auditError" class="inline-error" role="alert">{{ auditError }}</p>
         <p v-else-if="auditId === job.jobId && !audit.length" class="muted">尚无审计记录。</p>
-        <ol v-else-if="auditId === job.jobId" class="audit-list"><li v-for="row in audit" :key="row.sequence">{{ formatTime(row.createdAt) }} · {{ events[row.event] || row.event }}<span v-if="row.detail"> · {{ errorNames[row.detail] || row.detail }}</span></li></ol>
+        <ol v-else-if="auditId === job.jobId" class="audit-list">
+          <li v-for="row in audit" :key="row.sequence">
+            {{ formatTime(row.createdAt) }} · {{ events[row.event] || row.event }}
+            <span v-if="row.detail">· {{ errorNames[row.detail] || row.detail }}</span>
+          </li>
+        </ol>
       </article>
     </div>
   </section>

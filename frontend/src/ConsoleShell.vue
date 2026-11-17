@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CircleHelp, Menu, RefreshCw, X } from '@lucide/vue';
-import { NButton, NDrawer, NDrawerContent } from 'naive-ui';
+import { NButton, NDrawer, NDrawerContent, NSelect } from 'naive-ui';
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import ConsoleNavigation from './ConsoleNavigation.vue';
 import ThemeToggle from './ThemeToggle.vue';
@@ -49,13 +49,20 @@ async function afterLeave() {
   if (navigating) { navigating = false; focusContent(); }
   else menuButton.value?.$el.focus();
 }
-function selectDevice(event: Event) { emit('update:selectedDevice', (event.target as HTMLSelectElement).value); void navigate('devices'); }
+function selectDevice(value: string) { emit('update:selectedDevice', value); void navigate('devices'); }
 </script>
 
 <template>
   <div class="app-layout" :class="{ 'is-collapsed': collapsed }">
     <a class="skip-link" href="#main-content">跳到主内容</a>
-    <ConsoleNavigation :tab="tab" :role="role" :collapsed="collapsed" @navigate="navigate" @logout="emit('logout')" @toggle-collapse="toggleCollapse" />
+    <ConsoleNavigation
+      :tab="tab"
+      :role="role"
+      :collapsed="collapsed"
+      @navigate="navigate"
+      @logout="emit('logout')"
+      @toggle-collapse="toggleCollapse"
+    />
     <NDrawer v-model:show="menuOpen" placement="left" :width="280" :close-on-esc="true" aria-label="主导航" @after-leave="afterLeave">
       <NDrawerContent :native-scrollbar="true" body-content-style="padding: 0" class="mobile-navigation">
         <NButton class="close-navigation" quaternary circle aria-label="关闭导航" @click="menuOpen = false"><X :size="20" /></NButton>
@@ -65,14 +72,57 @@ function selectDevice(event: Event) { emit('update:selectedDevice', (event.targe
     <div class="workspace">
       <!-- 单层页头：左侧是位置，右侧是设备视图与全局动作。页面自己的主操作留在页面标题右侧。 -->
       <header class="topbar">
-        <div class="workspace-heading"><NButton ref="menuButton" class="mobile-menu" quaternary circle aria-label="打开导航" :aria-expanded="menuOpen" @click="menuOpen = true"><Menu :size="20" /></NButton><span class="breadcrumb">管理台<span aria-hidden="true">/</span><strong>{{ title }}</strong></span></div>
+        <div class="workspace-heading">
+          <NButton
+            ref="menuButton"
+            class="mobile-menu"
+            quaternary
+            circle
+            aria-label="打开导航"
+            :aria-expanded="menuOpen"
+            @click="menuOpen = true"
+          >
+            <Menu :size="20" />
+          </NButton>
+          <span class="breadcrumb">
+            管理台
+            <span aria-hidden="true">/</span>
+            <strong>{{ title }}</strong>
+          </span>
+        </div>
         <div class="topbar-tools">
-          <label class="device-view"><span class="sr-only">设备视图</span><select aria-label="设备视图" :value="selectedDevice" @change="selectDevice"><option value="">全部设备</option><option v-for="device in devices" :key="device.deviceId" :value="device.deviceId">{{ device.name }}</option></select></label>
+          <div class="device-view">
+            <NSelect
+              @keydown.esc.stop
+              size="small"
+              aria-label="设备视图"
+              :value="selectedDevice"
+              @update:value="selectDevice"
+              :options="[{ label: '全部设备', value: '' }, ...devices.map((device) => ({ label: device.name, value: device.deviceId }))]"
+            />
+          </div>
           <span class="topbar-divider" aria-hidden="true"></span>
-          <NButton quaternary size="small" class="text-button" @click="emit('guide')"><template #icon><CircleHelp :size="16" /></template>接入引导</NButton>
-          <NButton quaternary size="small" class="text-button" :disabled="loading" :aria-busy="loading" :aria-label="loading ? '正在刷新' : '刷新'" @click="emit('refresh')"><template #icon><RefreshCw :size="16" :class="{ spinning: loading }" /></template>刷新</NButton>
+          <NButton quaternary size="small" class="text-button" @click="emit('guide')">
+            <template #icon><CircleHelp :size="16" /></template>
+            接入引导
+          </NButton>
+          <NButton
+            quaternary
+            size="small"
+            class="text-button"
+            :disabled="loading"
+            :aria-busy="loading"
+            :aria-label="loading ? '正在刷新' : '刷新'"
+            @click="emit('refresh')"
+          >
+            <template #icon><RefreshCw :size="16" :class="{ spinning: loading }" /></template>
+            刷新
+          </NButton>
           <span class="topbar-divider connection-divider" aria-hidden="true"></span>
-          <span class="connection-status" :class="connected ? 'connected' : 'disconnected'"><i></i>{{ connected ? '消息连接正常' : '消息连接不可用' }}</span>
+          <span class="connection-status" :class="connected ? 'connected' : 'disconnected'">
+            <i></i>
+            {{ connected ? '消息连接正常' : '消息连接不可用' }}
+          </span>
           <span class="session-role">{{ roleName }}</span>
           <ThemeToggle />
         </div>

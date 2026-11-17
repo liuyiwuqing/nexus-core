@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NCheckbox, NAutoComplete, NInputNumber, NSlider, NTimePicker } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -10,6 +13,8 @@ import { readFailure } from './failure';
 const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
+// 复合控件允许编辑中暂时为空；API 仍只接收有效分钟数与毫秒数。
+const timeDraft = ref({ startMinute: '', endMinute: '' }), duration = ref<number | null>(null);
 const loading = ref(false), sending = ref(false), loadError = ref(''), submitError = ref(''), notice = ref('');
 const baseline = ref(''), formRevision = ref(0);
 type Submission = { requestId: string; expectedRevision: number; config: DeviceConfig };
@@ -17,7 +22,8 @@ const uncertain = ref<Submission | null>(null);
 type Audit = { sequence: number; actor: string; event: string; detail: string; createdAt: string };
 const auditId = ref(''), audit = ref<Audit[]>([]), auditLoading = ref(false), auditError = ref('');
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== baseline.value);
+const dirty = computed(() => !!form.value && (JSON.stringify(form.value) !== baseline.value || duration.value === null ||
+  form.value.dnd.enabled && (!timeDraft.value.startMinute || !timeDraft.value.endMinute)));
 const staleDraft = computed(() => !!form.value && !!data.value?.telemetry?.config &&
   (data.value.telemetry.configRevision !== formRevision.value || JSON.stringify(data.value.telemetry.config) !== baseline.value));
 const disabled = computed(() => !admin.value || props.busy || sending.value || !!uncertain.value || !!loadError.value || !data.value?.canConfigure || staleDraft.value);
@@ -63,6 +69,8 @@ function resetDraft() {
   const current = data.value?.telemetry;
   if (!current?.config) return;
   form.value = copy(current.config); baseline.value = JSON.stringify(current.config); formRevision.value = current.configRevision;
+  timeDraft.value = { startMinute: timeValue(current.config.dnd.startMinute), endMinute: timeValue(current.config.dnd.endMinute) };
+  duration.value = current.config.message.durationMs / 1000;
 }
 async function refresh() {
   if (loading.value) return;
@@ -154,12 +162,14 @@ async function showAudit(id: string) {
   finally { if (alive) auditLoading.value = false; }
 }
 function timeValue(minutes: number) { return `${Math.floor(minutes / 60)}`.padStart(2, '0') + ':' + `${minutes % 60}`.padStart(2, '0'); }
-function setTime(key: 'startMinute' | 'endMinute', event: Event) {
-  const value = (event.target as HTMLInputElement).value;
-  if (form.value && /^\d{2}:\d{2}$/.test(value)) { const [h, m] = value.split(':').map(Number); form.value.dnd[key] = h! * 60 + m!; }
+function setTime(key: 'startMinute' | 'endMinute', value: string | null) {
+  timeDraft.value[key] = value ?? '';
+  if (form.value && value && /^\d{2}:\d{2}$/.test(value)) { const [h, m] = value.split(':').map(Number); form.value.dnd[key] = h! * 60 + m!; }
 }
-const duration = computed({ get: () => (form.value?.message.durationMs ?? 8000) / 1000,
-  set: (value: number) => { if (form.value) form.value.message.durationMs = Math.round(value * 1000); } });
+function setDuration(value: number | null) {
+  duration.value = value;
+  if (form.value && value !== null) form.value.message.durationMs = Math.round(value * 1000);
+}
 onMounted(() => {
   void refresh(); void loadHistory();
   interval = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void refresh(); }, 3000);
@@ -173,64 +183,315 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section id="device-management-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}设置与状态`">
-    <div class="record-heading"><h2>设置与状态</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refreshAll">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
+  <section
+    id="device-management-panel"
+    class="management-panel"
+    tabindex="-1"
+    @keydown.esc="emit('close')"
+    :aria-label="`${device.name}设置与状态`"
+  >
+    <div class="record-heading">
+      <h2>设置与状态</h2>
+      <div class="management-actions">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refreshAll">
+          {{ loading ? '刷新中…' : '刷新状态' }}
+        </NButton>
+        <NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
+      </div>
+    </div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
     <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
     <template v-if="data">
       <p v-if="!data.telemetry" class="management-status">尚未收到设备状态，连接设备后将自动显示。</p>
       <template v-else>
-        <div class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''" :title="data.fresh ? '90 秒内收到的新遥测' : '超过 90 秒未收到新遥测'">{{ data.fresh ? '实时快照' : '快照已过期' }}</span><span>采样于 {{ formatTime(new Date(data.telemetry.observedAt * 1000).toISOString()) }}</span><span v-if="data.telemetry.muted">语音静音</span><span v-if="data.telemetry.dnd">免打扰中</span><span v-if="data.telemetry.audioFaulted" class="inline-error">音频异常</span></div>
-        <dl class="management-metrics"><div><dt>固件</dt><dd>{{ data.telemetry.firmwareVersion }}</dd></div><div><dt>配置版本</dt><dd>{{ data.telemetry.configRevision }}</dd></div><div><dt>未读消息</dt><dd>{{ data.telemetry.unread }}</dd></div><div><dt>可用内存</dt><dd>{{ Math.floor(data.telemetry.freeHeap / 1024) }} KB</dd></div><div v-if="networkSummary"><dt>网络</dt><dd>{{ networkSummary }}</dd></div><div v-if="disconnectSummary"><dt>上次断线</dt><dd>{{ disconnectSummary }}</dd></div></dl>
-        <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">本机语音策略与已保存设置不同，请在设备上核对静音选择。</p>
+        <div class="management-status">
+          <span class="badge" :class="data.fresh ? 'success' : ''" :title="data.fresh ? '90 秒内收到的新遥测' : '超过 90 秒未收到新遥测'">
+            {{ data.fresh ? '实时快照' : '快照已过期' }}
+          </span>
+          <span>采样于 {{ formatTime(new Date(data.telemetry.observedAt * 1000).toISOString()) }}</span>
+          <span v-if="data.telemetry.muted">语音静音</span>
+          <span v-if="data.telemetry.dnd">免打扰中</span>
+          <span v-if="data.telemetry.audioFaulted" class="inline-error">音频异常</span>
+        </div>
+        <dl class="management-metrics">
+          <div>
+            <dt>固件</dt>
+            <dd>{{ data.telemetry.firmwareVersion }}</dd>
+          </div>
+          <div>
+            <dt>配置版本</dt>
+            <dd>{{ data.telemetry.configRevision }}</dd>
+          </div>
+          <div>
+            <dt>未读消息</dt>
+            <dd>{{ data.telemetry.unread }}</dd>
+          </div>
+          <div>
+            <dt>可用内存</dt>
+            <dd>{{ Math.floor(data.telemetry.freeHeap / 1024) }} KB</dd>
+          </div>
+          <div v-if="networkSummary">
+            <dt>网络</dt>
+            <dd class="metric-detail">{{ networkSummary }}</dd>
+          </div>
+          <div v-if="disconnectSummary">
+            <dt>上次断线</dt>
+            <dd class="metric-detail">{{ disconnectSummary }}</dd>
+          </div>
+        </dl>
+        <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">
+          本机语音策略与已保存设置不同，请在设备上核对静音选择。
+        </p>
       </template>
       <section class="telemetry-history" aria-label="遥测历史">
         <div class="history-heading">
-          <div><h3>状态历史</h3><p>来自设备已上报的遥测</p></div>
+          <div>
+            <h3>状态历史</h3>
+            <p>来自设备已上报的遥测</p>
+          </div>
           <div class="history-range" role="group" aria-label="历史时间范围">
-            <NButton v-for="item in ranges" :key="item.id" size="small" attr-type="button" :type="range === item.id ? 'primary' : 'default'" :quaternary="range !== item.id" @click="pickRange(item.id)">{{ item.label }}</NButton>
+            <NButton
+              v-for="item in ranges"
+              :key="item.id"
+              size="small"
+              attr-type="button"
+              :type="range === item.id ? 'primary' : 'default'"
+              :quaternary="range !== item.id"
+              @click="pickRange(item.id)"
+            >
+              {{ item.label }}
+            </NButton>
           </div>
         </div>
         <div class="history-metrics" role="group" aria-label="历史指标">
-          <NButton v-for="item in metrics" :key="item.id" size="small" attr-type="button" :type="metric === item.id ? 'primary' : 'default'" :quaternary="metric !== item.id" @click="metric = item.id">{{ item.label }}</NButton>
-          <NButton size="small" quaternary attr-type="button" class="history-export" :disabled="!history?.points.length" @click="exportHistory">导出 CSV</NButton>
+          <NButton
+            v-for="item in metrics"
+            :key="item.id"
+            size="small"
+            attr-type="button"
+            :type="metric === item.id ? 'primary' : 'default'"
+            :quaternary="metric !== item.id"
+            @click="metric = item.id"
+          >
+            {{ item.label }}
+          </NButton>
+          <NButton
+            size="small"
+            quaternary
+            attr-type="button"
+            class="history-export"
+            :disabled="!history?.points.length"
+            @click="exportHistory"
+          >
+            导出 CSV
+          </NButton>
         </div>
         <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
         <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
         <template v-else-if="history">
           <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
           <template v-else>
-            <TelemetryChart :points="history.points" :from="history.from" :to="history.to" :bucket-seconds="currentRange.bucketSeconds" :metric="metric" />
-            <p class="management-hint">{{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}<template v-if="history.truncated"> · 仅显示最新 2000 个点</template><br>历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。</p>
+            <TelemetryChart
+              :points="history.points"
+              :from="history.from"
+              :to="history.to"
+              :bucket-seconds="currentRange.bucketSeconds"
+              :metric="metric"
+            />
+            <p class="management-hint">
+              {{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}
+              <template v-if="history.truncated">· 仅显示最新 2000 个点</template>
+              <br />
+              历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。
+            </p>
           </template>
         </template>
       </section>
-      <p v-if="data.configBlock" class="management-hint" role="status">{{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}</p>
-      <StatusNote v-if="staleDraft" tone="warn">设备设置已变化，你的编辑仍保留。<template #actions><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton></template></StatusNote>
-      <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p><p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
-      <form v-if="form" class="management-form" @submit.prevent="submit">
-        <fieldset :disabled="disabled">
-          <div class="form-columns"><label>音量 · {{ form.volume }}%<input v-model.number="form.volume" type="range" min="0" max="100" /></label><label>亮度 · {{ form.brightness }}%<input v-model.number="form.brightness" type="range" min="0" max="100" /></label></div>
+      <p v-if="data.configBlock" class="management-hint" role="status">
+        {{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}
+      </p>
+      <StatusNote v-if="staleDraft" tone="warn">
+        设备设置已变化，你的编辑仍保留。
+        <template #actions>
+          <NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton>
+        </template>
+      </StatusNote>
+      <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
+      <p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
+      <ConsoleForm v-if="form" class="management-form" @submit.prevent="submit">
+        <div class="form-fields">
+          <div class="form-columns">
+            <ConsoleField
+              path="field-1"
+              :label-props="{ id: 'devicemanagementpanel-field-1' + '-label', for: 'devicemanagementpanel-field-1' }"
+            >
+              <template #label>音量 · {{ form.volume }}%</template>
+              <NSlider :disabled="disabled" v-model:value="form.volume" :min="0" :max="100" />
+            </ConsoleField>
+            <ConsoleField
+              path="field-2"
+              :label-props="{ id: 'devicemanagementpanel-field-2' + '-label', for: 'devicemanagementpanel-field-2' }"
+            >
+              <template #label>亮度 · {{ form.brightness }}%</template>
+              <NSlider :disabled="disabled" v-model:value="form.brightness" :min="0" :max="100" />
+            </ConsoleField>
+          </div>
           <p v-if="form.brightness === 0" class="management-hint">亮度为 0 将熄屏，可通过 USB 或远程恢复。</p>
-          <div class="management-checks"><label class="checkbox-label"><input v-model="form.muted" type="checkbox" />语音静音（停止收听与播放）</label><label class="checkbox-label"><input v-model="form.dnd.manual" type="checkbox" />手动免打扰</label><label class="checkbox-label"><input v-model="form.dnd.allowCritical" type="checkbox" />免打扰时允许紧急提醒</label></div>
-          <label class="checkbox-label"><input v-model="form.dnd.enabled" type="checkbox" />定时免打扰</label>
-          <div v-if="form.dnd.enabled" class="form-columns"><label>开始时间<input type="time" :value="timeValue(form.dnd.startMinute)" required @input="setTime('startMinute', $event)" /></label><label>结束时间<input type="time" :value="timeValue(form.dnd.endMinute)" required @input="setTime('endMinute', $event)" /></label></div>
-          <p v-if="form.dnd.enabled && form.dnd.startMinute === form.dnd.endMinute" class="management-hint">开始与结束时间相同，将全天免打扰。</p>
-          <div class="form-columns"><label>时区<input v-model="form.timezone" list="management-timezones" maxlength="32" pattern="(Asia/Shanghai|UTC|Etc/UTC|UTC[+\-][0-9]{2}:[0-9]{2})" required /><small>固定时区，不自动切换夏令时。</small></label><label>消息容量<input v-model.number="form.message.queueDepth" type="number" min="1" max="8" step="1" required /></label></div>
-          <datalist id="management-timezones"><option value="Asia/Shanghai" /><option value="UTC" /></datalist>
-          <div class="form-columns"><label>消息显示时长（秒）<input v-model.number="duration" type="number" min="5" max="30" step="any" required /></label></div>
-          <p v-if="data.telemetry?.config && form.message.queueDepth < data.telemetry.config.message.queueDepth" class="management-hint">缩小容量不会删除已接收消息。</p>
-        </fieldset>
-        <div class="form-footer"><span v-if="dirty && !uncertain">有未提交的修改</span><span v-else-if="!dirty">设置来自设备回读</span><NButton type="primary" attr-type="button" v-if="uncertain" class="primary" :disabled="sending || busy" @click="submit">{{ sending ? '正在核对…' : '重试同一请求' }}</NButton><NButton type="primary" attr-type="submit" v-else class="primary" :disabled="disabled || !dirty">{{ sending ? '正在提交…' : '保存到设备' }}</NButton></div>
-      </form>
+          <div class="management-checks">
+            <NCheckbox class="checkbox-label" v-model:checked="form.muted" :disabled="disabled" :aria-disabled="disabled">语音静音（停止收听与播放）</NCheckbox>
+            <NCheckbox class="checkbox-label" v-model:checked="form.dnd.manual" :disabled="disabled" :aria-disabled="disabled">手动免打扰</NCheckbox>
+            <NCheckbox class="checkbox-label" v-model:checked="form.dnd.allowCritical" :disabled="disabled" :aria-disabled="disabled">免打扰时允许紧急提醒</NCheckbox>
+          </div>
+          <NCheckbox class="checkbox-label" v-model:checked="form.dnd.enabled" :disabled="disabled" :aria-disabled="disabled">定时免打扰</NCheckbox>
+          <div v-if="form.dnd.enabled" class="form-columns">
+            <ConsoleField
+              path="field-3"
+              :rule="fieldRule(() => timeDraft.startMinute, { required: true, disabled: () => disabled })"
+              :label-props="{ id: 'devicemanagementpanel-field-3' + '-label', for: 'devicemanagementpanel-field-3' }"
+            >
+              <template #label>开始时间</template>
+              <NTimePicker
+                @keydown.esc.stop
+                :disabled="disabled"
+                :formatted-value="timeDraft.startMinute || null"
+                @update:formatted-value="setTime('startMinute', $event)"
+                format="HH:mm"
+                value-format="HH:mm"
+              />
+            </ConsoleField>
+            <ConsoleField
+              path="field-4"
+              :rule="fieldRule(() => timeDraft.endMinute, { required: true, disabled: () => disabled })"
+              :label-props="{ id: 'devicemanagementpanel-field-4' + '-label', for: 'devicemanagementpanel-field-4' }"
+            >
+              <template #label>结束时间</template>
+              <NTimePicker
+                @keydown.esc.stop
+                :disabled="disabled"
+                :formatted-value="timeDraft.endMinute || null"
+                @update:formatted-value="setTime('endMinute', $event)"
+                format="HH:mm"
+                value-format="HH:mm"
+              />
+            </ConsoleField>
+          </div>
+          <p v-if="form.dnd.enabled && form.dnd.startMinute === form.dnd.endMinute" class="management-hint">
+            开始与结束时间相同，将全天免打扰。
+          </p>
+          <div class="form-columns">
+            <ConsoleField
+              path="field-5"
+              :rule="
+                fieldRule(() => form?.timezone, {
+                  required: true,
+                  pattern: '(Asia/Shanghai|UTC|Etc/UTC|UTC[+\\-][0-9]{2}:[0-9]{2})',
+                  maxlength: 32,
+                  disabled: () => disabled,
+                })
+              "
+              :label-props="{ id: 'devicemanagementpanel-field-5' + '-label', for: 'devicemanagementpanel-field-5' }"
+            >
+              <template #label>时区</template>
+              <NAutoComplete
+                @keydown.esc.stop
+                :options="['Asia/Shanghai', 'UTC', 'Etc/UTC']"
+                :disabled="disabled"
+                v-model:value="form.timezone"
+                :maxlength="32"
+                :input-props="{
+                  required: true,
+                  pattern: '(Asia/Shanghai|UTC|Etc/UTC|UTC[+\\-][0-9]{2}:[0-9]{2})',
+                  id: 'devicemanagementpanel-field-5',
+                  'aria-label': '时区',
+                }"
+              />
+              <small>固定时区，不自动切换夏令时。</small>
+            </ConsoleField>
+            <ConsoleField
+              path="field-6"
+              :rule="
+                fieldRule(() => form?.message.queueDepth, {
+                  required: true,
+                  min: 1,
+                  max: 8,
+                  step: '1',
+                  number: true,
+                  disabled: () => disabled,
+                })
+              "
+              :label-props="{ id: 'devicemanagementpanel-field-6' + '-label', for: 'devicemanagementpanel-field-6' }"
+            >
+              <template #label>消息容量</template>
+              <NInputNumber
+                :disabled="disabled"
+                v-model:value="form.message.queueDepth"
+                :min="1"
+                :max="8"
+                :step="1"
+                :input-props="{ required: true, id: 'devicemanagementpanel-field-6', 'aria-label': '消息容量' }"
+              />
+            </ConsoleField>
+          </div>
+          <div class="form-columns">
+            <ConsoleField
+              path="field-7"
+              :rule="fieldRule(() => duration, { required: true, min: 5, max: 30, step: 'any', number: true, disabled: () => disabled })"
+              :label-props="{ id: 'devicemanagementpanel-field-7' + '-label', for: 'devicemanagementpanel-field-7' }"
+            >
+              <template #label>消息显示时长（秒）</template>
+              <NInputNumber
+                :disabled="disabled"
+                :value="duration"
+                @update:value="setDuration"
+                :min="5"
+                :max="30"
+                :input-props="{ required: true, id: 'devicemanagementpanel-field-7', 'aria-label': '消息显示时长（秒）' }"
+              />
+            </ConsoleField>
+          </div>
+          <p v-if="data.telemetry?.config && form.message.queueDepth < data.telemetry.config.message.queueDepth" class="management-hint">
+            缩小容量不会删除已接收消息。
+          </p>
+        </div>
+        <div class="form-footer">
+          <span v-if="dirty && !uncertain">有未提交的修改</span>
+          <span v-else-if="!dirty">设置来自设备回读</span>
+          <NButton type="primary" attr-type="button" v-if="uncertain" class="primary" :disabled="sending || busy" @click="submit">
+            {{ sending ? '正在核对…' : '重试同一请求' }}
+          </NButton>
+          <NButton type="primary" attr-type="submit" v-else class="primary" :disabled="disabled || !dirty">
+            {{ sending ? '正在提交…' : '保存到设备' }}
+          </NButton>
+        </div>
+      </ConsoleForm>
       <details v-if="data.configRequests.length" class="management-history" open>
         <summary>最近配置记录</summary>
         <div v-for="item in data.configRequests" :key="item.requestId" class="management-record">
-          <div class="record-heading"><span>{{ formatTime(item.createdAt) }}</span><span class="badge" :class="item.status === 'applied' ? 'success' : ''">{{ stateNames[item.status] }}</span></div>
-          <p>音量 {{ item.requestedConfig.volume }}% · 亮度 {{ item.requestedConfig.brightness }}%<span v-if="item.confirmationSource"> · {{ item.confirmationSource === 'ack' ? '设备回执确认' : '配置回读确认' }}</span></p>
-          <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || '设备未能确认此次设置，请核对状态。' }}<span v-if="item.deviceCode !== null">（{{ item.deviceCode }}）</span></p>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</NButton>
-          <template v-if="auditId === item.requestId"><p v-if="auditLoading" role="status">正在读取…</p><p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p><ol v-else class="audit-list"><li v-for="entry in audit" :key="entry.sequence">{{ formatTime(entry.createdAt) }} · {{ eventNames[entry.event] || '状态更新' }}<span v-if="errorNames[entry.detail]"> · {{ errorNames[entry.detail] }}</span></li></ol></template>
+          <div class="record-heading">
+            <span>{{ formatTime(item.createdAt) }}</span>
+            <span class="badge" :class="item.status === 'applied' ? 'success' : ''">{{ stateNames[item.status] }}</span>
+          </div>
+          <p>
+            音量 {{ item.requestedConfig.volume }}% · 亮度 {{ item.requestedConfig.brightness }}%
+            <span v-if="item.confirmationSource">· {{ item.confirmationSource === 'ack' ? '设备回执确认' : '配置回读确认' }}</span>
+          </p>
+          <p v-if="item.lastError" class="management-hint">
+            {{ errorNames[item.lastError] || '设备未能确认此次设置，请核对状态。' }}
+            <span v-if="item.deviceCode !== null">（{{ item.deviceCode }}）</span>
+          </p>
+          <NButton quaternary attr-type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">
+            {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
+          </NButton>
+          <template v-if="auditId === item.requestId">
+            <p v-if="auditLoading" role="status">正在读取…</p>
+            <p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p>
+            <ol v-else class="audit-list">
+              <li v-for="entry in audit" :key="entry.sequence">
+                {{ formatTime(entry.createdAt) }} · {{ eventNames[entry.event] || '状态更新' }}
+                <span v-if="errorNames[entry.detail]">· {{ errorNames[entry.detail] }}</span>
+              </li>
+            </ol>
+          </template>
         </div>
       </details>
     </template>

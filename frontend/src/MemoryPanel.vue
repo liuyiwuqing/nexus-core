@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NInput } from 'naive-ui';
 import { onUnmounted, ref, watch } from 'vue';
 import { formatTime, type Api } from './types';
 
@@ -55,24 +58,69 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
 
 <template>
   <section aria-label="长期记忆">
-    <div class="section-heading"><div><h1 tabindex="-1">长期记忆</h1><p>检索显式保存、且来源仍公开的评论。</p></div><NButton quaternary attr-type="button" class="text-button" :disabled="checking" @click="load">刷新记忆状态</NButton></div>
+    <div class="section-heading">
+      <div>
+        <h1 tabindex="-1">长期记忆</h1>
+        <p>检索显式保存、且来源仍公开的评论。</p>
+      </div>
+      <NButton quaternary attr-type="button" class="text-button" :disabled="checking" @click="load">刷新记忆状态</NButton>
+    </div>
     <p v-if="healthError" class="feedback error" role="alert">{{ healthError }}</p>
-    <dl v-if="health" class="management-metrics memory-metrics"><div><dt>已保存</dt><dd>{{ health.storedCopies }}</dd></div><div><dt>待删除</dt><dd>{{ health.pendingDeletions }}</dd></div><div><dt>删除待重试</dt><dd>{{ health.deletionErrors }}</dd></div></dl>
-    <p v-if="health && (health.identityBlockedCopies || 0) > 0" class="feedback" role="status">{{ health.identityBlockedCopies }} 条旧副本的身份需要核对，已暂停检索和删除。</p>
+    <dl v-if="health" class="management-metrics memory-metrics">
+      <div>
+        <dt>已保存</dt>
+        <dd>{{ health.storedCopies }}</dd>
+      </div>
+      <div>
+        <dt>待删除</dt>
+        <dd>{{ health.pendingDeletions }}</dd>
+      </div>
+      <div>
+        <dt>删除待重试</dt>
+        <dd>{{ health.deletionErrors }}</dd>
+      </div>
+    </dl>
+    <p v-if="health && (health.identityBlockedCopies || 0) > 0" class="feedback" role="status">
+      {{ health.identityBlockedCopies }} 条旧副本的身份需要核对，已暂停检索和删除。
+    </p>
     <p v-if="health && !health.configured" class="muted">长期记忆未启用，请在 CORE 配置中启用服务。</p>
-    <form class="inline-form memory-search" @submit.prevent="search">
-      <label>检索内容<input v-model="query" maxlength="256" required autocomplete="off" :disabled="loading || !health?.configured" /></label>
-      <div class="form-footer"><span v-if="loading" role="status">正在检索并核验来源…</span><span v-else></span><NButton type="primary" attr-type="submit" class="primary" :disabled="loading || !health?.configured || !query.trim()">{{ loading ? '检索中…' : '检索' }}</NButton></div>
-    </form>
+    <ConsoleForm class="inline-form memory-search" @submit.prevent="search">
+      <ConsoleField
+        path="field-1"
+        :rule="fieldRule(() => query, { required: true, maxlength: 256, disabled: () => loading || !health?.configured })"
+        :label-props="{ id: 'memorypanel-field-1' + '-label', for: 'memorypanel-field-1' }"
+      >
+        <template #label>检索内容</template>
+        <NInput
+          :disabled="loading || !health?.configured"
+          v-model:value="query"
+          :maxlength="256"
+          :input-props="{ required: true, autocomplete: 'off', id: 'memorypanel-field-1', 'aria-label': '检索内容' }"
+        />
+      </ConsoleField>
+      <div class="form-footer">
+        <span v-if="loading" role="status">正在检索并核验来源…</span>
+        <span v-else></span>
+        <NButton type="primary" attr-type="submit" class="primary" :disabled="loading || !health?.configured || !query.trim()">
+          {{ loading ? '检索中…' : '检索' }}
+        </NButton>
+      </div>
+    </ConsoleForm>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="partial" class="feedback" role="status">部分来源暂时无法核验，已隐藏相关结果。</p>
     <p v-if="expired" class="muted" role="status">结果已过期，请重新检索。</p>
     <p v-else-if="searched && !hits.length" class="muted" role="status">没有可返回的公开评论。</p>
     <div class="record-list memory-results" aria-live="polite">
       <article v-for="hit in hits" :key="hit.messageId" class="record-card">
-        <div class="record-heading"><h2>公开评论</h2><small>核验于 {{ formatTime(hit.verifiedAt) }}</small></div>
+        <div class="record-heading">
+          <h2>公开评论</h2>
+          <small>核验于 {{ formatTime(hit.verifiedAt) }}</small>
+        </div>
         <p class="draft-text">{{ hit.content }}</p>
-        <details v-if="hit.summary"><summary>AI 摘要 · 推断</summary><p class="draft-text">{{ hit.summary }}</p></details>
+        <details v-if="hit.summary">
+          <summary>AI 摘要 · 推断</summary>
+          <p class="draft-text">{{ hit.summary }}</p>
+        </details>
         <a v-if="safeUrl(hit.originalUrl)" :href="safeUrl(hit.originalUrl)" target="_blank" rel="noopener noreferrer">查看原评论</a>
       </article>
     </div>

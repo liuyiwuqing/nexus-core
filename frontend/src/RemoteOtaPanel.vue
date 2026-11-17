@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NCheckbox, NInput, NSelect, NUpload, type UploadFileInfo } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -62,12 +65,16 @@ async function refresh() {
       loadError.value = e instanceof Error && 'status' in e ? e.message : '无法读取升级状态，请稍后刷新。';
   } finally { if (alive && current === generation) loading.value = false; }
 }
-async function readManifest(event: Event) {
+let manifestRead = 0;
+async function readManifest({ file: upload }: { file: UploadFileInfo }) {
+  const current = ++manifestRead;
   manifest.value = null; fileError.value = '';
-  const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return;
+  const file = upload.status === 'removed' ? null : upload.file; if (!file) return;
   if (file.size > 7000) { fileError.value = 'manifest 文件超过 7000 字节。'; return; }
-  try { manifest.value = JSON.parse(await file.text()) as unknown; }
-  catch { fileError.value = '无法解析 manifest JSON。'; }
+  try {
+    const value = JSON.parse(await file.text()) as unknown;
+    if (alive && current === manifestRead) manifest.value = value;
+  } catch { if (alive && current === manifestRead) fileError.value = '无法解析 manifest JSON。'; }
 }
 async function register() {
   if (blocked.value || !manifest.value || !catalogId.value) return;
@@ -117,38 +124,197 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
 </script>
 <template>
   <section id="remote-ota-panel" class="management-panel" tabindex="-1" @keydown.esc="emit('close')" :aria-label="`${device.name}固件升级`">
-    <div class="record-heading"><h2>固件升级</h2><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新状态' }}</NButton><NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton></div></div>
-    <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p><p v-else-if="loading && !data" role="status">正在读取升级状态…</p>
+    <div class="record-heading">
+      <h2>固件升级</h2>
+      <div class="management-actions">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">
+          {{ loading ? '刷新中…' : '刷新状态' }}
+        </NButton>
+        <NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
+      </div>
+    </div>
+    <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
+    <p v-else-if="loading && !data" role="status">正在读取升级状态…</p>
     <template v-if="data">
       <p v-if="!data.enabled" class="management-hint">远程升级尚未启用。</p>
       <template v-else>
         <p v-if="!data.observation" class="management-hint">尚未收到设备升级状态。</p>
-        <div v-else class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span><span>{{ names[data.observation.state] || '等待核对' }}</span><span>{{ formatTime(new Date(data.observation.observedAt * 1000).toISOString()) }}</span></div>
+        <div v-else class="management-status">
+          <span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span>
+          <span>{{ names[data.observation.state] || '等待核对' }}</span>
+          <span>{{ formatTime(new Date(data.observation.observedAt * 1000).toISOString()) }}</span>
+        </div>
         <template v-if="data.observation && phase >= 0">
           <ol class="ota-phases" :aria-label="`升级阶段：${phaseLabel}`">
-            <li v-for="(label, index) in phases" :key="label" :class="{ done: index < phase, current: index === phase }" :aria-current="index === phase ? 'step' : undefined"><i aria-hidden="true"></i>{{ label }}</li>
+            <li
+              v-for="(label, index) in phases"
+              :key="label"
+              :class="{ done: index < phase, current: index === phase }"
+              :aria-current="index === phase ? 'step' : undefined"
+            >
+              <i aria-hidden="true"></i>
+              {{ label }}
+            </li>
           </ol>
-          <div v-if="writtenPercent !== null" class="ota-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="writtenPercent" :aria-label="`镜像写入 ${writtenPercent}%`"><span :style="{ width: writtenPercent + '%' }"></span></div>
+          <div
+            v-if="writtenPercent !== null"
+            class="ota-progress"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="writtenPercent"
+            :aria-label="`镜像写入 ${writtenPercent}%`"
+          >
+            <span :style="{ width: writtenPercent + '%' }"></span>
+          </div>
         </template>
-        <p v-if="error && !pending" class="inline-error" role="alert">{{ error }}</p><p v-else-if="notice && !pending" class="management-hint" role="status">{{ notice }}</p>
-        <p v-if="data.installBlock" class="management-hint" role="status">{{ errorNames[data.installBlock] || '请核对设备状态后再安装。' }}</p>
-        <form class="management-form" @submit.prevent="send('install')">
-          <label>可安装版本<select v-model="releaseId" :disabled="blocked || !data.canInstall"><option value="">请选择版本</option><option v-for="item in compatible" :key="item.releaseId" :value="item.releaseId">{{ item.target.version }} · {{ item.releaseId }}</option></select></label>
+        <p v-if="error && !pending" class="inline-error" role="alert">{{ error }}</p>
+        <p v-else-if="notice && !pending" class="management-hint" role="status">{{ notice }}</p>
+        <p v-if="data.installBlock" class="management-hint" role="status">
+          {{ errorNames[data.installBlock] || '请核对设备状态后再安装。' }}
+        </p>
+        <ConsoleForm class="management-form" @submit.prevent="send('install')">
+          <ConsoleField path="field-1" :label-props="{ id: 'remoteotapanel-field-1' + '-label', for: 'remoteotapanel-field-1' }">
+            <template #label>可安装版本</template>
+            <NSelect
+              @keydown.esc.stop
+              :disabled="blocked || !data.canInstall"
+              v-model:value="releaseId"
+              :options="[
+                { label: '请选择版本', value: '' },
+                ...compatible.map((item) => ({ label: item.target.version + ' · ' + item.releaseId, value: item.releaseId })),
+              ]"
+              :input-props="{ id: 'remoteotapanel-field-1', 'aria-label': '可安装版本' }"
+            />
+          </ConsoleField>
           <p v-if="!compatible.length" class="management-hint">没有匹配设备身份且序号更高的版本。</p>
-          <StatusNote v-if="pending" tone="warn">提交结果未确认，保留原请求，等待核对。<template #actions><NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton></template></StatusNote>
-          <div class="form-footer"><span>将安装到 {{ device.name }}；安装完成后，需要另行确认重启。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !data.canInstall || !compatible.some(item => item.releaseId === releaseId)">{{ installLabel }}</NButton></div>
-        </form>
-        <NButton quaternary attr-type="button" class="text-button spaced" :disabled="blocked" :aria-expanded="adding" @click="adding = !adding">{{ adding ? '收起版本登记' : '登记版本' }}</NButton>
-        <form v-if="adding" class="inline-form" @submit.prevent="register"><label>发布目录<input v-model="catalogId" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" required :disabled="blocked" /></label><label>签名 manifest<input type="file" accept="application/json,.json" required :disabled="blocked" @change="readManifest" /></label><p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p><p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p><div class="form-footer"><span></span><NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton></div></form>
+          <StatusNote v-if="pending" tone="warn">
+            提交结果未确认，保留原请求，等待核对。
+            <template #actions>
+              <NButton attr-type="button" class="secondary" :disabled="sending || busy" @click="send(pending.kind)">重试同一请求</NButton>
+            </template>
+          </StatusNote>
+          <div class="form-footer">
+            <span>将安装到 {{ device.name }}；安装完成后，需要另行确认重启。</span>
+            <NButton
+              type="primary"
+              attr-type="submit"
+              class="primary"
+              :disabled="blocked || !data.canInstall || !compatible.some((item) => item.releaseId === releaseId)"
+            >
+              {{ installLabel }}
+            </NButton>
+          </div>
+        </ConsoleForm>
+        <NButton
+          quaternary
+          attr-type="button"
+          class="text-button spaced"
+          :disabled="blocked"
+          :aria-expanded="adding"
+          @click="adding = !adding"
+        >
+          {{ adding ? '收起版本登记' : '登记版本' }}
+        </NButton>
+        <ConsoleForm v-if="adding" class="inline-form" @submit.prevent="register">
+          <ConsoleField
+            path="field-2"
+            :rule="fieldRule(() => catalogId, { required: true, pattern: '[a-zA-Z0-9_-]{1,64}', maxlength: 64, disabled: () => blocked })"
+            :label-props="{ id: 'remoteotapanel-field-2' + '-label', for: 'remoteotapanel-field-2' }"
+          >
+            <template #label>发布目录</template>
+            <NInput
+              :disabled="blocked"
+              v-model:value="catalogId"
+              :maxlength="64"
+              :input-props="{ required: true, pattern: '[a-zA-Z0-9_-]{1,64}', id: 'remoteotapanel-field-2', 'aria-label': '发布目录' }"
+            />
+          </ConsoleField>
+          <ConsoleField
+            path="field-3"
+            :rule="fieldRule(() => manifest, { required: true, disabled: () => blocked })"
+            :label-props="{ id: 'remoteotapanel-field-3' + '-label', for: 'remoteotapanel-field-3' }"
+          >
+            <template #label>签名 manifest</template>
+            <NUpload accept="application/json,.json" :max="1" :default-upload="false" :disabled="blocked" @change="readManifest">
+              <NButton attr-type="button" :disabled="blocked">选择 manifest 文件</NButton>
+            </NUpload>
+          </ConsoleField>
+          <p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p>
+          <p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p>
+          <div class="form-footer">
+            <span></span>
+            <NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton>
+          </div>
+        </ConsoleForm>
         <p v-if="!data.deployments.length" class="management-hint">暂无升级记录。</p>
         <div v-for="item in data.deployments" :key="item.requestId" class="management-record">
-          <div class="record-heading"><strong>{{ item.target.version }} · {{ item.releaseId }}</strong><span class="badge" :class="item.status === 'healthy' ? 'success' : ''">{{ names[item.status] || '等待核对' }}</span></div>
-          <p>{{ formatTime(item.createdAt) }}<span v-if="data.observation?.requestId === item.requestId && data.observation.writtenBytes"> · 已写入 {{ Math.floor(data.observation.writtenBytes / 1024) }} / {{ Math.ceil(item.target.imageSize / 1024) }} KB</span></p>
+          <div class="record-heading">
+            <strong>{{ item.target.version }} · {{ item.releaseId }}</strong>
+            <span class="badge" :class="item.status === 'healthy' ? 'success' : ''">{{ names[item.status] || '等待核对' }}</span>
+          </div>
+          <p>
+            {{ formatTime(item.createdAt) }}
+            <span v-if="data.observation?.requestId === item.requestId && data.observation.writtenBytes">
+              · 已写入 {{ Math.floor(data.observation.writtenBytes / 1024) }} / {{ Math.ceil(item.target.imageSize / 1024) }} KB
+            </span>
+          </p>
           <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || '请核对设备状态与操作记录。' }}</p>
-          <NButton size="small" attr-type="button" v-if="data.canReboot && data.observation?.requestId === item.requestId && !confirming" class="secondary compact" :disabled="blocked" @click="confirming = { requestId: item.requestId, bootId: data.observation.bootId }; confirmed = false">重启设备…</NButton>
-          <form v-if="confirming?.requestId === item.requestId" class="inline-form" @submit.prevent="send('reboot')" @keydown.esc="confirming = null; confirmed = false"><p>重启将中断设备当前任务，随后核验新镜像。</p><label class="checkbox-label"><input v-model="confirmed" type="checkbox" :disabled="blocked" />确认现在重启 {{ device.name }}</label><div class="management-actions"><NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !confirmed || !data.canReboot">确认重启</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="confirming = null; confirmed = false">取消</NButton></div></form>
-          <NButton quaternary attr-type="button" class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">{{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}</NButton>
-          <template v-if="auditId === item.requestId"><p v-if="auditLoading" role="status">正在读取…</p><p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p><ol v-else class="audit-list"><li v-for="entry in audit" :key="entry.sequence">{{ formatTime(entry.createdAt) }} · {{ events[entry.event] || names[entry.event] || '状态更新' }}<span v-if="errorNames[entry.detail]"> · {{ errorNames[entry.detail] }}</span></li></ol></template>
+          <NButton
+            size="small"
+            attr-type="button"
+            v-if="data.canReboot && data.observation?.requestId === item.requestId && !confirming"
+            class="secondary compact"
+            :disabled="blocked"
+            @click="
+              confirming = { requestId: item.requestId, bootId: data.observation.bootId };
+              confirmed = false;
+            "
+          >
+            重启设备…
+          </NButton>
+          <ConsoleForm
+            v-if="confirming?.requestId === item.requestId"
+            class="inline-form"
+            @submit.prevent="send('reboot')"
+            @keydown.esc="
+              confirming = null;
+              confirmed = false;
+            "
+          >
+            <p>重启将中断设备当前任务，随后核验新镜像。</p>
+            <NCheckbox class="checkbox-label" v-model:checked="confirmed" :disabled="blocked" :aria-disabled="blocked">确认现在重启 {{ device.name }}</NCheckbox>
+            <div class="management-actions">
+              <NButton type="primary" attr-type="submit" class="primary" :disabled="blocked || !confirmed || !data.canReboot">
+                确认重启
+              </NButton>
+              <NButton
+                quaternary
+                attr-type="button"
+                class="text-button"
+                :disabled="sending"
+                @click="
+                  confirming = null;
+                  confirmed = false;
+                "
+              >
+                取消
+              </NButton>
+            </div>
+          </ConsoleForm>
+          <NButton quaternary attr-type="button" class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">
+            {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
+          </NButton>
+          <template v-if="auditId === item.requestId">
+            <p v-if="auditLoading" role="status">正在读取…</p>
+            <p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p>
+            <ol v-else class="audit-list">
+              <li v-for="entry in audit" :key="entry.sequence">
+                {{ formatTime(entry.createdAt) }} · {{ events[entry.event] || names[entry.event] || '状态更新' }}
+                <span v-if="errorNames[entry.detail]">· {{ errorNames[entry.detail] }}</span>
+              </li>
+            </ol>
+          </template>
         </div>
       </template>
     </template>

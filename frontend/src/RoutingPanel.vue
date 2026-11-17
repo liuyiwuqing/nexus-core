@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NCheckbox, NInput, NSelect, NTimePicker } from 'naive-ui';
 import { useAccess } from './access';
 const { operate }=useAccess();
 import { onUnmounted, ref } from 'vue';
@@ -26,20 +29,417 @@ async function send(){if(props.busy||(!props.session.test&&(!selected.value.leng
 void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
 </script>
 <template>
- <section><div class="section-heading"><div><h1 tabindex="-1">路由</h1><p>新消息的设备选择与条件</p></div><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="busy||loading" @click="load">刷新</NButton><NButton attr-type="button" v-if="operate" class="secondary" :disabled="busy||loading||!!error||!!session.draft" @click="edit()">创建路由</NButton></div></div>
- <p v-if="error" class="feedback error" role="alert">{{error}}</p><p v-if="loading" role="status">正在读取路由…</p>
- <div v-if="!loading&&!error" class="inline-form"><div class="record-heading"><h2>{{policy.mode==='broadcast'?'默认广播':'按规则路由'}}</h2><NButton attr-type="button" v-if="operate" class="secondary" :disabled="!operate||busy||!!session.draft" @click="confirmPolicy=true">切换模式</NButton></div><p>{{policy.mode==='broadcast'?'发给全部启用设备，兼容既有行为。':'只发给匹配规则选中的启用设备；无匹配则只保存消息。'}}</p>
- <div v-if="confirmPolicy||session.policy" class="spaced"><p>仅影响新消息；全部规则停用不会自动切回广播。待确认时重试固定目标，不反向切换。</p><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="confirmPolicy=false">取消</NButton><NButton type="primary" attr-type="button" class="primary" :disabled="busy" @click="switchPolicy">{{session.policy?'重试原目标模式':'确认切换模式'}}</NButton></div></div></div>
- <form v-if="session.draft" class="inline-form spaced" aria-label="路由编辑" @submit.prevent="save">
- <h2>{{session.version?'编辑路由':'创建路由'}}</h2><StatusNote v-if="session.uncertain" tone="warn">保存结果未确认；重试保持原版本和定义，或只读核对。</StatusNote>
- <fieldset :disabled="busy||loading||!!error||!!session.pending" style="border:0;padding:0;margin:0"><label>名称<input v-model="session.draft.name" required maxlength="80"></label><div class="form-columns spaced"><label>来源（* 为全部）<input v-model="session.draft.source" required maxlength="32"></label><label>事件类型（* 为全部）<input v-model="session.draft.eventType" required maxlength="64"></label></div>
- <div class="form-columns spaced"><label>匹配<select v-model="session.draft.match"><option value="all">全部</option><option value="keyword">包含关键词</option><option value="regex">受限正则</option></select></label><label v-if="session.draft.match!=='all'">表达式<input v-model="session.draft.expression" required maxlength="160"></label></div><p v-if="session.draft.match==='regex'" class="scope-note">支持文字、首尾锚点及一次 .*；不支持分组、回溯或其他量词。</p>
- <label class="spaced">目标设备<select v-model="session.draft.deviceIds" multiple required><option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">{{d.name}}（{{d.deviceId}}{{d.enabled?'':' · 停用'}}）</option></select></label><label class="spaced">消息模板<select v-model="session.draft.templateId"><option :value="null">保留来源文本与卡片</option><option v-for="t in templates" :key="t.templateId" :value="t.templateId">{{t.definition.name}}</option></select></label><label class="spaced">优先级<select v-model="session.draft.priority"><option value="">保留消息优先级</option><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select></label>
- <div class="form-columns spaced"><label>时间窗开始<input type="time" v-model="session.draft.from"></label><label>截止（不包含）<input type="time" v-model="session.draft.before"></label></div><label class="spaced">时区<input v-model="session.draft.zone" required></label><label class="checkbox-label spaced"><input type="checkbox" v-model="session.draft.enabled">启用规则</label></fieldset>
- <div class="form-footer"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="close">关闭草稿</NButton><div class="management-actions"><NButton attr-type="button" v-if="session.pending" class="secondary" :disabled="busy" @click="check">核对当前路由</NButton><NButton type="primary" attr-type="submit" class="primary" :disabled="busy||loading||!!error">{{session.uncertain?'重试原版本保存':'保存路由'}}</NButton></div></div></form>
- <div v-if="!loading&&!error" class="record-list spaced"><p v-if="!rules.length" class="empty-state">暂无路由规则</p><article v-for="r in rules" :key="r.ruleId" class="record-card"><div class="record-heading"><h2>{{r.definition.name}}</h2><span class="badge">{{r.definition.enabled?'启用':'停用'}}</span></div><p>{{r.definition.source}} → {{r.definition.deviceIds.join('、')}}</p><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="!operate||busy||!!session.draft" @click="edit(r)">编辑路由</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="!operate||busy||!!session.draft" @click="deleting=r;deleteName=''">删除路由</NButton></div></article></div>
- <form v-if="deleting" class="inline-form spaced" @submit.prevent="remove"><label>输入路由名称“{{deleting.definition.name}}”<input v-model="deleteName" :disabled="busy"></label><div class="form-footer"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="deleting=null">取消删除</NButton><NButton type="error" attr-type="submit" class="primary" :disabled="busy||deleteName!==deleting.definition.name">确认删除路由</NButton></div></form>
- <form class="inline-form spaced" @submit.prevent="test"><h2>路由预演</h2><div class="form-columns spaced"><label>来源<input v-model="testSource" required></label><label>事件类型<input v-model="testType" required></label></div><label class="spaced">标题<input v-model="testTitle" required maxlength="160"></label><label class="spaced">内容<textarea v-model="testContent" required maxlength="8192"></textarea></label><div class="form-footer"><span>不发送消息，不改变设备免打扰设置。</span><NButton attr-type="submit" class="secondary" :disabled="busy||loading||!!error">预演匹配设备</NButton></div><p v-if="preview" role="status">{{preview.length?`匹配：${preview.join('、')}`:'无匹配设备'}}</p></form>
- <form v-if="operate" class="inline-form spaced" @submit.prevent="send"><h2>定向测试消息</h2><p>使用上方标题与内容，仅向选择的启用设备建立投递；离线会等待，设备免打扰仍生效。</p><label>测试设备<select v-model="selected" multiple required :disabled="busy||!!session.test"><option v-for="d in devices.filter(v=>v.enabled)" :key="d.deviceId" :value="d.deviceId">{{d.name}}</option></select></label><div class="form-columns spaced"><label>测试模板<select v-model="testTemplate" :disabled="busy||!!session.test"><option :value="null">原始文本</option><option v-for="t in templates" :key="t.templateId" :value="t.templateId">{{t.definition.name}}</option></select></label><label>测试优先级<select v-model="testPriority" :disabled="busy||!!session.test"><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select></label></div><p v-if="session.test" role="status">结果未确认时重试相同请求；切换导航后仍保留。当前标题：{{session.test.title}}</p><div class="form-footer"><span v-if="sent">消息编号：{{sent}}；回执请在投递页核对。</span><NButton type="primary" attr-type="submit" class="primary" :disabled="busy||loading||!!error||(!session.test&&!selected.length)">{{session.test?'重试同一测试消息':'发送到选择设备'}}</NButton></div></form>
- </section>
+  <section>
+    <div class="section-heading">
+      <div>
+        <h1 tabindex="-1">路由</h1>
+        <p>新消息的设备选择与条件</p>
+      </div>
+      <div class="management-actions">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新</NButton>
+        <NButton
+          attr-type="button"
+          v-if="operate"
+          class="secondary"
+          :disabled="busy || loading || !!error || !!session.draft"
+          @click="edit()"
+        >
+          创建路由
+        </NButton>
+      </div>
+    </div>
+    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <p v-if="loading" role="status">正在读取路由…</p>
+    <div v-if="!loading && !error" class="inline-form">
+      <div class="record-heading">
+        <h2>{{ policy.mode === 'broadcast' ? '默认广播' : '按规则路由' }}</h2>
+        <NButton
+          attr-type="button"
+          v-if="operate"
+          class="secondary"
+          :disabled="!operate || busy || !!session.draft"
+          @click="confirmPolicy = true"
+        >
+          切换模式
+        </NButton>
+      </div>
+      <p>{{ policy.mode === 'broadcast' ? '发给全部启用设备，兼容既有行为。' : '只发给匹配规则选中的启用设备；无匹配则只保存消息。' }}</p>
+      <div v-if="confirmPolicy || session.policy" class="spaced">
+        <p>仅影响新消息；全部规则停用不会自动切回广播。待确认时重试固定目标，不反向切换。</p>
+        <div class="management-actions">
+          <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="confirmPolicy = false">取消</NButton>
+          <NButton type="primary" attr-type="button" class="primary" :disabled="busy" @click="switchPolicy">
+            {{ session.policy ? '重试原目标模式' : '确认切换模式' }}
+          </NButton>
+        </div>
+      </div>
+    </div>
+    <ConsoleForm v-if="session.draft" class="inline-form spaced" aria-label="路由编辑" @submit.prevent="save">
+      <h2>{{ session.version ? '编辑路由' : '创建路由' }}</h2>
+      <StatusNote v-if="session.uncertain" tone="warn">保存结果未确认；重试保持原版本和定义，或只读核对。</StatusNote>
+      <div class="form-fields">
+        <ConsoleField
+          path="field-1"
+          :rule="
+            fieldRule(() => session.draft?.name, {
+              required: true,
+              maxlength: 80,
+              disabled: () => busy || loading || !!error || !!session.pending,
+            })
+          "
+          :label-props="{ id: 'routingpanel-field-1' + '-label', for: 'routingpanel-field-1' }"
+        >
+          <template #label>名称</template>
+          <NInput
+            :disabled="busy || loading || !!error || !!session.pending"
+            v-model:value="session.draft.name"
+            :maxlength="80"
+            :input-props="{ required: true, id: 'routingpanel-field-1', 'aria-label': '名称' }"
+          />
+        </ConsoleField>
+        <div class="form-columns spaced">
+          <ConsoleField
+            path="field-2"
+            :rule="
+              fieldRule(() => session.draft?.source, {
+                required: true,
+                maxlength: 32,
+                disabled: () => busy || loading || !!error || !!session.pending,
+              })
+            "
+            :label-props="{ id: 'routingpanel-field-2' + '-label', for: 'routingpanel-field-2' }"
+          >
+            <template #label>来源（* 为全部）</template>
+            <NInput
+              :disabled="busy || loading || !!error || !!session.pending"
+              v-model:value="session.draft.source"
+              :maxlength="32"
+              :input-props="{ required: true, id: 'routingpanel-field-2', 'aria-label': '来源（* 为全部）' }"
+            />
+          </ConsoleField>
+          <ConsoleField
+            path="field-3"
+            :rule="
+              fieldRule(() => session.draft?.eventType, {
+                required: true,
+                maxlength: 64,
+                disabled: () => busy || loading || !!error || !!session.pending,
+              })
+            "
+            :label-props="{ id: 'routingpanel-field-3' + '-label', for: 'routingpanel-field-3' }"
+          >
+            <template #label>事件类型（* 为全部）</template>
+            <NInput
+              :disabled="busy || loading || !!error || !!session.pending"
+              v-model:value="session.draft.eventType"
+              :maxlength="64"
+              :input-props="{ required: true, id: 'routingpanel-field-3', 'aria-label': '事件类型（* 为全部）' }"
+            />
+          </ConsoleField>
+        </div>
+        <div class="form-columns spaced">
+          <ConsoleField path="field-4" :label-props="{ id: 'routingpanel-field-4' + '-label', for: 'routingpanel-field-4' }">
+            <template #label>匹配</template>
+            <NSelect
+              @keydown.esc.stop
+              :disabled="busy || loading || !!error || !!session.pending"
+              v-model:value="session.draft.match"
+              :options="[
+                { label: '全部', value: 'all' },
+                { label: '包含关键词', value: 'keyword' },
+                { label: '受限正则', value: 'regex' },
+              ]"
+              :input-props="{ id: 'routingpanel-field-4', 'aria-label': '匹配' }"
+            />
+          </ConsoleField>
+          <ConsoleField
+            v-if="session.draft.match !== 'all'"
+            path="field-5"
+            :rule="
+              fieldRule(() => session.draft?.expression, {
+                required: true,
+                maxlength: 160,
+                disabled: () => busy || loading || !!error || !!session.pending,
+              })
+            "
+            :label-props="{ id: 'routingpanel-field-5' + '-label', for: 'routingpanel-field-5' }"
+          >
+            <template #label>表达式</template>
+            <NInput
+              :disabled="busy || loading || !!error || !!session.pending"
+              v-model:value="session.draft.expression"
+              :maxlength="160"
+              :input-props="{ required: true, id: 'routingpanel-field-5', 'aria-label': '表达式' }"
+            />
+          </ConsoleField>
+        </div>
+        <p v-if="session.draft.match === 'regex'" class="scope-note">支持文字、首尾锚点及一次 .*；不支持分组、回溯或其他量词。</p>
+        <ConsoleField
+          class="spaced"
+          path="field-6"
+          :rule="
+            fieldRule(() => session.draft?.deviceIds, {
+              required: true,
+              multiple: true,
+              disabled: () => busy || loading || !!error || !!session.pending,
+            })
+          "
+          :label-props="{ id: 'routingpanel-field-6' + '-label', for: 'routingpanel-field-6' }"
+        >
+          <template #label>目标设备</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!error || !!session.pending"
+            v-model:value="session.draft.deviceIds"
+            :options="[
+              ...devices.map((d) => ({ label: d.name + '（' + d.deviceId + (d.enabled ? '' : ' · 停用') + '）', value: d.deviceId })),
+            ]"
+            multiple
+            :max-tag-count="2"
+            :input-props="{ id: 'routingpanel-field-6', 'aria-label': '目标设备' }"
+          />
+        </ConsoleField>
+        <ConsoleField class="spaced" path="field-7" :label-props="{ id: 'routingpanel-field-7' + '-label', for: 'routingpanel-field-7' }">
+          <template #label>消息模板</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!error || !!session.pending"
+            v-model:value="session.draft.templateId"
+            :options="[...templates.map((t) => ({ label: t.definition.name, value: t.templateId }))]"
+            clearable
+            :placeholder="'保留来源文本与卡片'"
+            :input-props="{ id: 'routingpanel-field-7', 'aria-label': '消息模板' }"
+          />
+        </ConsoleField>
+        <ConsoleField class="spaced" path="field-8" :label-props="{ id: 'routingpanel-field-8' + '-label', for: 'routingpanel-field-8' }">
+          <template #label>优先级</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!error || !!session.pending"
+            v-model:value="session.draft.priority"
+            :options="[
+              { label: '保留消息优先级', value: '' },
+              { label: '低', value: 'low' },
+              { label: '普通', value: 'normal' },
+              { label: '高', value: 'high' },
+              { label: '紧急', value: 'critical' },
+            ]"
+            :input-props="{ id: 'routingpanel-field-8', 'aria-label': '优先级' }"
+          />
+        </ConsoleField>
+        <div class="form-columns spaced">
+          <ConsoleField path="field-9" :label-props="{ id: 'routingpanel-field-9' + '-label', for: 'routingpanel-field-9' }">
+            <template #label>时间窗开始</template>
+            <NTimePicker
+              @keydown.esc.stop
+              :disabled="busy || loading || !!error || !!session.pending"
+              :formatted-value="session.draft.from || null"
+              @update:formatted-value="session.draft.from = $event || ''"
+              format="HH:mm"
+              value-format="HH:mm"
+              clearable
+            />
+          </ConsoleField>
+          <ConsoleField path="field-10" :label-props="{ id: 'routingpanel-field-10' + '-label', for: 'routingpanel-field-10' }">
+            <template #label>截止（不包含）</template>
+            <NTimePicker
+              @keydown.esc.stop
+              :disabled="busy || loading || !!error || !!session.pending"
+              :formatted-value="session.draft.before || null"
+              @update:formatted-value="session.draft.before = $event || ''"
+              format="HH:mm"
+              value-format="HH:mm"
+              clearable
+            />
+          </ConsoleField>
+        </div>
+        <ConsoleField
+          class="spaced"
+          path="field-11"
+          :rule="fieldRule(() => session.draft?.zone, { required: true, disabled: () => busy || loading || !!error || !!session.pending })"
+          :label-props="{ id: 'routingpanel-field-11' + '-label', for: 'routingpanel-field-11' }"
+        >
+          <template #label>时区</template>
+          <NInput
+            :disabled="busy || loading || !!error || !!session.pending"
+            v-model:value="session.draft.zone"
+            :input-props="{ required: true, id: 'routingpanel-field-11', 'aria-label': '时区' }"
+          />
+        </ConsoleField>
+        <NCheckbox
+          class="checkbox-label spaced"
+          v-model:checked="session.draft.enabled"
+          :disabled="busy || loading || !!error || !!session.pending" :aria-disabled="busy || loading || !!error || !!session.pending"
+        >
+          启用规则
+        </NCheckbox>
+      </div>
+      <div class="form-footer">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="close">关闭草稿</NButton>
+        <div class="management-actions">
+          <NButton attr-type="button" v-if="session.pending" class="secondary" :disabled="busy" @click="check">核对当前路由</NButton>
+          <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || loading || !!error">
+            {{ session.uncertain ? '重试原版本保存' : '保存路由' }}
+          </NButton>
+        </div>
+      </div>
+    </ConsoleForm>
+    <div v-if="!loading && !error" class="record-list spaced">
+      <p v-if="!rules.length" class="empty-state">暂无路由规则</p>
+      <article v-for="r in rules" :key="r.ruleId" class="record-card">
+        <div class="record-heading">
+          <h2>{{ r.definition.name }}</h2>
+          <span class="badge">{{ r.definition.enabled ? '启用' : '停用' }}</span>
+        </div>
+        <p>{{ r.definition.source }} → {{ r.definition.deviceIds.join('、') }}</p>
+        <div class="management-actions">
+          <NButton quaternary attr-type="button" class="text-button" :disabled="!operate || busy || !!session.draft" @click="edit(r)">
+            编辑路由
+          </NButton>
+          <NButton
+            quaternary
+            attr-type="button"
+            class="text-button"
+            :disabled="!operate || busy || !!session.draft"
+            @click="
+              deleting = r;
+              deleteName = '';
+            "
+          >
+            删除路由
+          </NButton>
+        </div>
+      </article>
+    </div>
+    <ConsoleForm v-if="deleting" class="inline-form spaced" @submit.prevent="remove">
+      <ConsoleField path="field-12" :label-props="{ id: 'routingpanel-field-12' + '-label', for: 'routingpanel-field-12' }">
+        <template #label>输入路由名称“{{ deleting.definition.name }}”</template>
+        <NInput
+          :disabled="busy"
+          v-model:value="deleteName"
+          :input-props="{ id: 'routingpanel-field-12', 'aria-label': '输入路由名称“' + deleting.definition.name + '”' }"
+        />
+      </ConsoleField>
+      <div class="form-footer">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="deleting = null">取消删除</NButton>
+        <NButton type="error" attr-type="submit" class="primary" :disabled="busy || deleteName !== deleting.definition.name">
+          确认删除路由
+        </NButton>
+      </div>
+    </ConsoleForm>
+    <ConsoleForm class="inline-form spaced" @submit.prevent="test">
+      <h2>路由预演</h2>
+      <div class="form-columns spaced">
+        <ConsoleField
+          path="field-13"
+          :rule="fieldRule(() => testSource, { required: true })"
+          :label-props="{ id: 'routingpanel-field-13' + '-label', for: 'routingpanel-field-13' }"
+        >
+          <template #label>来源</template>
+          <NInput v-model:value="testSource" :input-props="{ required: true, id: 'routingpanel-field-13', 'aria-label': '来源' }" />
+        </ConsoleField>
+        <ConsoleField
+          path="field-14"
+          :rule="fieldRule(() => testType, { required: true })"
+          :label-props="{ id: 'routingpanel-field-14' + '-label', for: 'routingpanel-field-14' }"
+        >
+          <template #label>事件类型</template>
+          <NInput v-model:value="testType" :input-props="{ required: true, id: 'routingpanel-field-14', 'aria-label': '事件类型' }" />
+        </ConsoleField>
+      </div>
+      <ConsoleField
+        class="spaced"
+        path="field-15"
+        :rule="fieldRule(() => testTitle, { required: true, maxlength: 160 })"
+        :label-props="{ id: 'routingpanel-field-15' + '-label', for: 'routingpanel-field-15' }"
+      >
+        <template #label>标题</template>
+        <NInput
+          v-model:value="testTitle"
+          :maxlength="160"
+          :input-props="{ required: true, id: 'routingpanel-field-15', 'aria-label': '标题' }"
+        />
+      </ConsoleField>
+      <ConsoleField
+        class="spaced"
+        path="field-16"
+        :rule="fieldRule(() => testContent, { required: true, maxlength: 8192 })"
+        :label-props="{ id: 'routingpanel-field-16' + '-label', for: 'routingpanel-field-16' }"
+      >
+        <template #label>内容</template>
+        <NInput
+          v-model:value="testContent"
+          type="textarea"
+          :maxlength="8192"
+          :input-props="{ required: true, id: 'routingpanel-field-16', 'aria-label': '内容' }"
+        />
+      </ConsoleField>
+      <div class="form-footer">
+        <span>不发送消息，不改变设备免打扰设置。</span>
+        <NButton attr-type="submit" class="secondary" :disabled="busy || loading || !!error">预演匹配设备</NButton>
+      </div>
+      <p v-if="preview" role="status">{{ preview.length ? `匹配：${preview.join('、')}` : '无匹配设备' }}</p>
+    </ConsoleForm>
+    <ConsoleForm v-if="operate" class="inline-form spaced" @submit.prevent="send">
+      <h2>定向测试消息</h2>
+      <p>使用上方标题与内容，仅向选择的启用设备建立投递；离线会等待，设备免打扰仍生效。</p>
+      <ConsoleField
+        path="field-17"
+        :rule="fieldRule(() => selected, { required: true, multiple: true, disabled: () => busy || !!session.test })"
+        :label-props="{ id: 'routingpanel-field-17' + '-label', for: 'routingpanel-field-17' }"
+      >
+        <template #label>测试设备</template>
+        <NSelect
+          @keydown.esc.stop
+          :disabled="busy || !!session.test"
+          v-model:value="selected"
+          :options="[...devices.filter((v) => v.enabled).map((d) => ({ label: d.name, value: d.deviceId }))]"
+          multiple
+          :max-tag-count="2"
+          :input-props="{ id: 'routingpanel-field-17', 'aria-label': '测试设备' }"
+        />
+      </ConsoleField>
+      <div class="form-columns spaced">
+        <ConsoleField path="field-18" :label-props="{ id: 'routingpanel-field-18' + '-label', for: 'routingpanel-field-18' }">
+          <template #label>测试模板</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || !!session.test"
+            v-model:value="testTemplate"
+            :options="[...templates.map((t) => ({ label: t.definition.name, value: t.templateId }))]"
+            clearable
+            :placeholder="'原始文本'"
+            :input-props="{ id: 'routingpanel-field-18', 'aria-label': '测试模板' }"
+          />
+        </ConsoleField>
+        <ConsoleField path="field-19" :label-props="{ id: 'routingpanel-field-19' + '-label', for: 'routingpanel-field-19' }">
+          <template #label>测试优先级</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || !!session.test"
+            v-model:value="testPriority"
+            :options="[
+              { label: '低', value: 'low' },
+              { label: '普通', value: 'normal' },
+              { label: '高', value: 'high' },
+              { label: '紧急', value: 'critical' },
+            ]"
+            :input-props="{ id: 'routingpanel-field-19', 'aria-label': '测试优先级' }"
+          />
+        </ConsoleField>
+      </div>
+      <p v-if="session.test" role="status">结果未确认时重试相同请求；切换导航后仍保留。当前标题：{{ session.test.title }}</p>
+      <div class="form-footer">
+        <span v-if="sent">消息编号：{{ sent }}；回执请在投递页核对。</span>
+        <NButton
+          type="primary"
+          attr-type="submit"
+          class="primary"
+          :disabled="busy || loading || !!error || (!session.test && !selected.length)"
+        >
+          {{ session.test ? '重试同一测试消息' : '发送到选择设备' }}
+        </NButton>
+      </div>
+    </ConsoleForm>
+  </section>
 </template>

@@ -44,7 +44,7 @@ function inputField(p: Palette) {
     /* 显式给中性色，避免禁用态比可用态更深。Input 无 borderActive 键，不要加。 */
     borderDisabled: `1px solid ${p.border}`,
     boxShadowFocus: `0 0 0 3px ${p.focus}33`,
-    heightMedium: '38px',
+    heightMedium: '34px',
     fontSizeMedium: '13px',
   };
 }
@@ -68,13 +68,17 @@ function build(p: Palette): GlobalThemeOverrides {
       placeholderColor: p.placeholder,
       borderRadius: '8px', borderRadiusSmall: '6px',
       fontSize: '14px', fontSizeSmall: '12px', fontSizeMedium: '14px',
-      heightMedium: '38px', heightSmall: '30px', heightLarge: '44px',
+      heightMedium: '34px', heightSmall: '30px', heightLarge: '44px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     },
     Input: { ...field },
     Select: { peers: { InternalSelection: { ...selection } } },
+    Form: { labelFontSizeTopMedium: '13px', labelHeightMedium: '20px', labelPaddingVertical: '0 0 4px 0', blankHeightMedium: '34px' },
+    InputNumber: { peers: { Input: { ...field } } },
+    TimePicker: { peers: { Input: { ...field } } },
+    AutoComplete: { peers: { Input: { ...field } } },
     DatePicker: { peers: { Input: { ...field } } },
-    Button: { fontWeight: '550', borderRadiusMedium: '8px', heightMedium: '38px', heightSmall: '30px', heightLarge: '44px', paddingMedium: '0 16px' },
+    Button: { fontWeight: '550', borderRadiusMedium: '8px', heightMedium: '34px', heightSmall: '30px', heightLarge: '44px', paddingMedium: '0 16px' },
     Tag: { borderRadius: '6px', heightSmall: '22px', fontSizeSmall: '12px' },
     Switch: { railColorActive: p.primary },
     Skeleton: { color: p.skeleton },

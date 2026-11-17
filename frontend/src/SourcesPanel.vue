@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import { fieldRule } from './formRules';
+import ConsoleForm from './ConsoleForm.vue';
+import { NButton, NCheckbox, NInput, NSelect } from 'naive-ui';
 import { useAccess } from './access';
 const { admin }=useAccess();
 import { nextTick, ref, onUnmounted } from 'vue';
@@ -23,13 +26,185 @@ function test(source:WebhookSource){void execute(`sources/${source.id}/test`,'PO
 void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
 </script>
 <template>
- <section class="spaced"><div class="section-heading"><div><h2 ref="listHeading" tabindex="-1">Webhook 来源</h2><p>独立令牌、签名与设备范围</p></div><div class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="busy||loading" @click="load">刷新来源</NButton><NButton attr-type="button" v-if="admin" class="secondary" :disabled="busy||loading||!!error||!!session.pending||creating" @click="begin()">新增来源</NButton></div></div>
- <p v-if="loading" role="status">正在读取来源…</p><p v-if="error" role="alert" class="feedback error">{{error}}</p>
- <StatusNote v-if="session.pending" tone="warn">操作结果尚未确认，重试保持同一请求与参数。<template #actions><NButton attr-type="button" class="secondary" :disabled="busy||loading" @click="execute()">重试原来源操作</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="readOnlyCheck">放弃重试并只读核对</NButton></template></StatusNote>
- <div v-if="session.credentials" class="inline-form"><h3>本次凭据</h3><p>仅本次显示；离开整页或退出后不能回读。请保存到发送方的私有配置中。</p><label>来源令牌<input :type="show?'text':'password'" readonly :value="session.credentials.token" autocomplete="off"></label><label class="spaced">签名密钥<input :type="show?'text':'password'" readonly :value="session.credentials.secret" autocomplete="off"></label><label class="checkbox-label spaced"><input v-model="show" type="checkbox">显示本次凭据</label><NButton quaternary attr-type="button" class="text-button" @click="session.credentials=null;show=false">已保存，隐藏凭据</NButton></div>
- <form v-if="creating" class="inline-form spaced" aria-label="新建来源" @submit.prevent="save"><fieldset :disabled="busy||!!session.pending" style="border:0;padding:0;margin:0"><label>来源标识<input v-model="id" required maxlength="24" pattern="[a-z0-9][a-z0-9-]*" :disabled="!!editing"></label><label class="spaced">名称<input v-model="name" required maxlength="80"></label><label class="spaced">允许投递的设备<select v-model="targets" multiple required><option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">{{d.name}}</option></select></label></fieldset><div class="form-footer"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="creating=false">关闭</NButton><NButton type="primary" attr-type="submit" class="primary" :disabled="busy||!!session.pending">保存来源</NButton></div></form>
- <div v-if="!loading&&!error" class="record-list spaced"><p v-if="!items.length" class="empty-state">暂无 Webhook 来源</p><article v-for="s in items" :key="s.id" class="record-card"><div class="record-heading"><h3>{{s.name}}</h3><span class="badge">{{s.enabled?'启用':'停用'}}</span></div><p class="mono">POST /api/v1/hooks/{{s.id}}</p><p>范围：{{s.deviceIds.join('、')}} · 已接收 {{s.received}} 条</p><p class="muted">最近事件：{{formatTime(s.lastReceivedAt)}}</p><div v-if="admin" class="management-actions"><NButton quaternary attr-type="button" class="text-button" :disabled="busy||!!session.pending||creating" @click="begin(s)">编辑来源</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="busy||!!session.pending" @click="toggle(s)">{{s.enabled?'停用来源':'启用来源'}}</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="busy||!!session.pending" @click="test(s)">测试来源</NButton><NButton quaternary attr-type="button" class="text-button" :disabled="busy||s.enabled||!!session.pending" @click="rotateSource=s;confirmName=''">轮换来源凭据</NButton></div></article></div>
- <form v-if="rotateSource" class="inline-form spaced" @submit.prevent="execute(`sources/${rotateSource.id}/credentials`,'POST',{expectedVersion:rotateSource.version})"><p>轮换立即使旧令牌与签名失效；先保持来源停用，更新发送方后再启用。</p><label>输入来源名“{{rotateSource.name}}”确认<input v-model="confirmName" :disabled="busy"></label><div class="form-footer"><NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="rotateSource=null">取消轮换</NButton><NButton type="error" attr-type="submit" class="primary" :disabled="busy||!!session.pending||confirmName!==rotateSource.name">确认轮换来源凭据</NButton></div></form>
- <p class="scope-note">新来源默认停用。发送方需签名原始 JSON 与时间戳；只有绑定设备与匹配路由可接收。创建响应丢失时凭据不能回读，应核对后在停用状态重新轮换。</p>
- </section>
+  <section class="spaced">
+    <div class="section-heading">
+      <div>
+        <h2 ref="listHeading" tabindex="-1">Webhook 来源</h2>
+        <p>独立令牌、签名与设备范围</p>
+      </div>
+      <div class="management-actions">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新来源</NButton>
+        <NButton
+          attr-type="button"
+          v-if="admin"
+          class="secondary"
+          :disabled="busy || loading || !!error || !!session.pending || creating"
+          @click="begin()"
+        >
+          新增来源
+        </NButton>
+      </div>
+    </div>
+    <p v-if="loading" role="status">正在读取来源…</p>
+    <p v-if="error" role="alert" class="feedback error">{{ error }}</p>
+    <StatusNote v-if="session.pending" tone="warn">
+      操作结果尚未确认，重试保持同一请求与参数。
+      <template #actions>
+        <NButton attr-type="button" class="secondary" :disabled="busy || loading" @click="execute()">重试原来源操作</NButton>
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="readOnlyCheck">放弃重试并只读核对</NButton>
+      </template>
+    </StatusNote>
+    <div v-if="session.credentials" class="inline-form">
+      <h3>本次凭据</h3>
+      <p>仅本次显示；离开整页或退出后不能回读。请保存到发送方的私有配置中。</p>
+      <ConsoleField path="field-1" :label-props="{ id: 'sourcespanel-field-1' + '-label', for: 'sourcespanel-field-1' }">
+        <template #label>来源令牌</template>
+        <NInput
+          :type="show ? 'text' : 'password'"
+          readonly
+          :value="session.credentials.token"
+          :input-props="{ autocomplete: 'off', id: 'sourcespanel-field-1', 'aria-label': '来源令牌' }"
+        />
+      </ConsoleField>
+      <ConsoleField class="spaced" path="field-2" :label-props="{ id: 'sourcespanel-field-2' + '-label', for: 'sourcespanel-field-2' }">
+        <template #label>签名密钥</template>
+        <NInput
+          :type="show ? 'text' : 'password'"
+          readonly
+          :value="session.credentials.secret"
+          :input-props="{ autocomplete: 'off', id: 'sourcespanel-field-2', 'aria-label': '签名密钥' }"
+        />
+      </ConsoleField>
+      <NCheckbox class="checkbox-label spaced" v-model:checked="show">显示本次凭据</NCheckbox>
+      <NButton
+        quaternary
+        attr-type="button"
+        class="text-button"
+        @click="
+          session.credentials = null;
+          show = false;
+        "
+      >
+        已保存，隐藏凭据
+      </NButton>
+    </div>
+    <ConsoleForm v-if="creating" class="inline-form spaced" aria-label="新建来源" @submit.prevent="save">
+      <div class="form-fields">
+        <ConsoleField
+          path="field-3"
+          :rule="
+            fieldRule(() => id, {
+              required: true,
+              pattern: '[a-z0-9][a-z0-9-]*',
+              maxlength: 24,
+              disabled: () => busy || !!session.pending || !!editing,
+            })
+          "
+          :label-props="{ id: 'sourcespanel-field-3' + '-label', for: 'sourcespanel-field-3' }"
+        >
+          <template #label>来源标识</template>
+          <NInput
+            :disabled="busy || !!session.pending || !!editing"
+            v-model:value="id"
+            :maxlength="24"
+            :input-props="{ required: true, pattern: '[a-z0-9][a-z0-9-]*', id: 'sourcespanel-field-3', 'aria-label': '来源标识' }"
+          />
+        </ConsoleField>
+        <ConsoleField
+          class="spaced"
+          path="field-4"
+          :rule="fieldRule(() => name, { required: true, maxlength: 80, disabled: () => busy || !!session.pending })"
+          :label-props="{ id: 'sourcespanel-field-4' + '-label', for: 'sourcespanel-field-4' }"
+        >
+          <template #label>名称</template>
+          <NInput
+            :disabled="busy || !!session.pending"
+            v-model:value="name"
+            :maxlength="80"
+            :input-props="{ required: true, id: 'sourcespanel-field-4', 'aria-label': '名称' }"
+          />
+        </ConsoleField>
+        <ConsoleField
+          class="spaced"
+          path="field-5"
+          :rule="fieldRule(() => targets, { required: true, multiple: true, disabled: () => busy || !!session.pending })"
+          :label-props="{ id: 'sourcespanel-field-5' + '-label', for: 'sourcespanel-field-5' }"
+        >
+          <template #label>允许投递的设备</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || !!session.pending"
+            v-model:value="targets"
+            :options="[...devices.map((d) => ({ label: d.name, value: d.deviceId }))]"
+            multiple
+            :max-tag-count="2"
+            :input-props="{ id: 'sourcespanel-field-5', 'aria-label': '允许投递的设备' }"
+          />
+        </ConsoleField>
+      </div>
+      <div class="form-footer">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="creating = false">关闭</NButton>
+        <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || !!session.pending">保存来源</NButton>
+      </div>
+    </ConsoleForm>
+    <div v-if="!loading && !error" class="record-list spaced">
+      <p v-if="!items.length" class="empty-state">暂无 Webhook 来源</p>
+      <article v-for="s in items" :key="s.id" class="record-card">
+        <div class="record-heading">
+          <h3>{{ s.name }}</h3>
+          <span class="badge">{{ s.enabled ? '启用' : '停用' }}</span>
+        </div>
+        <p class="mono">POST /api/v1/hooks/{{ s.id }}</p>
+        <p>范围：{{ s.deviceIds.join('、') }} · 已接收 {{ s.received }} 条</p>
+        <p class="muted">最近事件：{{ formatTime(s.lastReceivedAt) }}</p>
+        <div v-if="admin" class="management-actions">
+          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending || creating" @click="begin(s)">
+            编辑来源
+          </NButton>
+          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="toggle(s)">
+            {{ s.enabled ? '停用来源' : '启用来源' }}
+          </NButton>
+          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="test(s)">
+            测试来源
+          </NButton>
+          <NButton
+            quaternary
+            attr-type="button"
+            class="text-button"
+            :disabled="busy || s.enabled || !!session.pending"
+            @click="
+              rotateSource = s;
+              confirmName = '';
+            "
+          >
+            轮换来源凭据
+          </NButton>
+        </div>
+      </article>
+    </div>
+    <ConsoleForm
+      v-if="rotateSource"
+      class="inline-form spaced"
+      @submit.prevent="execute(`sources/${rotateSource.id}/credentials`, 'POST', { expectedVersion: rotateSource.version })"
+    >
+      <p>轮换立即使旧令牌与签名失效；先保持来源停用，更新发送方后再启用。</p>
+      <ConsoleField path="field-6" :label-props="{ id: 'sourcespanel-field-6' + '-label', for: 'sourcespanel-field-6' }">
+        <template #label>输入来源名“{{ rotateSource.name }}”确认</template>
+        <NInput
+          :disabled="busy"
+          v-model:value="confirmName"
+          :input-props="{ id: 'sourcespanel-field-6', 'aria-label': '输入来源名“' + rotateSource.name + '”确认' }"
+        />
+      </ConsoleField>
+      <div class="form-footer">
+        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="rotateSource = null">取消轮换</NButton>
+        <NButton type="error" attr-type="submit" class="primary" :disabled="busy || !!session.pending || confirmName !== rotateSource.name">
+          确认轮换来源凭据
+        </NButton>
+      </div>
+    </ConsoleForm>
+    <p class="scope-note">
+      新来源默认停用。发送方需签名原始 JSON 与时间戳；只有绑定设备与匹配路由可接收。创建响应丢失时凭据不能回读，应核对后在停用状态重新轮换。
+    </p>
+  </section>
 </template>

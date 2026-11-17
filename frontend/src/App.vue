@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NButton, NInput } from 'naive-ui';
+import ConsoleField from './ConsoleField.vue';
+import ConsoleForm from './ConsoleForm.vue';
+import { fieldRule } from './formRules';
+import { NButton, NCheckbox, NInput } from 'naive-ui';
 import { provide } from 'vue';
 import ConsoleShell from './ConsoleShell.vue';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
@@ -432,33 +435,160 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
 
 <template>
   <main v-if="!authenticated" class="login-page">
-    <div class="login-intro"><div class="brand"><span class="pet-symbol" aria-hidden="true"><i></i><i></i></span><span>NEXUS<span class="brand-sub">桌面伙伴管理台</span></span></div><div class="pet-illustration" aria-hidden="true"><span class="pet-symbol"><i></i><i></i></span></div></div>
-    <form class="login-card" @submit.prevent="login">
-      <h1 tabindex="-1">连接你的桌面伙伴</h1><p>使用管理员或独立角色令牌登录。</p>
-      <label class="token-label">管理令牌<NInput v-model:value="token" :type="tokenVisible ? 'text' : 'password'" :input-props="{ autocomplete: 'off', spellcheck: false, required: true }" :disabled="loading" /></label>
-      <label class="checkbox-label"><input v-model="tokenVisible" type="checkbox" />显示令牌</label>
+    <div class="login-intro">
+      <div class="brand">
+        <span class="pet-symbol" aria-hidden="true">
+          <i></i>
+          <i></i>
+        </span>
+        <span>
+          NEXUS
+          <span class="brand-sub">桌面伙伴管理台</span>
+        </span>
+      </div>
+      <div class="pet-illustration" aria-hidden="true">
+        <span class="pet-symbol">
+          <i></i>
+          <i></i>
+        </span>
+      </div>
+    </div>
+    <ConsoleForm class="login-card" @submit.prevent="login">
+      <h1 tabindex="-1">连接你的桌面伙伴</h1>
+      <p>使用管理员或独立角色令牌登录。</p>
+      <ConsoleField
+        class="token-label"
+        path="field-1"
+        :rule="fieldRule(() => token, { required: true })"
+        :label-props="{ id: 'app-field-1' + '-label', for: 'app-field-1' }"
+      >
+        <template #label>管理令牌</template>
+        <NInput
+          v-model:value="token"
+          :type="tokenVisible ? 'text' : 'password'"
+          :input-props="{ autocomplete: 'off', spellcheck: false, required: true, id: 'app-field-1', 'aria-label': '管理令牌' }"
+          :disabled="loading"
+        />
+      </ConsoleField>
+      <NCheckbox class="checkbox-label" v-model:checked="tokenVisible">显示令牌</NCheckbox>
       <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
-      <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading">{{ loading ? '正在连接…' : '进入消息中心' }}</NButton>
+      <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading">
+        {{ loading ? '正在连接…' : '进入消息中心' }}
+      </NButton>
       <small>令牌仅保留在当前页面，退出后清除。</small>
-    </form>
+    </ConsoleForm>
   </main>
-  <ConsoleShell v-else v-model:tab="tab" v-model:selected-device="selectedDevice" :devices="devices" :role="role" :loading="loading" :connected="status?.mqtt === 'ready'" @logout="logout" @guide="showGuide = !showGuide" @refresh="fullRefresh(true)">
-      <main id="main-content" class="content" tabindex="-1">
-        <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide=false" @navigate="tab=$event" />
-        <div v-if="error" class="feedback error" role="alert"><span>{{ error }}</span><NButton quaternary attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton></div>
-        <div v-else-if="notice" class="feedback" role="status"><span>{{ notice }}</span><NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton></div>
-        <InboxPanel v-if="tab === 'inbox'" :data="messages" :loading="loading" :failed="readFailed" :read-status="messageReadStatus" :busy="busy || !!exporting" :search="messageSearch" :exporting="exporting === 'messages'" :pending="messageSubmission" :uncertain="messageUncertain" :create="createMessage" :mark-read="markRead" :api="api" :mutate="mutate" @page="messagePage" @filter="filterMessages" @search="searchMessages" @clear="searchMessages(emptySearch(), true)" @export="exportMetadata('messages')" @content-export="exportMetadata('messages',true)" @connectors="tab = 'connectors'" />
-        <DevicesPanel v-else-if="tab === 'devices'" :items="selectedDevice?devices.filter(d=>d.deviceId===selectedDevice):devices" :busy="busy" :api="api" :register="register" :enable="enable" :rename="rename" />
-        <section v-else-if="tab === 'connectors'"><ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" /><PullPanel :api="api" :busy="busy" :session="pullSession" :mutate="mutate" @messages="pullMessages" /><SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" /></section>
-        <DeliveryPanel v-else-if="tab === 'deliveries'" :data="deliveries" :api="api" :busy="busy || !!exporting" :loading="loading" :failed="readFailed" :status="deliveryStatus" :search="deliverySearch" :exporting="exporting === 'deliveries'" :retry="retry" @page="deliveryPage" @filter="filterDeliveries" @search="searchDeliveries" @clear="searchDeliveries(emptySearch(), true)" @export="exportMetadata('deliveries')" @refresh="refresh" />
-        <ToolsPanel v-else-if="tab === 'tools'" :api="api" :mutate="mutate" :busy="busy" :pending="toolSubmission" :uncertain="toolUncertain" :create="createTool" />
-        <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
-        <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
-        <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
-        <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" />
-        <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
-        <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
-        <AutomationPanel v-else :api="api" :mutate="mutate" :busy="busy" :pending="ruleSubmission" :uncertain="ruleUncertain" :create="createRule" :editor="ruleEdit" :begin-edit="beginRuleEdit" :change-edit="changeRuleEdit" :close-edit="closeRuleEdit" :save-edit="saveRuleEdit" :check-edit="checkRuleEdit" :deletion="ruleDeletion" :begin-delete="beginRuleDelete" :close-delete="closeRuleDelete" :delete-rule="deleteRule" />
-      </main>
+  <ConsoleShell
+    v-else
+    v-model:tab="tab"
+    v-model:selected-device="selectedDevice"
+    :devices="devices"
+    :role="role"
+    :loading="loading"
+    :connected="status?.mqtt === 'ready'"
+    @logout="logout"
+    @guide="showGuide = !showGuide"
+    @refresh="fullRefresh(true)"
+  >
+    <main id="main-content" class="content" tabindex="-1">
+      <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide = false" @navigate="tab = $event" />
+      <div v-if="error" class="feedback error" role="alert">
+        <span>{{ error }}</span>
+        <NButton quaternary attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton>
+      </div>
+      <div v-else-if="notice" class="feedback" role="status">
+        <span>{{ notice }}</span>
+        <NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton>
+      </div>
+      <InboxPanel
+        v-if="tab === 'inbox'"
+        :data="messages"
+        :loading="loading"
+        :failed="readFailed"
+        :read-status="messageReadStatus"
+        :busy="busy || !!exporting"
+        :search="messageSearch"
+        :exporting="exporting === 'messages'"
+        :pending="messageSubmission"
+        :uncertain="messageUncertain"
+        :create="createMessage"
+        :mark-read="markRead"
+        :api="api"
+        :mutate="mutate"
+        @page="messagePage"
+        @filter="filterMessages"
+        @search="searchMessages"
+        @clear="searchMessages(emptySearch(), true)"
+        @export="exportMetadata('messages')"
+        @content-export="exportMetadata('messages', true)"
+        @connectors="tab = 'connectors'"
+      />
+      <DevicesPanel
+        v-else-if="tab === 'devices'"
+        :items="selectedDevice ? devices.filter((d) => d.deviceId === selectedDevice) : devices"
+        :busy="busy"
+        :api="api"
+        :register="register"
+        :enable="enable"
+        :rename="rename"
+      />
+      <section v-else-if="tab === 'connectors'">
+        <ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
+        <PullPanel :api="api" :busy="busy" :session="pullSession" :mutate="mutate" @messages="pullMessages" />
+        <SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" />
+      </section>
+      <DeliveryPanel
+        v-else-if="tab === 'deliveries'"
+        :data="deliveries"
+        :api="api"
+        :busy="busy || !!exporting"
+        :loading="loading"
+        :failed="readFailed"
+        :status="deliveryStatus"
+        :search="deliverySearch"
+        :exporting="exporting === 'deliveries'"
+        :retry="retry"
+        @page="deliveryPage"
+        @filter="filterDeliveries"
+        @search="searchDeliveries"
+        @clear="searchDeliveries(emptySearch(), true)"
+        @export="exportMetadata('deliveries')"
+        @refresh="refresh"
+      />
+      <ToolsPanel
+        v-else-if="tab === 'tools'"
+        :api="api"
+        :mutate="mutate"
+        :busy="busy"
+        :pending="toolSubmission"
+        :uncertain="toolUncertain"
+        :create="createTool"
+      />
+      <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
+      <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
+      <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
+      <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" />
+      <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
+      <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
+      <AutomationPanel
+        v-else
+        :api="api"
+        :mutate="mutate"
+        :busy="busy"
+        :pending="ruleSubmission"
+        :uncertain="ruleUncertain"
+        :create="createRule"
+        :editor="ruleEdit"
+        :begin-edit="beginRuleEdit"
+        :change-edit="changeRuleEdit"
+        :close-edit="closeRuleEdit"
+        :save-edit="saveRuleEdit"
+        :check-edit="checkRuleEdit"
+        :deletion="ruleDeletion"
+        :begin-delete="beginRuleDelete"
+        :close-delete="closeRuleDelete"
+        :delete-rule="deleteRule"
+      />
+    </main>
   </ConsoleShell>
 </template>

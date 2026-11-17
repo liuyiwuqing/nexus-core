@@ -5,10 +5,10 @@
 ## 界面与使用
 
 - 十二个入口分为“日常”“消息与自动化”“系统”，管理员、操作员、只读角色的可见范围沿用原约定；默认仍进入消息页。
-- 桌面保留侧栏，可在 228px 与 64px（`--sidebar-w-collapsed`）间折叠，偏好写入 `nexus-sidebar-collapsed`；760px 以下使用可滚动抽屉，支持 Escape、焦点约束和关闭后返回菜单按钮。选择页面后关闭抽屉并聚焦页面标题。
+- 桌面保留侧栏，可在 208px 与 64px（`--sidebar-w-collapsed`）间折叠，偏好写入 `nexus-sidebar-collapsed`；760px 以下使用可滚动抽屉，支持 Escape、焦点约束和关闭后返回菜单按钮。选择页面后关闭抽屉并聚焦页面标题。
 - 消息保留列表/详情联动，手机选择消息后显示详情并提供返回；筛选与导出分开组织，“导出”内保留元数据下载和管理员正文确认。未应用的筛选、读取错误、空结果与导出中继续禁止导出。
 - 设备卡片统一在线标记、接收开关、设置和固件入口；登记、重命名的版本核对、禁用新消息和 OTA 确认流程保留。界面状态不代表设备已收到或完成操作。
-- 所有页面动作按钮使用 Naive UI；登录和消息编辑使用 NInput。其他字段保留原生校验与日期输入，不改请求字段、时区转换或服务端分页。
+- 所有表单、输入、下拉、多选、日期/时间、数字、勾选、滑杆和文件选择使用 Naive UI；提交校验沿用原来的必填、长度、格式、范围和步长，不改请求字段、时区转换或服务端分页。
 - 登录令牌仍仅保存在页面内存。消息、工具、规则和模板的未知结果、原请求身份、草稿与只读核对保持；关闭或刷新页面的恢复边界不变。
 
 ## 样式基线（CONSOLE-15）
@@ -41,12 +41,10 @@
 - 内联面板（`DeviceManagementPanel`、`RemoteOtaPanel`）根节点是 `tabindex="-1"`，打开时脚本 `focus()`，并监听 `@keydown.esc` 关闭。「设置与升级」互斥，再点同一按钮收起：同开会让 Tab 从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起。
 - 焦点环只在真正落焦时画（`.management-panel:focus`）。常驻 `outline` 会把内联进卡片的面板又框成第二个盒子，也让人误以为那是误留的焦点环。
 - `html { scroll-padding-top }` = `--topbar-h + --toolbar-h + 8px`：脚本 `focus()` 与锚点滚动都停在两根吸顶条之下，不被遮住。
-- 设备卡展开后撑满整行，宽度可达 1148px。`≥900px` 改两栏（左 `minmax(260px,34%)`、右 `minmax(0,1fr)`、`column-gap:32px`）：卡内三处 `space-between` 在超宽容器上会把「标签↔开关」拉到相距 1000px 以上，读起来像两端各钉了一个无关元素。窄屏仍单列。
-- 嵌套面板的标题降一档（`--text-md`）且不再重复卡片已有的设备名：16px 叠 16px 只能靠一条 1px 分隔线分层级，加了边框或底色反而变回"卡中卡"。设备名的唯一出处是 OTA 页脚那句"将安装到 X"。
-- 两栏会把面板压到 302–492px，所以面板内的栅格不能再写死列数：`.management-metrics` 用 `repeat(auto-fit,minmax(140px,1fr))`（140px 是固件版本这类长串不断行的实测下限），`.form-columns` 在 `900–1150` 降为单列（只在这段里放不下并排字段；不限上界会把 1440 的音量滑杆拉成 693px、卡片高 +143px）。写死 4 列的后果是 900px 下每列 62px、版本号断成三行。
-- 标题与右侧动作挤在一起时用无断点规则（`flex-wrap` + `h2 { flex:1 1 auto; min-width:18ch }`），不要按宽度切断点：只切在 560 会漏掉 561–760 这段，跨断点还是跳变。
+- 设备设置展开后，上方是设备摘要和动作，下方设置/遥测面板占满卡片宽度（CONSOLE-21）。避免长面板旁边留下空列；`≥900px` 仅把摘要与动作并排，760px 以下表单单列。
+- 标题与右侧动作使用 `flex-wrap` 与 `h2 { flex:1 1 auto; min-width:18ch }`，长名称自然换行。内嵌面板标题保持较小一级，不重复设备名。
 - 提示上带动作按钮的 `StatusNote`（「已核对，开始新的签发」「放弃重试并只读核对」「关闭模板草稿」）会把提示连同按钮一起卸载，Chrome 随即把焦点丢给 `body`。这类动作必须在 click 处理里 `await nextTick()` 后把焦点交给**下一步真正要用的元素**，按动作语义选，不要统一套路：权限页给名称输入框（下一步就是填名签发）、来源页给本区标题（动作本身就是"只读核对"，从标题往下读）、模板页给重开入口「创建模板」（表单整块卸载）。只在用户主动点掉这条路径转移焦点 —— 轮询/SSE 让提示自然消失时不要抢焦点，会打断正在输入的人。`NButton` 不暴露 `focus()`，需要按 id 取 DOM（与设备页同一做法）。
-- `--topbar-h` 在 `≤760` 是 `63px`（实测顶栏渲染 63px，移动菜单按钮把 `min-height:60` 撑开）。写 60 会让吸顶工具栏压掉它 3px 的底边框，滚动时两条栏的分隔线消失。
+- `--topbar-h` 统一为 56px；滚动定位与吸顶反馈使用同一个 token。
 
 ## 设备状态历史（TELEMETRY-02）
 
@@ -77,7 +75,7 @@
 - `.skip-link` 配合 `<main tabindex="-1">`：Tab 首站是“跳到主内容”，跳转后焦点落在内容区且不画常驻焦点环。
 - Naive 浮层（Dropdown/Popover）统一 12px 圆角与 `--floating-shadow`，Tooltip 8px；两者都由 `theme.ts` 的 `Palette` 驱动，不在页面里单独覆盖。
 - OTA 阶段条只由设备上报的 `observation.state` 推导：`pending/sent/accepted`→准备、`installing`→安装、`pending_reboot/rebooting`→重启、`verifying`→核验、`healthy`→完成。失败、结果未确认或未知状态整条不渲染，不猜进度；写入进度只在 `installing` 且拿到 `target.imageSize` 时按 `writtenBytes/imageSize` 画，缺镜像大小就不画，不用假动画代替设备确认。
-- 不要在 `.topbar` / 侧栏里使用 `NTooltip`：它经 `vueuc/binder` 直接往 `head` 注入不带 nonce 的样式，会触发 CSP `style-src-elem` 拦截（`styleMountTarget` 只覆盖 Naive 自身的挂载点）。需要悬停说明时用原生 `title`，或先扩展 nonce 注入范围再引入浮层。
+- 顶栏与侧栏继续使用原生 `title` 做简短悬停说明。CONSOLE-21 为 `vueuc` 浮层与虚拟列表增加局部 nonce 适配；新增浮层仍需按正式 CSP 实测，不能仅以 Vite 开发模式能打开为通过。
 
 ## 样式守卫（CONSOLE-17）
 
@@ -89,13 +87,13 @@
 3. `var(--x)` 必须已在 `:root` 定义（带 fallback 也算）；
 4. 定义过的 token 必须有人引用。
 
-失败即退出 1，`run_local.py build` 与 20 个跨仓 UI 脚本都会因此中断。CONSOLE-17 那轮删掉 5 个死 token（`--accent-hover`、`--accent-pressed`、`--info`、`--info-soft`、`--radius-pill`）；`--radius-pill` 已为 OTA 阶段胶囊和进度条重新引入，当前 78 个。
+失败即退出 1，`run_local.py build` 与 21 个跨仓 UI 脚本都会因此中断。CONSOLE-17 那轮删掉 5 个死 token（`--accent-hover`、`--accent-pressed`、`--info`、`--info-soft`、`--radius-pill`）；`--radius-pill` 已为 OTA 阶段胶囊和进度条重新引入。CONSOLE-21 移除三个原生控件专用 token，当前 75 个。
 
 `.primary/.secondary/.text-button/.compact` 保持零字节定义：视觉由 Naive 的 `type`/`quaternary` 决定，这几个类只作模板与断言的语义 hook，不做样式扩展。
 
 ## 修改位置
 
-`frontend/src/theme.ts` 管理 Naive UI 主题；`style.css` 管理布局与已有原生字段；`navigation.ts` 保存导航分组和图标；`ConsoleNavigation.vue` 复用角色导航；`ConsoleShell.vue` 管理桌面框架和移动抽屉。App 继续拥有请求、权限会话与待确认提交，界面组件不另建 API 或持久化副本。
+`frontend/src/theme.ts` 管理 Naive UI 主题；`style.css` 管理布局与间距；`navigation.ts` 保存导航分组和图标；`ConsoleNavigation.vue` 复用角色导航；`ConsoleShell.vue` 管理桌面框架和移动抽屉。App 继续拥有请求、权限会话与待确认提交，界面组件不另建 API 或持久化副本。
 
 颜色以现有深绿为强调色，正文使用深色中性色；动作层级、字段边框、面板和间距统一。移动适配改变布局，保留字段、操作后果和错误信息；尊重减少动态效果偏好。
 
@@ -103,7 +101,7 @@
 
 Naive UI 会生成样式节点。`GET /` 和 `GET /index.html` 为每次响应生成独立 24 字节随机 nonce，写入页面 meta 与 `style-src 'self' 'nonce-…'`，并返回 `Cache-Control: no-store`。原 `default-src 'self'`、禁止嵌套、base-uri/form-action 与 API 鉴权保留，没有增加 unsafe-inline 或外部脚本来源。
 
-`NConfigProvider` 开启 `inlineThemeDisabled`，通过其公开 `styleMountTarget` 仅为 Naive 挂载的样式节点加 nonce；不修改全局 DOM 方法。开发用 Vite 没有服务端 nonce 时使用默认样式目标。正式 JAR 必须同时包含新 index/JS/CSS 与配套过滤器；不能只替换其中一部分。
+`NConfigProvider` 开启 `inlineThemeDisabled`，通过其公开 `styleMountTarget` 为 Naive 挂载的样式节点加 nonce。`vueuc` 的 binder/虚拟列表绕过该配置，因此 Vite 仅把 `vueuc/es/shared/index.js` 的 `./cssr` 导出路由到 `vueucStyles.ts`，保留节点的 mount 上下文并复用同一个样式目标；不修改全局 DOM 方法，也不放宽 CSP。`css-render` 固定为锁文件已有的 0.15.14，没有引入另一套组件库。依赖升级必须复跑严格 CSP 下的真实菜单/日历/时间/上传交互。开发用 Vite 没有服务端 nonce 时使用默认样式目标。正式 JAR 必须同时包含新 index/JS/CSS 与配套过滤器；不能只替换其中一部分。
 
 ## 验证
 
@@ -122,3 +120,19 @@ bash tools/ci/test_console_theme_ui.sh
 本轮本地结果：原 19 组浏览器共 750 次、新增主题/导航 21 次检查通过；完整 CORE 118 条中 113 通过、5 条可选环境跳过，CLI 11 项通过。最终类型检查/生产前端与重新打包退出 0；JAR 恰含三份当前前端资源，20 份迁移逐字节匹配，无旧哈希资源混入。远程 CI 与部署按对应提交分别记录。
 
 2026-11-16 复跑：`npm run check`（78 个 token）与 `npm run build` 退出 0；跨仓 `test_console_theme_ui.sh` 33/33，覆盖 12 页标题、抽屉、导出折叠、逐响应 nonce 与零 CSP 违规；另跑折叠/明暗/OTA 专项 35/35（折叠 228↔64、偏好跨登录保留、`aria-label` 与 `title` 一致、1280/1366/1920/390 无横向溢出、阶段条随 `pending_reboot` 停在“重启”、无镜像大小时不画进度条），`securitypolicyviolation` 为空。以上均为回环 fixture，未接真实 CORE、数据库、Broker 或设备。
+
+
+## 紧凑布局与表单（2026-11-17 · CONSOLE-21）
+
+- 桌面侧栏 208px、页头 56px、页边距 24px，卡片内距 16px；表单间距 12px，标准控件 34px。手机页边距 12px，状态与来源并排、日期各占一行，导航保留 44px 点击高度。
+- 空态由 200px 收到 144px；桌面四条以内消息的容器为 340px，多条消息仍在视口内独立滚动。手机短列表随内容收缩，不保留 360px 最小高度。设备长设置面板采用满宽布局，不保留旁边的空列；卡内指标 18px，网络等长文本 14px，减少折行占高。
+- `ConsoleForm` 只负责 `NForm.validate()`、阻止重复校验、失败时聚焦出错字段；业务提交、权限和原身份重试仍由各面板/App 管理。`ConsoleField` 用 `NFormItem` 组织标签与反馈，并关联 Select 的实际焦点控件、DatePicker/TimePicker 输入框和 Slider 手柄；空校验反馈不预留一整行。关闭投递时间线时，用 Select 的公开实例恢复筛选焦点。
+- `formRules.ts` 承接原生控件的必填、多选、格式、长度、数值范围、步长和日期边界。冻结字段跳过校验，允许用户重试原有待确认请求。原 `fieldset disabled` 改为每个 Naive 控件显式禁用，重试/核对按钮不会被连带锁住。
+- 收件窗口保留本地 ISO 字符串，显示用空格分隔；App 继续转成 UTC 查询。免打扰的时间字符串、显示时长数字允许编辑中暂时为空，校验通过后仍提交分钟数/毫秒数；未完成输入计入脏草稿，轮询不会覆盖。Naive 弹层处理 Escape 时阻止继续关闭外层设备面板。
+- `NUpload` 只选择本地 manifest，`default-upload=false`；原 JSON 解析、7000 字节上限、目录校验与显式登记保留，不自动上传或触发安装。
+
+专项入口：`bash tools/ci/test_console_forms_ui.sh`（04 仓库）。复用真实 Vue 构建、环回 RAM 夹具与正式 CSP，覆盖真实下拉/日历、错误校验、设备设置参数、manifest 解析、深色和 390px 浮层边界。其他页面的既有回归保持业务断言，只将原生 select/checkbox/range 定位改为 Naive 实际菜单、ARIA 状态与键盘交互。
+
+2026-11-17 本地验证：`npm run check`（75 个 token）与生产构建通过。21 组实际 Vue/环回 RAM 浏览器检查共 848 次通过，其中新增表单/紧凑布局 35 次、主题导航 33 次、管理 64 次。检查期间修正投递弹层关闭后的 Naive 焦点恢复，更新指标单位/真实菜单定位，并让自动化等待控件可用与抽屉焦点恢复后再操作；首轮实时/模板脚本各出现一次登录连接失败，单独重跑通过，初次连接失败原因尚未确认。截图留在 04 的 `firmware/build-ui-console-forms/`，不作为真实服务/设备验收。
+
+`python3 tools/run_local.py build` 完整 CORE：121 条中 116 通过、5 条条件跳过，退出 0。最终手机短列表样式经表单专项重新验证后，以 `mvn -s .mvn/settings.xml -B -ntp -DskipTests package` 更新已验证且未改动的 Java 包内静态资源；JAR 的 23 份当前前端文件和 V1–V23 迁移均逐字节匹配，无旧哈希资源。本次未修改后端/数据库/固件，未重启真实 CORE 或做实机验收；用户开发预览继续使用 127.0.0.1:5173。
