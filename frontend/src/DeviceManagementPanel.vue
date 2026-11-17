@@ -3,7 +3,7 @@ import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { errorNames, formatTime, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory, type TelemetryMetric } from './types';
+import { errorNames, formatRelative, formatTime, wifiDisconnectName, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory, type TelemetryMetric } from './types';
 import StatusNote from './StatusNote.vue';
 import TelemetryChart from './TelemetryChart.vue';
 import { readFailure } from './failure';
@@ -45,6 +45,19 @@ const metrics: { id: TelemetryMetric; label: string }[] = [
 const metric = ref<TelemetryMetric>('heap');
 const history = ref<TelemetryHistory | null>(null), historyLoading = ref(false), historyError = ref('');
 const lastPoint = computed(() => history.value?.points[history.value.points.length - 1] ?? null);
+// 取不到的字段整段省略，避免出现"undefined · -52 dBm"这类拼接残句。
+const networkSummary = computed(() => {
+  const telemetry = data.value?.telemetry;
+  if (!telemetry || (!telemetry.wifiSsid && !telemetry.wifiIp)) return '';
+  return [telemetry.wifiSsid, telemetry.wifiIp, telemetry.wifiChannel ? `信道 ${telemetry.wifiChannel}` : '',
+    telemetry.wifiRssi === undefined ? '' : `${telemetry.wifiRssi} dBm`].filter(Boolean).join(' · ');
+});
+const disconnectSummary = computed(() => {
+  const telemetry = data.value?.telemetry;
+  if (!telemetry?.wifiDisconnectReason) return '';
+  const when = telemetry.wifiDisconnectedAt ? ` · ${formatRelative(new Date(telemetry.wifiDisconnectedAt * 1000).toISOString())}` : '';
+  return wifiDisconnectName(telemetry.wifiDisconnectReason) + when;
+});
 let historyGeneration = 0, historyRead: AbortController | undefined, historyTimer: ReturnType<typeof setInterval> | undefined;
 function resetDraft() {
   const current = data.value?.telemetry;
@@ -90,7 +103,7 @@ function exportHistory() {
   if (!value?.points.length) return;
   const header = ['采样时间', '接收时间', '样本数', '固件版本', '配置版本', '音量%', '亮度%', '静音', '免打扰', '未读',
     '可用内存(B)', '桶内最小(B)', '桶内最大(B)', '启动以来最小(B)', '音频欠载', '推理最长(ms)', '显示最长(ms)', '音频异常',
-    'Wi-Fi IP', '信号(dBm)'];
+    'Wi-Fi IP', '信号(dBm)', 'SSID', '信道', '断线原因', '断线时间'];
   const cell = (item: unknown) => {
     const text = item === null || item === undefined ? '' : String(item);
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -100,7 +113,8 @@ function exportHistory() {
     point.volume, point.brightness, point.muted, point.dnd, point.unread,
     point.freeHeap, point.freeHeapMin, point.freeHeapMax, point.minFreeHeap,
     point.audioUnderruns, point.inferenceMaxMs, point.displayMaxMs, point.audioFaulted,
-    point.wifiIp, point.wifiRssi,
+    point.wifiIp, point.wifiRssi, point.wifiSsid, point.wifiChannel,
+    point.wifiDisconnectReason, point.wifiDisconnectedAt,
   ].map(cell).join(','))];
   const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
@@ -167,7 +181,7 @@ onUnmounted(() => {
       <p v-if="!data.telemetry" class="management-status">尚未收到设备状态，连接设备后将自动显示。</p>
       <template v-else>
         <div class="management-status"><span class="badge" :class="data.fresh ? 'success' : ''" :title="data.fresh ? '90 秒内收到的新遥测' : '超过 90 秒未收到新遥测'">{{ data.fresh ? '实时快照' : '快照已过期' }}</span><span>采样于 {{ formatTime(new Date(data.telemetry.observedAt * 1000).toISOString()) }}</span><span v-if="data.telemetry.muted">语音静音</span><span v-if="data.telemetry.dnd">免打扰中</span><span v-if="data.telemetry.audioFaulted" class="inline-error">音频异常</span></div>
-        <dl class="management-metrics"><div><dt>固件</dt><dd>{{ data.telemetry.firmwareVersion }}</dd></div><div><dt>配置版本</dt><dd>{{ data.telemetry.configRevision }}</dd></div><div><dt>未读消息</dt><dd>{{ data.telemetry.unread }}</dd></div><div><dt>可用内存</dt><dd>{{ Math.floor(data.telemetry.freeHeap / 1024) }} KB</dd></div><div v-if="data.telemetry.wifiIp"><dt>网络</dt><dd>{{ data.telemetry.wifiIp }}{{ data.telemetry.wifiRssi === undefined ? '' : ` · ${data.telemetry.wifiRssi} dBm` }}</dd></div></dl>
+        <dl class="management-metrics"><div><dt>固件</dt><dd>{{ data.telemetry.firmwareVersion }}</dd></div><div><dt>配置版本</dt><dd>{{ data.telemetry.configRevision }}</dd></div><div><dt>未读消息</dt><dd>{{ data.telemetry.unread }}</dd></div><div><dt>可用内存</dt><dd>{{ Math.floor(data.telemetry.freeHeap / 1024) }} KB</dd></div><div v-if="networkSummary"><dt>网络</dt><dd>{{ networkSummary }}</dd></div><div v-if="disconnectSummary"><dt>上次断线</dt><dd>{{ disconnectSummary }}</dd></div></dl>
         <p v-if="data.telemetry.config && data.telemetry.muted !== data.telemetry.config.muted" class="management-hint">本机语音策略与已保存设置不同，请在设备上核对静音选择。</p>
       </template>
       <section class="telemetry-history" aria-label="遥测历史">

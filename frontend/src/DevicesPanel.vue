@@ -67,7 +67,7 @@ async function submit() {
           <NTag :type="device.online ? 'success' : 'default'" :bordered="false" size="small"><i class="status-dot" aria-hidden="true"></i>{{ device.online ? '在线' : '离线' }}</NTag>
         </div>
         <p class="device-seen"><span>最近连接</span><strong>{{ formatRelative(device.lastSeen) }}</strong><span v-if="device.lastSeen">{{ formatTime(device.lastSeen) }}</span></p>
-        <p v-if="device.wifiIp" class="device-seen"><span>Wi-Fi</span><strong>{{ device.wifiIp }}</strong><span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span><span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span></p>
+        <p v-if="device.wifiSsid || device.wifiIp" class="device-seen"><span>Wi-Fi</span><strong>{{ device.wifiSsid || device.wifiIp }}</strong><span v-if="device.wifiSsid && device.wifiIp">{{ device.wifiIp }}</span><span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span><span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span></p>
         <form v-if="renameId === device.deviceId" class="device-name-form" @submit.prevent="saveName">
           <label :for="'device-name-' + device.deviceId">设备名称<input :id="'device-name-' + device.deviceId" v-model="nameDraft" required maxlength="80" :disabled="busy" /></label>
           <p v-if="nameConflict" class="inline-error" role="alert">当前名称已变化，你的编辑已保留。</p>

@@ -16,9 +16,9 @@
 每条通过 `ManagementCodec.telemetry` 校验、且设备已登记的消息都会进入采样判断：
 
 1. **只追加更新的观察**：`observedAt` 必须严格晚于该设备最新历史样本；retained 重放、乱序和重复时间戳不写入。
-2. **状态变化优先**：`firmwareVersion`、`configRevision`、`volume`、`brightness`、`muted`、`dnd`、`unread`、`audioFaulted`、`wifiIp` 任一变化即视为变化样本。地址变化通常意味着重连或换网，值得独立成条。
+2. **状态变化优先**：`firmwareVersion`、`configRevision`、`volume`、`brightness`、`muted`、`dnd`、`unread`、`audioFaulted`、`wifiIp`、`wifiSsid`、`wifiChannel`、`wifiDisconnectReason` 任一变化即视为变化样本。地址或 SSID 变化通常意味着重连或换网，断线原因变化意味着刚发生过掉线，都值得独立成条。
 3. **变化下限**：变化样本距上一条历史样本至少 `change-seconds`（默认 5 秒）才写入，避免设备抖动导致刷表。
-4. **心跳上限**：无上述变化时，至少间隔 `sample-seconds`（默认 30 秒）写入一条。`freeHeap`、`minFreeHeap`、`audioUnderruns`、`inferenceMaxMs`、`displayMaxMs`、`wifiRssi` 的波动本身不触发立即写入，它们随心跳进入历史。
+4. **心跳上限**：无上述变化时，至少间隔 `sample-seconds`（默认 30 秒）写入一条。`freeHeap`、`minFreeHeap`、`audioUnderruns`、`inferenceMaxMs`、`displayMaxMs`、`wifiRssi`、`wifiDisconnectedAt` 的波动本身不触发立即写入，它们随心跳进入历史。
 5. **时钟与乱序**：窗口、排序和去重使用设备 `observedAt`；服务端 `received_at` 仅用于审计。设备时钟回退到上一条样本之前时，历史停止追加，直到观察时间重新超过最后一条。未来超过 5 秒的时间戳仍由现有编解码器拒绝。
 6. **失败边界**：SQL 写入失败会回滚该条遥测的处理事务，不会出现“历史成功、快照失败”或反向的半写；MQTT 消息是否重投由 Broker/QoS 决定。
 
@@ -80,7 +80,11 @@
       "displayMaxMs": 21,
       "audioFaulted": false,
       "wifiIp": "192.168.1.23",
-      "wifiRssi": -58
+      "wifiRssi": -58,
+      "wifiSsid": "HomeLab-2.4G",
+      "wifiChannel": 6,
+      "wifiDisconnectReason": 201,
+      "wifiDisconnectedAt": "2026-11-16T00:04:30Z"
     }
   ]
 }
@@ -100,6 +104,12 @@
 | `audioFaulted` | 样本值或 `null` | 桶内曾为 `true` 即 `true`，全部缺失时为 `null` |
 | `wifiIp` | 样本值或 `null` | 桶内最后一个非 `null` 地址 |
 | `wifiRssi` | 样本值或 `null` | 四舍五入平均值，全部缺失时为 `null` |
+| `wifiSsid` | 样本值或 `null` | 桶内最后一个非 `null` SSID |
+| `wifiChannel` | 样本值或 `null` | 桶内最后一个非 `null` 信道（求平均没有物理意义） |
+| `wifiDisconnectReason` | 样本值或 `null` | 桶内最后一个非 `null` 断线原因（ESP-IDF `wifi_err_reason_t`） |
+| `wifiDisconnectedAt` | 样本值或 `null` | 桶内最后一个非 `null` 断线时刻 |
+
+`wifiSsid`、`wifiChannel`、`wifiDisconnectReason`、`wifiDisconnectedAt` 都由固件按需上报：SSID 的空口字节不是可打印 UTF-8 时整条省略；断线原因只统计本次启动以来的运行期断线（正常关机或主动 `stop` 不计），从未断线时这两个字段都不出现；设备尚未对时则只报原因、不报时刻。
 
 前端若展示“实时”标签，仍应以 `GET .../management` 的 `fresh` 和 `observedAt` 为准；历史接口的最后一个桶不代表设备当前在线。
 
@@ -116,14 +126,14 @@ NEXUS_TELEMETRY_CLEANUP_CRON=0 20 4 * * *
 
 ## 迁移与验证
 
-Flyway `V21__device_telemetry_history.sql` 新增样本表和过期索引，`V22__device_telemetry_network.sql` 为样本表追加 `wifi_ip`/`wifi_rssi`，均不改既有表。已有实例按现有流程在独立库验证后迁移；本项未迁移真实数据库，未部署目标机。
+Flyway `V21__device_telemetry_history.sql` 新增样本表和过期索引，`V22__device_telemetry_network.sql` 为样本表追加 `wifi_ip`/`wifi_rssi`，`V23__device_telemetry_wifi_quality.sql` 再追加 `wifi_ssid`/`wifi_channel`/`wifi_disconnect_reason`/`wifi_disconnected_at`，均不改既有表。已有实例按现有流程在独立库验证后迁移；本项未迁移真实数据库，未部署目标机。
 
 `DeviceManagementFlowTest` 新增三项：
 
 - 真实 HTTP/PostgreSQL/MQTT：首批样本、5 秒变化下限、30 秒心跳、原始与 1 分钟聚合查询、空窗口、401/404 与四类 400。
-- 网络：IPv4/RSSI 写入原始样本、地址变化立即成条、1 分钟聚合取桶内最新地址与平均信号、非法地址或越界信号整条拒绝。
+- 网络：IPv4/RSSI/SSID/信道/断线原因写入原始样本、地址与网络变化立即成条、1 分钟聚合取桶内最新网络信息与平均信号、非法地址或越界信号/信道整条拒绝。
 - 清理：直接写入 40 天前的样本，执行清理后该设备历史为空。
 
-设备管理「设置与状态」已提供「状态历史」区块：1 小时/6 小时/24 小时/7 天分别查询 `1m/5m/15m/1h` 桶，用无依赖内联 SVG 画可用内存与启动以来最小内存，缺失桶断线而不是补零；实时徽标只读 `management` 的 `fresh`，历史区块本身不标「实时」。指标组可在内存/音量/未读/音频/网络之间切换，全部复用同一条历史响应、不额外请求；音频视图用 `audioUnderruns` 画线，并以 `--danger` 标记 `audioFaulted=true` 的桶；网络视图用 `wifiRssi` 画 dBm，地址为空时该点不画。实时快照同时展示设备上报的 Wi-Fi 地址与信号，设备卡片则展示最近一条带地址的样本（地址、dBm、相对时间），列表接口一次 `LEFT JOIN LATERAL` 取回，不逐台补查。图内拖拽可放大时间窗口（只放大已取回桶、不重查，双击或「重置缩放」恢复），「导出 CSV」按当前范围导出全部 20 列桶数据（UTF-8 BOM + CRLF）。跨仓浏览器回归覆盖空态、默认 `5m` 请求、范围切换、悬停取值、五种指标、音频故障标记、快照网络信息、CSV 下载与内容、拖拽缩放/提示/重置及 390px 无横向溢出。
+设备管理「设置与状态」已提供「状态历史」区块：1 小时/6 小时/24 小时/7 天分别查询 `1m/5m/15m/1h` 桶，用无依赖内联 SVG 画可用内存与启动以来最小内存，缺失桶断线而不是补零；实时徽标只读 `management` 的 `fresh`，历史区块本身不标「实时」。指标组可在内存/音量/未读/音频/网络之间切换，全部复用同一条历史响应、不额外请求；音频视图用 `audioUnderruns` 画线，并以 `--danger` 标记 `audioFaulted=true` 的桶；网络视图用 `wifiRssi` 画 dBm，地址为空时该点不画。实时快照同时展示设备上报的网络名、地址、信道与信号；设备上报过断线时再单列「上次断线」（原因名称 + 相对时间，未知码直接显示数字）。设备卡片展示最近一条带网络信息的样本（SSID、地址、dBm、相对时间），列表接口一次 `LEFT JOIN LATERAL` 取回，不逐台补查。图内拖拽可放大时间窗口（只放大已取回桶、不重查，双击或「重置缩放」恢复），「导出 CSV」按当前范围导出全部 24 列桶数据（UTF-8 BOM + CRLF，含 SSID、信道、断线原因与断线时间）。跨仓浏览器回归覆盖空态、默认 `5m` 请求、范围切换、悬停取值、五种指标、音频故障标记、快照网络信息、CSV 下载与内容、拖拽缩放/提示/重置及 390px 无横向溢出。
 
 真实 ESP32 的长期采样密度、时钟回退、掉电与 30 天保留规模仍未实测。

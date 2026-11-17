@@ -9,7 +9,7 @@ export interface Message {
   contentPurgedAt?: string | null;
 }
 export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null;
-  wifiIp?: string | null; wifiRssi?: number | null; telemetryAt?: string | null }
+  wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null }
 export interface DeviceConfig {
   schemaVersion: 1; timezone: string; language: 'zh-CN'; volume: number; brightness: number; muted: boolean;
   dnd: { enabled: boolean; manual: boolean; startMinute: number; endMinute: number; allowCritical: boolean };
@@ -19,7 +19,8 @@ export interface DeviceTelemetry {
   observedAt: number; firmwareVersion: string; configRevision: number; configWritable: boolean;
   muted: boolean; dnd: boolean; volume: number; brightness: number; unread: number;
   freeHeap: number; minFreeHeap: number; audioUnderruns?: number; audioFaulted?: boolean;
-  wifiIp?: string; wifiRssi?: number; config?: DeviceConfig;
+  wifiIp?: string; wifiRssi?: number; wifiSsid?: string; wifiChannel?: number;
+  wifiDisconnectReason?: number; wifiDisconnectedAt?: number; config?: DeviceConfig;
 }
 export interface ConfigRequest {
   requestId: string; expectedRevision: number; status: 'pending' | 'sent' | 'applied' | 'rejected' | 'expired' | 'unconfirmed';
@@ -37,6 +38,8 @@ export interface TelemetryPoint {
   freeHeap: number; freeHeapMin: number; freeHeapMax: number; minFreeHeap: number;
   audioUnderruns: number | null; inferenceMaxMs: number | null; displayMaxMs: number | null;
   audioFaulted: boolean | null; wifiIp: string | null; wifiRssi: number | null;
+  wifiSsid: string | null; wifiChannel: number | null;
+  wifiDisconnectReason: number | null; wifiDisconnectedAt: string | null;
 }
 export type TelemetryMetric = 'heap' | 'volume' | 'unread' | 'audio' | 'network';
 export interface TelemetryHistory {
@@ -107,6 +110,17 @@ export function formatRelative(value?: string | null): string {
   if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
   if (minutes < 7 * 1440) return `${Math.floor(minutes / 1440)} 天前`;
   return formatTime(value);
+}
+/** ESP-IDF wifi_err_reason_t 常见取值；未收录的码直接显示数字，不臆造含义。 */
+export const wifiDisconnectNames: Record<number, string> = {
+  1:'未指定',2:'认证过期',3:'主动退出认证',4:'关联过期',5:'AP 关联数已满',6:'未认证',7:'未关联',8:'主动断开',
+  13:'无效信息元素',14:'MIC 校验失败',15:'四次握手超时',16:'组密钥更新超时',17:'握手信息元素不一致',
+  18:'组加密算法无效',19:'单播加密算法无效',20:'密钥管理算法无效',23:'802.1X 认证失败',24:'加密套件被拒绝',
+  200:'信标丢失',201:'找不到目标 AP',202:'认证失败',203:'关联失败',204:'握手超时',205:'连接失败',
+};
+export function wifiDisconnectName(code: number): string {
+  const name = wifiDisconnectNames[code];
+  return name ? `${code} ${name}` : `原因 ${code}`;
 }
 export const deliveryNames: Record<string, string> = {
   pending: '等待投递', sent: '等待设备确认', received: '设备已保存', displayed: '设备已展示',

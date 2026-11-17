@@ -53,7 +53,8 @@ public class TelemetryHistoryService {
     void record(String device,JsonNode value) {
         long observed=value.get("observedAt").asLong();
         var rows=db.queryForList("""
-            SELECT observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,audio_faulted,wifi_ip
+            SELECT observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,audio_faulted,
+                wifi_ip,wifi_ssid,wifi_channel,wifi_disconnect_reason
             FROM device_telemetry_samples WHERE device_id=? ORDER BY observed_at DESC LIMIT 1
             """,device);
         if(!rows.isEmpty()) {
@@ -66,8 +67,9 @@ public class TelemetryHistoryService {
         db.update("""
             INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,
                 volume,brightness,muted,dnd,unread,free_heap,min_free_heap,
-                audio_underruns,inference_max_ms,display_max_ms,audio_faulted,wifi_ip,wifi_rssi)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                audio_underruns,inference_max_ms,display_max_ms,audio_faulted,
+                wifi_ip,wifi_rssi,wifi_ssid,wifi_channel,wifi_disconnect_reason,wifi_disconnected_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(device_id,observed_at) DO NOTHING
             """,device,Timestamp.from(Instant.ofEpochSecond(observed)),
             value.get("firmwareVersion").asText(),value.get("configRevision").asLong(),
@@ -77,7 +79,10 @@ public class TelemetryHistoryService {
             optionalLong(value,"audioUnderruns"),optionalLong(value,"inferenceMaxMs"),
             optionalLong(value,"displayMaxMs"),
             value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null,
-            value.has("wifiIp")?value.get("wifiIp").asText():null,optionalLong(value,"wifiRssi"));
+            value.has("wifiIp")?value.get("wifiIp").asText():null,optionalLong(value,"wifiRssi"),
+            value.has("wifiSsid")?value.get("wifiSsid").asText():null,optionalLong(value,"wifiChannel"),
+            optionalLong(value,"wifiDisconnectReason"),
+            value.has("wifiDisconnectedAt")?Timestamp.from(Instant.ofEpochSecond(value.get("wifiDisconnectedAt").asLong())):null);
     }
 
     /** State changes are recorded immediately (rate-limited); heap jitter only follows the heartbeat. */
@@ -92,7 +97,17 @@ public class TelemetryHistoryService {
             || !java.util.Objects.equals(last.get("audio_faulted"),
                 value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null)
             || !java.util.Objects.equals(last.get("wifi_ip"),
-                value.has("wifiIp")?value.get("wifiIp").asText():null);
+                value.has("wifiIp")?value.get("wifiIp").asText():null)
+            || !java.util.Objects.equals(last.get("wifi_ssid"),
+                value.has("wifiSsid")?value.get("wifiSsid").asText():null)
+            || !java.util.Objects.equals(asInteger(last,"wifi_channel"),
+                value.has("wifiChannel")?value.get("wifiChannel").asInt():null)
+            || !java.util.Objects.equals(asInteger(last,"wifi_disconnect_reason"),
+                value.has("wifiDisconnectReason")?value.get("wifiDisconnectReason").asInt():null);
+    }
+
+    private static Integer asInteger(Map<String,Object> row,String key) {
+        return row.get(key)==null?null:((Number)row.get(key)).intValue();
     }
 
     public Map<String,Object> query(String device,String fromValue,String toValue,String bucket) {
@@ -121,7 +136,9 @@ public class TelemetryHistoryService {
                     free_heap AS "freeHeap",free_heap AS "freeHeapMin",free_heap AS "freeHeapMax",
                     min_free_heap AS "minFreeHeap",audio_underruns AS "audioUnderruns",
                     inference_max_ms AS "inferenceMaxMs",display_max_ms AS "displayMaxMs",
-                    audio_faulted AS "audioFaulted",wifi_ip AS "wifiIp",wifi_rssi AS "wifiRssi"
+                    audio_faulted AS "audioFaulted",wifi_ip AS "wifiIp",wifi_rssi AS "wifiRssi",
+                    wifi_ssid AS "wifiSsid",wifi_channel AS "wifiChannel",
+                    wifi_disconnect_reason AS "wifiDisconnectReason",wifi_disconnected_at AS "wifiDisconnectedAt"
                 FROM device_telemetry_samples
                 WHERE device_id=? AND observed_at>=? AND observed_at<?
                 ORDER BY observed_at DESC LIMIT ?
@@ -147,7 +164,13 @@ public class TelemetryHistoryService {
                     max(inference_max_ms) AS "inferenceMaxMs",max(display_max_ms) AS "displayMaxMs",
                     bool_or(audio_faulted) AS "audioFaulted",
                     (array_agg(wifi_ip ORDER BY observed_at DESC) FILTER (WHERE wifi_ip IS NOT NULL))[1] AS "wifiIp",
-                    round(avg(wifi_rssi))::int AS "wifiRssi"
+                    round(avg(wifi_rssi))::int AS "wifiRssi",
+                    (array_agg(wifi_ssid ORDER BY observed_at DESC) FILTER (WHERE wifi_ssid IS NOT NULL))[1] AS "wifiSsid",
+                    (array_agg(wifi_channel ORDER BY observed_at DESC) FILTER (WHERE wifi_channel IS NOT NULL))[1] AS "wifiChannel",
+                    (array_agg(wifi_disconnect_reason ORDER BY observed_at DESC)
+                        FILTER (WHERE wifi_disconnect_reason IS NOT NULL))[1] AS "wifiDisconnectReason",
+                    (array_agg(wifi_disconnected_at ORDER BY observed_at DESC)
+                        FILTER (WHERE wifi_disconnected_at IS NOT NULL))[1] AS "wifiDisconnectedAt"
                 FROM device_telemetry_samples
                 WHERE device_id=? AND observed_at>=? AND observed_at<?
                 GROUP BY 1 ORDER BY 1

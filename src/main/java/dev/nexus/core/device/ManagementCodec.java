@@ -74,7 +74,8 @@ final class ManagementCodec {
         var value=parse(bytes,2048);
         fields(value,Set.of("schemaVersion","deviceId","observedAt","firmwareVersion","configRevision","configWritable",
             "muted","dnd","volume","brightness","unread","freeHeap","minFreeHeap"),
-            Set.of("audioUnderruns","inferenceMaxMs","displayMaxMs","audioFaulted","wifiIp","wifiRssi","config"));
+            Set.of("audioUnderruns","inferenceMaxMs","displayMaxMs","audioFaulted","wifiIp","wifiRssi",
+                "wifiSsid","wifiChannel","wifiDisconnectReason","wifiDisconnectedAt","config"));
         integer(value.get("schemaVersion"),1,1);
         if(!text(value.get("deviceId"),40).equals(device))throw new IllegalArgumentException("device_mismatch");
         integer(value.get("observedAt"),1,Instant.now().getEpochSecond()+5);
@@ -90,6 +91,10 @@ final class ManagementCodec {
                 throw new IllegalArgumentException("invalid_telemetry_wifi_ip");
         }
         if(value.has("wifiRssi"))integer(value.get("wifiRssi"),-130,0);
+        if(value.has("wifiSsid"))text(value.get("wifiSsid"),32);
+        if(value.has("wifiChannel"))integer(value.get("wifiChannel"),1,196);
+        if(value.has("wifiDisconnectReason"))integer(value.get("wifiDisconnectReason"),1,255);
+        if(value.has("wifiDisconnectedAt"))integer(value.get("wifiDisconnectedAt"),1,Instant.now().getEpochSecond()+5);
         if(value.has("config")) {
             var settings=config(value.get("config"));
             if(settings.get("volume").asInt()!=value.get("volume").asInt()||settings.get("brightness").asInt()!=value.get("brightness").asInt())

@@ -36,11 +36,12 @@ public class DeviceController {
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.device_id AS "deviceId",d.name,d.enabled,d.last_seen AS "lastSeen",
                    (d.online AND d.last_seen > now()-interval '90 seconds') AS online,d.created_at AS "createdAt",
-                   t.wifi_ip AS "wifiIp",t.wifi_rssi AS "wifiRssi",t.observed_at AS "telemetryAt"
+                   t.wifi_ip AS "wifiIp",t.wifi_rssi AS "wifiRssi",t.wifi_ssid AS "wifiSsid",
+                   t.observed_at AS "telemetryAt"
             FROM devices d
             LEFT JOIN LATERAL (
-                SELECT wifi_ip,wifi_rssi,observed_at FROM device_telemetry_samples s
-                WHERE s.device_id=d.device_id AND s.wifi_ip IS NOT NULL
+                SELECT wifi_ip,wifi_rssi,wifi_ssid,observed_at FROM device_telemetry_samples s
+                WHERE s.device_id=d.device_id AND (s.wifi_ip IS NOT NULL OR s.wifi_ssid IS NOT NULL)
                 ORDER BY observed_at DESC LIMIT 1
             ) t ON true
             ORDER BY d.created_at LIMIT 100
