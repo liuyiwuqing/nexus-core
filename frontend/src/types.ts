@@ -207,6 +207,10 @@ export const errorNames: Record<string, string> = {
   ota_device_rejected: '设备拒绝了升级命令。',
   ota_deployment_not_found: '升级记录不存在。', device_not_found: '设备不存在，请刷新设备列表。',
   device_name_conflict: '设备名称已被其他操作更新，请加载当前名称后重试。',
+  device_credential_exists: '该设备已有有效凭据；如需新密钥请轮换，旧密钥会按宽限期失效。',
+  device_credential_not_found: '该设备还没有签发凭据，请刷新后核对。',
+  device_credential_revoked: '凭据已撤销，请重新签发后再轮换。',
+  device_credential_version_conflict: '凭据已被其他操作修改，请刷新后核对当前修订号。',
 };
 
 export interface PullSource { id:string;name:string;kind:'rss'|'weather';host:string;deviceIds:string[];intervalMinutes:number;configuration:string;enabled:boolean;version:number;baseline:boolean;lastAttemptAt:string|null;lastSuccessAt:string|null;lastError:string|null;lastReceived:number;state:string }

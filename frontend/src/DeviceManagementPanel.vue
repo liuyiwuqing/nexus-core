@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
+import DeviceCredentialsSection from './DeviceCredentialsSection.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -534,5 +535,6 @@ onUnmounted(() => {
         </div>
       </ConsoleDisclosure>
     </template>
+    <DeviceCredentialsSection :device-id="device.deviceId" :api="api" :busy="busy" />
   </section>
 </template>
