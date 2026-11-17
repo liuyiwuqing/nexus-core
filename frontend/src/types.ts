@@ -65,7 +65,7 @@ export interface RuleSubmission { requestKey: string; name: string; trigger: str
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
 export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
 export interface WebhookSource {id:string;name:string;enabled:boolean;version:number;deviceIds:string[];received:number;lastReceivedAt:string|null}
-export interface AccessSession {issued:string;pendingIssue:boolean}
+export interface AccessSession {issued:string;pendingIssue:boolean;pendingRotation?:{tokenId:string;name:string;version:number}|null}
 export interface SourceSession {pending:{path:string;method:string;body:unknown}|null;credentials:{token:string;secret:string}|null}
 export interface RouteDefinition {name:string;enabled:boolean;source:string;eventType:string;match:string;expression:string;deviceIds:string[];priority:string;from:string;before:string;zone:string;templateId?:string|null}
 export interface TemplateDefinition {name:string;title:string;summary:string;icon:string;sound:string;durationSeconds:number}
@@ -138,6 +138,8 @@ export const errorNames: Record<string, string> = {
   invalid_route: '请检查路由条件、设备、时区和时间窗。', route_version_conflict: '路由版本已变化，请只读核对后重新编辑。', route_deleted: '路由已删除。',
   invalid_template: '请检查模板变量和当前设备支持的卡片、声音、时长。', template_deleted: '模板已删除。', template_in_use: '模板仍被路由引用，请先解除引用。', template_version_conflict: '模板版本已变化，请核对后重新编辑。',
   content_export_too_large: '正文导出超过 1000 条，请缩小筛选范围。', content_export_confirmation_required: '请先明确确认正文导出。',
+  csrf_required: '登录会话已变化，请刷新页面后重试。', session_capacity_reached: '登录会话已满，请稍后重试，或取消保持登录。', role_token_expired: '令牌已到期，请签发新的令牌。', role_token_not_found: '令牌不存在，请刷新列表。',
+  admin_token_environment_managed: '管理员令牌由服务端环境配置管理，请先启用受保护凭据文件。', admin_token_readonly: '凭据文件不可写，请由服务端管理员更新。', invalid_admin_token: '新令牌需要 32 至 256 位可见 ASCII 字符，不能包含空白。', invalid_current_admin_token: '当前管理员令牌不正确。', admin_token_reused: '新令牌不能与现有凭据相同。', admin_token_version_conflict: '凭据已被其他操作修改，请刷新后重新核对。', credential_store_busy: '凭据正在更新，请稍后刷新核对。', authentication_configuration_unavailable: '认证配置暂不可用，请联系管理员核对。',
   forbidden: '当前角色无权执行此操作。', audit_unavailable: '审计存储暂时不可用，操作未开始。', invalid_role_token: '请检查令牌名称、角色和到期时间。', role_token_version_conflict: '令牌状态已变化，请刷新核对。',
   invalid_source: '请检查来源标识、名称、正文和设备范围。', source_version_conflict: '来源版本已变化，请核对当前来源后操作。', source_disabled: '来源已停用。', source_enabled: '请先停用来源，再轮换凭据。', source_rate_limited: '来源请求过于频繁，请稍后重试。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',

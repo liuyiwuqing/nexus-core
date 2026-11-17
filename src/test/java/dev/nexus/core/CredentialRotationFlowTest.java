@@ -83,6 +83,9 @@ class CredentialRotationFlowTest {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/devices"))
             .header("Authorization","Bearer "+token).GET().build(),HttpResponse.BodyHandlers.ofString());
     }
+    HttpResponse<String> session(String token)throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/session")).header("Authorization","Bearer "+token).GET().build(),HttpResponse.BodyHandlers.ofString());
+    }
     HttpResponse<String> mcp(String token)throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/mcp/memory"))
             .header("Authorization","Bearer "+token).header("Content-Type","application/json")
@@ -90,7 +93,45 @@ class CredentialRotationFlowTest {
             .POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}")).build(),HttpResponse.BodyHandlers.ofString());
     }
     @BeforeEach void reset()throws Exception {replace(OLD,null,0);}
-    @AfterAll static void cleanup()throws Exception {PROVIDER.stop(0);Files.deleteIfExists(FILE);Files.deleteIfExists(DIRECTORY);}
+    @AfterAll static void cleanup()throws Exception {PROVIDER.stop(0);Files.deleteIfExists(FILE);Files.deleteIfExists(FILE.resolveSibling("tokens.json.lock"));Files.deleteIfExists(DIRECTORY);}
+    @Test void administratorCanChangeTheProtectedCredentialWithoutChangingActorOrMemoryScope()throws Exception {
+        var before=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/access/admin-token")).header("Authorization","Bearer "+OLD).GET().build(),HttpResponse.BodyHandlers.ofString());
+        assertThat(before.statusCode()).isEqualTo(200);var metadata=JSON.readTree(before.body());
+        assertThat(metadata.path("editable").asBoolean()).isTrue();assertThat(before.body()).doesNotContain(OLD,MEMORY);
+        long version=metadata.path("revision").asLong();
+        var identity=JSON.readTree(session(OLD).body()).path("actor").asText();assertThat(identity).matches("[0-9a-f]{64}");
+        var endpoint=URI.create("http://127.0.0.1:"+port+"/api/v1/access/admin-token");
+        String wrong=JSON.writeValueAsString(Map.of("currentToken",LEGACY,"newToken",NEXT,"expectedRevision",version));
+        assertThat(http.send(HttpRequest.newBuilder(endpoint).header("Authorization","Bearer "+OLD).header("Content-Type","application/json").PUT(HttpRequest.BodyPublishers.ofString(wrong)).build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(400);
+        var issued=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/access/tokens")).header("Authorization","Bearer "+OLD).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(Map.of("name","Separate viewer","role","viewer","expiresAt",Instant.now().plusSeconds(3600).toString())))).build(),HttpResponse.BodyHandlers.ofString());
+        String roleSecret=JSON.readTree(issued.body()).path("token").asText();assertThat(roleSecret).hasSizeGreaterThanOrEqualTo(32);
+        String reused=JSON.writeValueAsString(Map.of("currentToken",OLD,"newToken",roleSecret,"expectedRevision",version));
+        var refused=http.send(HttpRequest.newBuilder(endpoint).header("Authorization","Bearer "+OLD).header("Content-Type","application/json").PUT(HttpRequest.BodyPublishers.ofString(reused)).build(),HttpResponse.BodyHandlers.ofString());
+        assertThat(refused.statusCode()).isEqualTo(400);assertThat(refused.body()).contains("admin_token_reused");
+        var writer=new ProcessBuilder("python3","-c","import fcntl,sys,os;os.umask(0o077); f=open(sys.argv[1],'a+');fcntl.lockf(f,fcntl.LOCK_EX);print('ready',flush=True);sys.stdin.read()",FILE.resolveSibling("tokens.json.lock").toString()).redirectErrorStream(true).start();
+        try{
+            assertThat(new java.io.BufferedReader(new java.io.InputStreamReader(writer.getInputStream())).readLine()).isEqualTo("ready");
+            String locked=JSON.writeValueAsString(Map.of("currentToken",OLD,"newToken",NEXT,"expectedRevision",version));
+            var conflict=http.send(HttpRequest.newBuilder(endpoint).header("Authorization","Bearer "+OLD).header("Content-Type","application/json").PUT(HttpRequest.BodyPublishers.ofString(locked)).build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(conflict.statusCode()).isEqualTo(409);assertThat(conflict.body()).contains("credential_store_busy");assertThat(request(OLD).statusCode()).isEqualTo(200);
+        }finally{writer.getOutputStream().close();assertThat(writer.waitFor(5,TimeUnit.SECONDS)).isTrue();Files.setPosixFilePermissions(FILE.resolveSibling("tokens.json.lock"),PosixFilePermissions.fromString("rw-------"));}
+        var login=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/session")).header("Authorization","Bearer "+OLD).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString("{\"remember\":true}")).build(),HttpResponse.BodyHandlers.ofString());
+        String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0],csrf=JSON.readTree(login.body()).path("csrfToken").asText();
+        String input=JSON.writeValueAsString(Map.of("currentToken",OLD,"newToken",NEXT,"expectedRevision",version));
+        var response=http.send(HttpRequest.newBuilder(endpoint).header("Cookie",cookie).header("X-Nexus-CSRF",csrf).header("Content-Type","application/json").PUT(HttpRequest.BodyPublishers.ofString(input)).build(),HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);REVISION.set(version+1);assertThat(response.body()).doesNotContain(OLD,NEXT,MEMORY);
+        assertThat(JSON.readTree(response.body()).path("csrfToken").asText()).isNotEqualTo(csrf);
+        String replacementCookie=response.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        var sessionUrl=URI.create("http://127.0.0.1:"+port+"/api/v1/session");
+        assertThat(http.send(HttpRequest.newBuilder(sessionUrl).header("Cookie",cookie).GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(401);
+        assertThat(http.send(HttpRequest.newBuilder(sessionUrl).header("Cookie",replacementCookie).GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+        assertThat(request(OLD).statusCode()).isEqualTo(401);var next=request(NEXT);assertThat(next.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(session(NEXT).body()).path("actor").asText()).isEqualTo(identity);
+        assertThat(mcp(MEMORY).statusCode()).isEqualTo(200);
+        assertThat(Files.getPosixFilePermissions(FILE)).isEqualTo(PosixFilePermissions.fromString("rw-------"));
+        assertThat(JSON.readTree(Files.readString(FILE)).path("admin").has("previous")).isFalse();
+    }
     @Test void adminRotationOverlapsThenExpiresWithoutRestartOrLegacyFallback()throws Exception {
         assertThat(request(OLD).statusCode()).isEqualTo(200);
         assertThat(request(LEGACY).statusCode()).isEqualTo(401);

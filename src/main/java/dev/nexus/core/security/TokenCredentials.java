@@ -1,6 +1,13 @@
 package dev.nexus.core.security;
 
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.attribute.PosixFilePermissions;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.PosixFilePermission;
@@ -67,6 +74,47 @@ public final class TokenCredentials {
         byte[] bytes=supplied.getBytes(StandardCharsets.UTF_8);long now=Instant.now().getEpochSecond();boolean accepted=false;
         for(var value:values)accepted|=MessageDigest.isEqual(value.bearer(),bytes)&value.expiresAt()>now;
         return accepted;
+    }
+    public synchronized Map<String,Object> management(){
+        if(file==null)return Map.of("mode","environment","editable",false);
+        var snapshot=read();
+        try{return Map.of("mode","file","revision",snapshot.revision(),"editable",Files.isWritable(file)&&Files.isWritable(file.getParent())&&Files.getPosixFilePermissions(file).contains(PosixFilePermission.OWNER_WRITE));}
+        catch(java.io.IOException unavailable){throw new Unavailable();}
+    }
+    /** Same-directory atomic replacement, stable actor and memory scope, no overlap. */
+    public synchronized long changeAdmin(long expected,String current,String next){
+        if(file==null)throw new ResponseStatusException(HttpStatus.CONFLICT,"admin_token_environment_managed");
+        if(current==null||next==null||!validToken(next))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_admin_token");
+        Path lock=file.resolveSibling(file.getFileName()+".lock"),temporary=null;
+        try {
+            try{Files.createFile(lock,PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));}catch(FileAlreadyExistsException exists){/* Validate the existing private lock below. */}
+            if(!Files.isRegularFile(lock,LinkOption.NOFOLLOW_LINKS)||!Files.getPosixFilePermissions(lock,LinkOption.NOFOLLOW_LINKS).equals(PosixFilePermissions.fromString("rw-------")))throw new Unavailable();
+            try(var channel=FileChannel.open(lock,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS);var guard=channel.tryLock()){
+                if(guard==null)throw new ResponseStatusException(HttpStatus.CONFLICT,"credential_store_busy");
+                var snapshot=read();
+                if(snapshot.revision()!=expected||expected==Long.MAX_VALUE)throw new ResponseStatusException(HttpStatus.CONFLICT,"admin_token_version_conflict");
+                if(!Files.getPosixFilePermissions(file).contains(PosixFilePermission.OWNER_WRITE)||!Files.isWritable(file)||!Files.isWritable(file.getParent()))throw new ResponseStatusException(HttpStatus.CONFLICT,"admin_token_readonly");
+                byte[] proof=("Bearer "+current).getBytes(StandardCharsets.UTF_8);
+                if(!MessageDigest.isEqual(snapshot.admin().getFirst().bearer(),proof))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_current_admin_token");
+                String authorization="Bearer "+next;
+                if(java.util.stream.Stream.concat(snapshot.admin().stream(),snapshot.memory().stream()).anyMatch(c->MessageDigest.isEqual(c.bearer(),authorization.getBytes(StandardCharsets.UTF_8))))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"admin_token_reused");
+                var value=(ObjectNode)JSON.readTree(Files.readAllBytes(file));
+                // Preserve the complete independent memory scope, including overlap.
+                value.set("admin",JSON.valueToTree(Map.of("current",Map.of("id",UUID.randomUUID().toString().replace("-",""),"token",next))));value.put("revision",expected+1);
+                byte[] bytes=JSON.writeValueAsBytes(value);
+                temporary=Files.createTempFile(file.getParent(),"."+file.getFileName()+"-","",PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+                var attributes=Files.readAttributes(file,java.nio.file.attribute.PosixFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+                Files.setOwner(temporary,attributes.owner());Files.getFileAttributeView(temporary,java.nio.file.attribute.PosixFileAttributeView.class).setGroup(attributes.group());
+                try(var output=FileChannel.open(temporary,StandardOpenOption.WRITE)){var buffer=ByteBuffer.wrap(bytes);while(buffer.hasRemaining())output.write(buffer);output.force(true);}
+                if(read().revision()!=expected)throw new ResponseStatusException(HttpStatus.CONFLICT,"admin_token_version_conflict");
+                Files.move(temporary,file,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);temporary=null;
+                try(var directory=FileChannel.open(file.getParent(),StandardOpenOption.READ)){directory.force(true);}
+                return read().revision();
+            }
+        }catch(ResponseStatusException rejected){throw rejected;}
+        catch(OverlappingFileLockException busy){throw new ResponseStatusException(HttpStatus.CONFLICT,"credential_store_busy");}
+        catch(Exception unavailable){throw new Unavailable();}
+        finally{if(temporary!=null)try{Files.deleteIfExists(temporary);}catch(java.io.IOException ignored){/* No secret enters logs. */}}
     }
     private static String digest(byte[] bytes) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}

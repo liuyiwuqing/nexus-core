@@ -13,7 +13,7 @@ import type { RoutingSession, SourceSession, AccessSession, TemplateSession } fr
 import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
 import { ApiFailure, readFailure } from './failure';
-import type { Role } from './access';
+import type { Role,ConsoleSession as SessionInfo } from './access';
 import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
@@ -37,6 +37,16 @@ let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|und
 function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
 function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh(false,invalidateScope());}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
 const token = ref(''), tokenVisible = ref(false), authenticated = ref(false), loading = ref(false), busy = ref(false);
+const remember=ref(true),loggingOut=ref(false),restoring=ref(true),restoreFailed=ref(false),csrfToken=ref(''),cookieSession=ref(false);
+const signedOutKey='nexus.console.signed-out';
+function signedOut(){try{return sessionStorage.getItem(signedOutKey)==='1';}catch{return false;}}
+function rememberSignOut(value:boolean){try{if(value)sessionStorage.setItem(signedOutKey,'1');else sessionStorage.removeItem(signedOutKey);}catch{/* Storage can be disabled; credentials are never stored here. */}}
+function authHeaders():Record<string,string>{return {...(token.value?{Authorization:'Bearer '+token.value}:{}),...(csrfToken.value?{'X-Nexus-CSRF':csrfToken.value}:{})};}
+function useSession(session:SessionInfo,newToken=token.value){
+  if(!['admin','operator','viewer'].includes(session.role))throw new Error('Invalid session');
+  if(session.persisted&&(!session.csrfToken||session.csrfToken.length<32))throw new Error('Invalid session');
+  role.value=session.role;cookieSession.value=!!session.persisted;csrfToken.value=session.csrfToken||'';token.value=session.persisted?'':newToken;
+}
 const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
@@ -59,22 +69,39 @@ const exporting = ref<'messages' | 'deliveries' | null>(null);
 let epoch = 0, readGeneration = 0, controller: AbortController | undefined;
 let exportGeneration = 0, exportController: AbortController | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
+let authChanges:BroadcastChannel|undefined;
+function announceSession(type:'login'|'logout'){authChanges?.postMessage({type});}
+function replaceSession(session:SessionInfo,newToken:string){useSession(session,newToken);announceSession(cookieSession.value?'login':'logout');}
 
+function discardStaleSession(path:string,value:unknown){
+  if(path!=='session'&&path!=='access/admin-token')return;
+  const session=value as Partial<SessionInfo>|null;
+  // A late Set-Cookie must not resurrect a session after logout. The CSRF proof
+  // targets only that obsolete session, never a newer login with another proof.
+  if(session?.persisted&&typeof session.csrfToken==='string'&&session.csrfToken.length>=32)
+    void fetch('/api/v1/session/logout',{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Nexus-CSRF':session.csrfToken}}).catch(()=>{});
+}
 async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch('/api/v1/' + path, { method, signal, cache: 'no-store',
-    headers: { Authorization: 'Bearer ' + token.value, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+  const currentEpoch=epoch;
+  const response = await fetch('/api/v1/' + path, { method, signal, cache: 'no-store', credentials:'same-origin',
+    headers: { ...authHeaders(), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if(currentEpoch!==epoch){if(response.ok&&(path==='session'||path==='access/admin-token'))void response.json().then(value=>discardStaleSession(path,value)).catch(()=>{});throw new DOMException('Stale session','AbortError');}
+  const currentRole=response.headers.get('X-Nexus-Role');if(currentRole&&['admin','operator','viewer'].includes(currentRole))role.value=currentRole as Role;
   if (!response.ok) {
     const problem = await response.json().catch(() => ({ error: '' })) as { error?: string };
+    if(currentEpoch!==epoch)throw new DOMException('Stale session','AbortError');
     if (response.status === 401) logout();
     throw new ApiFailure(response.status, problem.error || '');
   }
   const content = await response.text();
+  if(currentEpoch!==epoch){try{discardStaleSession(path,JSON.parse(content));}catch{/* No successful session payload. */}throw new DOMException('Stale session','AbortError');}
   return (content ? JSON.parse(content) : undefined) as T;
 }
 
 function logout() {
+  rememberSignOut(true);csrfToken.value='';cookieSession.value=false;restoring.value=false;restoreFailed.value=false;busy.value=false;
   stopEvents();showGuide.value=false;selectedDevice.value='';
   cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
@@ -90,6 +117,31 @@ function logout() {
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
 
+async function signOut(){
+  if(loggingOut.value)return;
+  const headers=authHeaders();announceSession('logout');logout();error.value='';loggingOut.value=true;
+  const currentEpoch=epoch;
+  try{
+    const response=await fetch('/api/v1/session/logout',{method:'POST',cache:'no-store',credentials:'same-origin',headers,signal:AbortSignal.timeout(10000)});
+    if(!response.ok&&response.status!==401)throw new Error('Logout unconfirmed');
+  }catch{if(currentEpoch===epoch)error.value='退出结果未确认，请连接恢复后重新登录并退出。';}
+  finally{loggingOut.value=false;}
+}
+async function restoreSession(){
+  if(signedOut()){restoring.value=false;return;}
+  const currentEpoch=epoch;restoreFailed.value=false;error.value='';
+  try{
+    const response=await fetch('/api/v1/session',{cache:'no-store',credentials:'same-origin'});
+    if(currentEpoch!==epoch)return;
+    if(response.status===401||response.status===404)return;
+    if(!response.ok){const problem=await response.json().catch(()=>({error:''})) as {error?:string};throw new ApiFailure(response.status,problem.error||'');}
+    const session=await response.json() as SessionInfo;
+    if(currentEpoch!==epoch||!session.persisted)return;
+    useSession(session);authenticated.value=true;
+    await refresh(false,allResources);if(currentEpoch===epoch&&authenticated.value)startEvents();
+  }catch(failure){if(currentEpoch===epoch){restoreFailed.value=true;error.value=readFailure(failure,'暂时无法恢复登录，请重试。');}}
+  finally{if(currentEpoch===epoch)restoring.value=false;}
+}
 function querySuffix(kind: 'messages' | 'deliveries'): string {
   const search = kind === 'messages' ? messageSearch.value : deliverySearch.value;
   const state = kind === 'messages' ? messageReadStatus.value : deliveryStatus.value;
@@ -179,15 +231,16 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
 const fullRefresh = (clearFeedback = false) => refresh(clearFeedback, allResources);
 
 async function login() {
-  if(loading.value)return;
+  if(loading.value||loggingOut.value)return;
   const currentEpoch=epoch;loading.value=true;
   token.value = token.value.trim(); error.value = ''; notice.value = '';
   try {
-    const session=await api<{role:Role}>('session','POST');
+    const session=await api<SessionInfo>('session','POST',{remember:remember.value});
     if(!['admin','operator','viewer'].includes(session.role))throw new Error('Invalid session');
     if(currentEpoch!==epoch)return;
-    role.value=session.role;
-    if(await refresh(false, allResources)){authenticated.value=true;showGuide.value=devices.value.length===0;startEvents();}
+    useSession(session);rememberSignOut(false);announceSession(cookieSession.value?'login':'logout');
+    const ready=await refresh(false,allResources);
+    if(currentEpoch===epoch&&(ready||cookieSession.value)){authenticated.value=true;showGuide.value=ready&&devices.value.length===0;startEvents();}
   } catch(failure){if(currentEpoch===epoch||failure instanceof ApiFailure&&failure.status===401)error.value=readFailure(failure,'登录失败：请确认 CORE 正在运行。');}
   finally{if(currentEpoch===epoch)loading.value=false;}
 }
@@ -406,7 +459,7 @@ async function exportMetadata(kind: 'messages' | 'deliveries',content=false) {
   exportController = new AbortController(); exporting.value = kind; error.value = ''; notice.value = '';
   const query = querySuffix(kind).replace(/^&/, '?');
   try {
-    const response = await fetch(content?`/api/v1/messages/content-export?confirm=EXPORT_MESSAGE_CONTENT${querySuffix('messages')}`:`/api/v1/${kind}/export${query}`, { signal: exportController.signal, cache: 'no-store', headers: { Authorization: 'Bearer ' + token.value } });
+    const response = await fetch(content?`/api/v1/messages/content-export?confirm=EXPORT_MESSAGE_CONTENT${querySuffix('messages')}`:`/api/v1/${kind}/export${query}`, { signal: exportController.signal, cache: 'no-store', credentials:'same-origin',headers: authHeaders() });
     if (currentEpoch !== epoch || generation !== exportGeneration) return;
     if (!response.ok) {
       const problem = await response.json().catch(() => ({ error: '' })) as { error?: string };
@@ -430,12 +483,15 @@ async function exportMetadata(kind: 'messages' | 'deliveries',content=false) {
 }
 let lastPeriodic=0;
 function visibleRefresh(){if(authenticated.value&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh();}
-onMounted(() => { document.addEventListener('visibilitychange',visibleRefresh);interval = setInterval(() => { if(eventsConnected.value&&Date.now()-lastPeriodic<15000)return;lastPeriodic=Date.now();if (authenticated.value && !loading.value && !busy.value && !exporting.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
-onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefresh);stopEvents();clearInterval(interval); controller?.abort(); cancelExport(); });
+onMounted(() => {
+  if(typeof BroadcastChannel!=='undefined'){authChanges=new BroadcastChannel('nexus.console.auth');authChanges.onmessage=event=>{if(event.data?.type!=='login'&&event.data?.type!=='logout')return;logout();if(event.data.type==='login'){rememberSignOut(false);restoring.value=true;void restoreSession();}};}
+  void restoreSession();document.addEventListener('visibilitychange',visibleRefresh);interval = setInterval(() => { if(eventsConnected.value&&Date.now()-lastPeriodic<15000)return;lastPeriodic=Date.now();if (authenticated.value && !loading.value && !busy.value && !exporting.value && document.visibilityState === 'visible') void refresh(); }, 5000); });
+onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibilitychange',visibleRefresh);stopEvents();clearInterval(interval); controller?.abort(); cancelExport(); });
 </script>
 
 <template>
-  <main v-if="!authenticated" class="login-page">
+  <main v-if="restoring && !authenticated" class="login-page"><ConsoleState kind="loading">正在恢复登录…</ConsoleState></main>
+  <main v-else-if="!authenticated" class="login-page">
     <div class="login-intro">
       <div class="brand">
         <span class="pet-symbol" aria-hidden="true">
@@ -471,12 +527,13 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
           :disabled="loading"
         />
       </ConsoleField>
-      <NCheckbox class="checkbox-label" v-model:checked="tokenVisible">显示令牌</NCheckbox>
+      <div class="form-actions"><NCheckbox class="checkbox-label" v-model:checked="remember" :disabled="loading">保持登录 8 小时</NCheckbox><NCheckbox class="checkbox-label" v-model:checked="tokenVisible">显示令牌</NCheckbox></div>
       <ConsoleState v-if="error" kind="error" compact class="inline-error">{{ error }}</ConsoleState>
-      <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading">
-        {{ loading ? '正在连接…' : '进入消息中心' }}
+      <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading || loggingOut">
+        {{ loggingOut ? '正在退出…' : loading ? '正在连接…' : '进入消息中心' }}
       </NButton>
-      <small>令牌仅保留在当前页面，退出后清除。</small>
+      <small>未提交内容仅保留在当前页面。</small>
+      <NButton v-if="restoreFailed" attr-type="button" class="text-button" :disabled="loading" @click="restoring=true;restoreSession()">重试恢复登录</NButton>
     </ConsoleForm>
   </main>
   <ConsoleShell
@@ -487,7 +544,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
     :role="role"
     :loading="loading"
     :connected="status?.mqtt === 'ready'"
-    @logout="logout"
+    @logout="signOut"
     @guide="showGuide = !showGuide"
     @refresh="fullRefresh(true)"
   >
@@ -570,7 +627,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
       <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
       <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
       <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
-      <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" />
+      <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" :replace-session="replaceSession" />
       <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
       <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />
       <AutomationPanel

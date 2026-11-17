@@ -72,6 +72,58 @@ class RoleAccessFlowTest {
         var response=request("POST","access/tokens",json.writeValueAsString(Map.of("name",role+" isolated","role",role,"expiresAt",java.time.Instant.now().plusSeconds(3600).toString())),TOKEN);
         assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);return json.readTree(response.body());
     }
+    @Test void browserSessionSurvivesReloadAndIsBoundToRevocationAndCsrf() throws Exception {
+        var issued=issue("operator");String token=issued.path("token").asText(),id=issued.path("tokenId").asText();
+        var login=request("POST","session","{\"remember\":true}",token);
+        assertThat(login.statusCode()).isEqualTo(200);
+        String cookie=login.headers().firstValue("Set-Cookie").orElse("");
+        assertThat(cookie).contains("HttpOnly","SameSite=Strict","Path=/api/v1","Max-Age=28800");
+        assertThat(cookie).doesNotContain(token);
+        cookie=cookie.split(";",2)[0];
+        var restored=cookieRequest("GET","session","",cookie,null);
+        assertThat(restored.statusCode()).isEqualTo(200);
+        var session=json.readTree(restored.body());assertThat(session.path("role").asText()).isEqualTo("operator");
+        String csrf=session.path("csrfToken").asText();assertThat(csrf).hasSizeGreaterThanOrEqualTo(32);
+        assertThat(cookieRequest("POST","session/logout","",cookie,null).statusCode()).isEqualTo(403);
+        assertThat(cookieRequest("POST","session/logout","",cookie,csrf).statusCode()).isEqualTo(204);
+        assertThat(cookieRequest("GET","session","",cookie,null).statusCode()).isEqualTo(401);
+        login=request("POST","session","{\"remember\":true}",token);cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        assertThat(request("POST","access/tokens/"+id+"/revoke","{\"expectedVersion\":1}",TOKEN).statusCode()).isEqualTo(204);
+        assertThat(cookieRequest("GET","session","",cookie,null).statusCode()).isEqualTo(401);
+    }
+    HttpResponse<String> cookieRequest(String method,String path,String body,String cookie,String csrf)throws Exception {
+        var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/"+path)).header("Cookie",cookie).header("Content-Type","application/json").timeout(Duration.ofSeconds(5));
+        if(csrf!=null)b.header("X-Nexus-CSRF",csrf);
+        return http.send(b.method(method,HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    @Test void roleTokenEditsAndRotationKeepIdentityAndRejectStaleVersions() throws Exception {
+        var issued=issue("viewer");String token=issued.path("token").asText(),id=issued.path("tokenId").asText();
+        String update=json.writeValueAsString(Map.of("name","Updated role","role","operator","expiresAt",java.time.Instant.now().plusSeconds(7200).toString(),"expectedVersion",1));
+        assertThat(request("PUT","access/tokens/"+id,update,token).statusCode()).isEqualTo(403);
+        assertThat(request("PUT","access/tokens/"+id,update,TOKEN).statusCode()).isEqualTo(200);
+        assertThat(json.readTree(request("GET","session","",token).body()).path("role").asText()).isEqualTo("operator");
+        assertThat(request("PUT","access/tokens/"+id,update,TOKEN).statusCode()).isEqualTo(409);
+        var rotation=request("POST","access/tokens/"+id+"/rotate","{\"expectedVersion\":2}",TOKEN);
+        assertThat(rotation.statusCode()).isEqualTo(200);var next=json.readTree(rotation.body());
+        assertThat(next.path("tokenId").asText()).isEqualTo(id);String secret=next.path("token").asText();assertThat(secret).isNotEqualTo(token);
+        assertThat(request("GET","session","",token).statusCode()).isEqualTo(401);
+        assertThat(request("GET","session","",secret).statusCode()).isEqualTo(200);
+        assertThat(get("access/tokens").toString()).doesNotContain(secret,token,"token_hash");
+        assertThat(request("POST","access/tokens/"+id+"/rotate","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(409);
+    }
+    @Test void editedPermissionsAndExpiryAreRecheckedForEveryBrowserRequest()throws Exception {
+        var issued=issue("operator");String token=issued.path("token").asText(),id=issued.path("tokenId").asText();
+        var login=request("POST","session","{\"remember\":true}",token);String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        String update=json.writeValueAsString(Map.of("name","Now read only","role","viewer","expiresAt",java.time.Instant.now().plusSeconds(7200).toString(),"expectedVersion",1));
+        assertThat(request("PUT","access/tokens/"+id,update,TOKEN).statusCode()).isEqualTo(200);
+        var session=json.readTree(cookieRequest("GET","session","",cookie,null).body());assertThat(session.path("role").asText()).isEqualTo("viewer");
+        assertThat(cookieRequest("POST","messages","{}",cookie,session.path("csrfToken").asText()).statusCode()).isEqualTo(403);
+        var duplicate=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/session")).header("Cookie",cookie).header("Authorization","Bearer invalid-explicit-token").GET().build();
+        assertThat(http.send(duplicate,HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(401);
+        fixtures.update("UPDATE role_tokens SET expires_at=now()-interval '1 second' WHERE token_id=?",java.util.UUID.fromString(id));
+        assertThat(cookieRequest("GET","session","",cookie,null).statusCode()).isEqualTo(401);
+        assertThat(request("POST","access/tokens/"+id+"/rotate","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(409);
+    }
     @Test void rolesAreEnforcedByEveryServerMutationBoundary() throws Exception {
         String viewer=issue("viewer").path("token").asText(),operator=issue("operator").path("token").asText();
         assertThat(request("POST","session","",viewer).statusCode()).isEqualTo(200);

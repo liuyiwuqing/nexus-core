@@ -1,5 +1,5 @@
 export async function watchConsoleEvents(token:string,signal:AbortSignal,notify:(event:string)=>void):Promise<void>{
-  const response=await fetch('/api/v1/events',{headers:{Authorization:'Bearer '+token,Accept:'text/event-stream'},cache:'no-store',signal});
+  const response=await fetch('/api/v1/events',{headers:{...(token?{Authorization:'Bearer '+token}:{}),Accept:'text/event-stream'},credentials:'same-origin',cache:'no-store',signal});
   if(response.status===401){notify('unauthorized');return;}
   if(!response.ok||!response.headers.get('Content-Type')?.startsWith('text/event-stream')||!response.body)throw new Error('event_stream_unavailable');
   const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',lastRevision='';

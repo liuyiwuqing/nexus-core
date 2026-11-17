@@ -180,6 +180,7 @@ small { font-size: var(--text-sm); font-weight: 400; }
 :where(.inline-form, .record-card, .device-card, .connector-card, .management-panel) { padding: var(--pad-card); }
 .inline-form { margin-bottom: var(--space-3); }
 .inline-form > .n-form-item + .n-form-item { margin-top: var(--space-3); }
+.form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .form-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3); }
 .form-columns small { display: block; margin-top: 6px; }
 .form-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--divider); }

@@ -26,11 +26,12 @@ public class AdminAuthentication extends OncePerRequestFilter {
     private final TokenCredentials credentials;
     private final MemoryToolAccess memoryTools;
     private final RoleTokens roles;
+    private final BrowserSessions sessions;
 
-    public AdminAuthentication(TokenCredentials credentials,MemoryToolAccess memoryTools,RoleTokens roles) {
+    public AdminAuthentication(TokenCredentials credentials,MemoryToolAccess memoryTools,RoleTokens roles,BrowserSessions sessions) {
         this.credentials=credentials;
         this.memoryTools=memoryTools;
-        this.roles=roles;
+        this.roles=roles;this.sessions=sessions;
     }
 
     @Override
@@ -84,23 +85,33 @@ public class AdminAuthentication extends OncePerRequestFilter {
         if(memoryEndpoint&&!memoryTools.enabled()){response.setStatus(404);return;}
         boolean accepted;
         RoleTokens.Identity identity=null;
-        try {accepted=java.util.Collections.list(request.getHeaders("Authorization")).size()==1&&
+        BrowserSessions.Session browser=null;
+        int headers=java.util.Collections.list(request.getHeaders("Authorization")).size();
+        // Explicit Bearer credentials always take precedence, including invalid ones.
+        if(!memoryEndpoint&&headers==0){browser=sessions.resolve(request);if(browser!=null)supplied=browser.authorization();}
+        try {accepted=(headers==1||browser!=null)&&
             (memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));
-            if(!accepted&&!memoryEndpoint&&java.util.Collections.list(request.getHeaders("Authorization")).size()==1){identity=roles.authenticate(supplied);accepted=identity!=null;}
+            if(!accepted&&!memoryEndpoint&&(headers==1||browser!=null)){identity=roles.authenticate(supplied);accepted=identity!=null;}
         }
         catch(TokenCredentials.Unavailable unavailable) {
             response.setStatus(503);response.setHeader("Retry-After","1");response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"authentication_configuration_unavailable\"}");return;
         }
         if (!accepted) {
+            if(!memoryEndpoint&&headers==0&&sessions.hasCookie(request))sessions.invalidate(request,response);
             response.setHeader("WWW-Authenticate", "Bearer");
             response.setStatus(401);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"unauthorized\"}");
             return;
         }
+        if(browser!=null&&!java.util.Set.of("GET","HEAD","OPTIONS").contains(request.getMethod())&&!sessions.csrf(request,browser)){
+            response.setStatus(403);response.setContentType("application/json");response.getWriter().write("{\"error\":\"csrf_required\"}");return;
+        }
+        request.setAttribute("nexus.authorization",supplied);request.setAttribute("nexus.browserSession",browser);
         String role=memoryEndpoint?"memory":identity==null?"admin":identity.role();
         request.setAttribute("nexus.role",role);request.setAttribute("nexus.actor",memoryEndpoint?"memory-tools":identity==null?credentials.adminActor():identity.actor());
+        if(!memoryEndpoint)response.setHeader("X-Nexus-Role",role);
         if(!memoryEndpoint&&!RoleTokens.permits(role,request.getMethod(),path)) {
             response.setStatus(403);response.setContentType("application/json");response.getWriter().write("{\"error\":\"forbidden\"}");return;
         }

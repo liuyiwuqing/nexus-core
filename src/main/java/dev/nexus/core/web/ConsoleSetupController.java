@@ -14,7 +14,7 @@ public class ConsoleSetupController {
     private final ConsoleEvents events;private final JdbcTemplate db;private final MqttTransport mqtt;
     public ConsoleSetupController(ConsoleEvents events,JdbcTemplate db,MqttTransport mqtt){this.events=events;this.db=db;this.mqtt=mqtt;}
     @GetMapping(value="/api/v1/events",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
-    ResponseEntity<SseEmitter> stream(HttpServletRequest request){return ResponseEntity.ok().header("Cache-Control","no-store").header("X-Accel-Buffering","no").body(events.connect(request.getHeader("Authorization")));}
+    ResponseEntity<SseEmitter> stream(HttpServletRequest request){return ResponseEntity.ok().header("Cache-Control","no-store").header("X-Accel-Buffering","no").body(events.connect((String)request.getAttribute("nexus.authorization"),(dev.nexus.core.security.BrowserSessions.Session)request.getAttribute("nexus.browserSession")));}
     @GetMapping("/api/v1/setup") Map<String,Object> setup(){
         return Map.of("devices",ApiRows.normalize(db.queryForList("""
             SELECT v.device_id AS "deviceId",v.name,v.enabled,(v.last_seen IS NOT NULL) AS "deviceObserved",

@@ -100,7 +100,9 @@ def locked(path):
     fd=os.open(path.with_name(path.name+'.lock'),os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     try:
         info=os.fstat(fd);require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode)==0o600,'invalid_lock_file')
-        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        try:
+            # Share POSIX record locks with Java FileChannel on macOS and Linux.
+            fcntl.lockf(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise Rejected('credential_store_busy') from None
         yield
     finally:os.close(fd)

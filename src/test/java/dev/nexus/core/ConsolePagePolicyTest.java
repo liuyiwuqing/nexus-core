@@ -13,7 +13,7 @@ class ConsolePagePolicyTest {
     private MockHttpServletResponse get(String path) throws Exception {
         var request = new MockHttpServletRequest("GET", path); request.setServletPath(path);
         var response = new MockHttpServletResponse();
-        new AdminAuthentication(null, null, null).doFilter(request, response, new MockFilterChain());
+        new AdminAuthentication(null, null, null, null).doFilter(request, response, new MockFilterChain());
         return response;
     }
 

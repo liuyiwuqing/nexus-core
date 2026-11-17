@@ -59,7 +59,7 @@ class CredentialCliTest(unittest.TestCase):
         self.invoke('rotate','--scope','memory','--expected-revision',1,ok=False)
         self.assertEqual(real.read_bytes(),original);self.store.unlink();real.rename(self.store)
         with self.store.with_suffix('.json.lock').open('r+') as lock:
-            fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            fcntl.lockf(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
             self.assertEqual(self.invoke('rotate','--scope','memory','--expected-revision',1,ok=False)['reason'],'credential_store_busy')
         self.assertEqual(self.store.read_bytes(),original)
     def test_export_refuses_overwrite_unrelated_files_and_keeps_admin_out(self):
