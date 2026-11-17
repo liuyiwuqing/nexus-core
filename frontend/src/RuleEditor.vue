@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -37,7 +38,7 @@ onMounted(() => nameInput.value?.focus());
     <StatusNote v-if="session.uncertain" tone="warn">
       保存结果尚未确认。重试保持原版本和参数；也可只读核对当前规则。刷新或关闭页面后请先核对规则列表。
     </StatusNote>
-    <p v-else-if="changed" class="inline-error" role="alert">规则版本已变化，请核对后载入当前版本；草稿仍保留。</p>
+    <ConsoleState v-else-if="changed" kind="error" compact>规则版本已变化，请核对后载入当前版本；草稿仍保留。</ConsoleState>
     <p v-else-if="current?.editBlock" class="scope-note" role="status">{{ errorNames[current.editBlock] || '当前规则不可编辑。' }}</p>
     <ConsoleField
       class="spaced"

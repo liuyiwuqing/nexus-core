@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
-import { NButton, NCheckbox, NInput, NSelect, NSkeleton } from 'naive-ui';
-import { Inbox, Mail, Plus } from '@lucide/vue';
+import { NButton, NCheckbox, NInput, NSelect } from 'naive-ui';
+import { Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
 import { computed, nextTick, ref, watch } from 'vue';
@@ -46,7 +47,7 @@ async function send() {
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">消息</h1>
-        <p>{{ loading ? '正在加载…' : failed ? '未能读取消息' : `${data.total} 条消息` }}</p>
+        <p :aria-hidden="loading || failed">{{ loading || failed ? '\u00a0' : `${data.total} 条消息` }}</p>
       </div>
       <NButton
         type="primary"
@@ -159,21 +160,13 @@ async function send() {
         </NButton>
       </div>
     </ConsoleForm>
-    <div v-if="loading && !data.items.length" class="empty-state loading-state" role="status">
-      <span>正在加载消息…</span>
-      <NSkeleton v-for="line in 4" :key="line" text />
-    </div>
-    <div v-else-if="failed" class="empty-state"><h2>消息读取失败</h2></div>
-    <div v-else-if="!data.items.length && (readStatus || Object.values(search).some(Boolean))" class="empty-state">
-      <h2>没有符合条件的消息</h2>
-    </div>
-    <div v-else-if="!data.items.length" class="empty-state">
-      <div class="empty-envelope" aria-hidden="true"><Inbox /></div>
-      <h2>消息会从这里开始</h2>
-      <p>接入 Halo 后，新的公开评论会自动汇入。</p>
-      <NButton attr-type="button" class="secondary" @click="emit('connectors')">查看接入</NButton>
-    </div>
-    <div v-else class="inbox-layout" :class="{ 'has-selection': !!selected, 'short-list': data.items.length <= 4 }" :aria-busy="loading">
+    <ConsoleState v-if="loading && !data.items.length && !failed" kind="loading">正在加载消息…</ConsoleState>
+    <ConsoleState v-else-if="!failed && !data.items.length && (readStatus || Object.values(search).some(Boolean))" title="没有符合条件的消息" />
+    <ConsoleState v-else-if="!failed && !data.items.length" title="暂无消息">
+      接入来源后，新消息会显示在这里。
+      <template #actions><NButton attr-type="button" @click="emit('connectors')">查看接入</NButton></template>
+    </ConsoleState>
+    <div v-else-if="!failed" class="inbox-layout" :class="{ 'has-selection': !!selected, 'short-list': data.items.length <= 4 }" :aria-busy="loading">
       <div class="message-list" aria-label="消息列表">
         <NButton
           v-for="message in data.items"
@@ -250,10 +243,7 @@ async function send() {
           <a v-if="selected.originalUrl" :href="selected.originalUrl" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
         </div>
       </article>
-      <div v-else class="detail-placeholder">
-        <Mail aria-hidden="true" />
-        <span>选择一条消息，查看完整内容</span>
-      </div>
+      <ConsoleState v-else compact class="detail-placeholder">选择一条消息，查看完整内容</ConsoleState>
     </div>
   </section>
 </template>

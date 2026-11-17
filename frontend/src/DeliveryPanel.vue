@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { NButton, NSelect, type SelectInst } from 'naive-ui';
 import { useAccess } from './access';
@@ -25,7 +26,7 @@ async function closeHistory() {
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">投递</h1>
-        <p>{{ loading ? '正在加载…' : failed ? '未能读取投递' : `${data.total} 条投递 · 区分已发送、设备确认与用户已读` }}</p>
+        <p :aria-hidden="loading || failed">{{ loading || failed ? '\u00a0' : `${data.total} 条投递 · 区分已发送、设备确认与用户已读` }}</p>
       </div>
     </div>
     <ListSearchForm
@@ -63,16 +64,10 @@ async function closeHistory() {
         />
       </ConsoleField>
     </ListSearchForm>
-    <div v-if="loading && !data.items.length" class="empty-state" role="status">正在加载投递…</div>
-    <div v-else-if="failed" class="empty-state"><h2>投递读取失败</h2></div>
-    <div v-else-if="!data.items.length && (status || Object.values(search).some(Boolean))" class="empty-state">
-      <h2>没有符合条件的投递</h2>
-    </div>
-    <div v-else-if="!data.items.length" class="empty-state">
-      <h2>还没有投递记录</h2>
-      <p>消息到达后，会为已启用的设备建立投递记录。</p>
-    </div>
-    <div v-else class="table-shell" tabindex="0" role="region" aria-label="投递记录，可用方向键横向滚动查看全部列">
+    <ConsoleState v-if="loading && !data.items.length && !failed" kind="loading">正在加载投递…</ConsoleState>
+    <ConsoleState v-else-if="!failed && !data.items.length && (status || Object.values(search).some(Boolean))" title="没有符合条件的投递" />
+    <ConsoleState v-else-if="!failed && !data.items.length" title="还没有投递记录">消息到达后，会为已启用的设备建立投递记录。</ConsoleState>
+    <div v-else-if="!failed" class="table-shell" tabindex="0" role="region" aria-label="投递记录，可用方向键横向滚动查看全部列">
       <table>
         <thead>
           <tr>

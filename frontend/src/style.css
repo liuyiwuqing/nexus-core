@@ -156,7 +156,8 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .section-heading .management-actions { align-items: center; }
 /* 操作结果吸在页头下方：长列表页滚到深处执行操作后，结果仍在视口内。
    静止时自然位置就在吸顶位之下，所以不改变任何现有布局。 */
-.feedback { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-size: var(--text-base); position: sticky; top: var(--topbar-h); z-index: var(--z-sticky-feedback); box-shadow: var(--shadow-1); }
+.feedback { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-size: var(--text-base); }
+.global-feedback { position: sticky; top: calc(var(--topbar-h) + var(--space-2)); z-index: var(--z-sticky-feedback); box-shadow: var(--shadow-1); }
 .feedback.error { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
 .inline-error { color: var(--danger); font-size: var(--text-base); }
 .list-filters { display: grid; grid-template-columns: minmax(110px,.8fr) minmax(140px,1fr) repeat(2,minmax(170px,1.1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
@@ -185,12 +186,26 @@ small { font-size: var(--text-sm); font-weight: 400; }
 /* 页脚这句是"提交前必须看到的承诺"（装到哪、装完还要做什么），不是补充说明；
    用 --muted 会和旁边的灰色脚注同级，读起来像可以跳过。 */
 .form-footer > span { font-size: var(--text-sm); color: var(--ink-2); }
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; padding: var(--space-4) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); text-align: center; }
-.empty-state h2 { font-size: var(--text-lg); }
-.empty-state p { max-width: 46ch; margin: var(--space-2) 0 var(--space-3); font-size: var(--text-base); color: var(--muted); }
-p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transparent; }
-.empty-envelope { display: grid; place-items: center; width: 54px; height: 54px; margin-bottom: 20px; border-radius: var(--radius-xl); background: var(--accent-soft-weak); color: var(--success); }
-.empty-envelope svg { width: 25px; height: 25px; }
+.console-state { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; margin-block: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--muted); font-size: var(--text-base); text-align: left; }
+.console-state-icon { flex: 0 0 auto; margin-top: 1px; }
+.console-state-body { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.console-state h2, .console-state strong { margin: 0; color: var(--ink); font-size: var(--text-base); font-weight: 600; }
+.console-state-description { line-height: 1.6; }
+.console-state-body > :is(h2, strong) + .console-state-description { margin-top: var(--space-1); }
+.console-state-description p { margin: 0; }
+.console-state-actions { display: flex; flex-wrap: wrap; align-items: center; align-self: center; gap: var(--space-2); }
+.console-state--empty:not(.is-compact), .console-state--loading:not(.is-compact) { min-height: 96px; align-items: center; }
+.console-state--loading { background: var(--surface-subtle); }
+.console-state-skeleton { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.console-state.is-compact:not(.feedback) { padding: var(--space-2) 0; border: 0; border-radius: 0; background: transparent; }
+.console-state.feedback { border-radius: var(--radius-md); color: var(--success); }
+.console-state.feedback.error { color: var(--danger); }
+.console-state--warn.feedback { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
+@media (max-width: 760px) {
+  .console-state { flex-wrap: wrap; gap: var(--space-2); }
+  .console-state-body { flex-basis: calc(100% - 28px); }
+  .console-state-actions { margin-left: 28px; }
+}
 /* 较长列表在视口内滚动；四条以内收紧容器，避免少量数据撑出整屏空白。 */
 .inbox-layout { display: grid; grid-template-columns: minmax(260px,34%) minmax(0,1fr); height: clamp(320px,calc(100dvh - 280px),880px); min-height: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
 .inbox-layout.short-list { height: 340px; }
@@ -212,6 +227,8 @@ p.empty-state { min-height: 0; padding: 20px 0; border: 0; background: transpare
 .detail-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--divider); font-size: var(--text-base); }
 .read-label { color: var(--success); font-size: var(--text-base); }
 .detail-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); min-height: 100%; padding: 24px; color: var(--muted); font-size: var(--text-base); }
+.detail-placeholder.console-state { margin: 0; min-height: 0; }
+.detail-placeholder .console-state-body { flex: 0 1 auto; }
 .detail-placeholder svg { width: 34px; height: 34px; stroke-width: 1.2; color: var(--faint); }
 /* 徽标：颜色只承担"哪一档"，文字始终同时出现；色点固定 5px，与文字间距 5px。
    info 用于"进行中/等待"这类中性事实，danger 只给确定失败，busy 给升级安装。 */
@@ -283,11 +300,11 @@ dd { margin: 0; text-align: left; overflow-wrap: anywhere; }
 .scope-note { margin-top: var(--space-4); }
 /* 状态提示三档：info 与原来的灰字脚注一致；warn/danger 带底色，因为它承载"结果未确认"这类要处理的信息。
    类名沿用 scope-note，跨仓断言以它为钩子。 */
-.status-note { display: flex; align-items: flex-start; gap: 12px; }
-.status-note-text { flex: 1 1 auto; min-width: 0; }
+.status-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-block: var(--space-3); }
+.status-note-text { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
 /* 提示里的按钮比正文高，靠顶对齐会把盒子重心压到上半部；单独让动作区在竖向上居中。 */
 .status-note-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; align-self: center; }
-.status-note--warn, .status-note--danger { padding: 12px 16px; border-radius: var(--radius-md); color: var(--ink-2); }
+.status-note--warn, .status-note--danger { padding: var(--space-3); border-radius: var(--radius-md); color: var(--ink-2); }
 .status-note--warn { border: 1px solid var(--warning-border); background: var(--warning-soft); }
 .status-note--danger { border: 1px solid var(--danger-border); background: var(--danger-soft); }
 .status-note--warn, .status-note--danger { font-size: var(--text-base); }
@@ -363,7 +380,6 @@ button.mobile-back { display: none; }
 .history-range, .history-metrics { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .history-metrics { margin-top: var(--space-3); }
 .history-export { margin-left: auto; }
-.history-empty { margin: var(--space-4) 0; color: var(--muted); font-size: var(--text-sm); }
 .management-record { padding: var(--space-3) 0; border-bottom: 1px solid var(--divider); font-size: var(--text-sm); }
 .management-record p { line-height: 1.8; }
 .pet-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin: 0 0 var(--space-3); overflow: hidden; }
@@ -490,8 +506,6 @@ button.mobile-menu { display: none; }
 .checkbox-label.n-checkbox { margin: var(--space-3) 0; }
 .n-slider { margin: var(--space-2) 0; }
 
-.loading-state { align-items: stretch; gap: var(--space-4); padding-inline: var(--space-8); }
-.loading-state > span { text-align: left; font-size: var(--text-base); color: var(--muted); }
 .export-actions { position: relative; }
 .export-menu { position: absolute; z-index: var(--z-dropdown); top: calc(100% + 8px); right: 0; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); width: 300px; max-width: calc(100vw - 72px); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-2); }
 .export-menu .inline-form { margin: 8px 0 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; }

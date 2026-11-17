@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
+import StatusNote from './StatusNote.vue';
 import { NButton } from 'naive-ui';
 import { useAccess } from './access';
 const { operate } = useAccess();
@@ -74,19 +76,19 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); clearInter
   <section ref="panel" class="management-panel delivery-history-panel" tabindex="-1" aria-label="投递状态时间线">
     <div class="record-heading"><h2>投递状态时间线</h2><div class="management-actions"><NButton attr-type="button" class="text-button" :disabled="loading || sending" @click="load()">刷新时间线</NButton><NButton attr-type="button" class="text-button" @click="emit('close')">收起时间线</NButton></div></div>
     <p class="management-hint mono">{{ eventId }}</p>
-    <p v-if="cancelError" :class="uncertain ? 'management-hint' : 'inline-error'" :role="uncertain ? 'status' : 'alert'">{{ cancelError }}</p>
-    <p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
-    <p v-if="loading && !data" class="muted" role="status" aria-busy="true">正在读取时间线…</p>
-    <p v-else-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
+    <StatusNote v-if="cancelError" :tone="uncertain ? 'warn' : 'danger'">{{ cancelError }}</StatusNote>
+    <ConsoleState v-else-if="notice" kind="success" compact>{{ notice }}</ConsoleState>
+    <ConsoleState v-if="loading && !data" kind="loading" compact>正在读取时间线…</ConsoleState>
+    <ConsoleState v-else-if="loadError" kind="error" compact>{{ loadError }}</ConsoleState>
     <template v-else-if="data">
-      <p v-if="loading" class="management-hint" role="status">正在更新时间线…</p>
+      <ConsoleState v-if="loading" kind="loading" compact>正在更新时间线…</ConsoleState>
       <div class="management-status"><span class="badge">{{ deliveryNames[data.delivery.status] || data.delivery.status }}</span><span>本轮尝试 {{ data.delivery.attempts }}</span><NButton attr-type="button" v-if="operate && data.delivery.canCancel && !confirmCancel && !uncertain" class="secondary compact" :disabled="busy || sending || loading" @click="confirmCancel = true">取消投递</NButton></div>
       <div v-if="operate && data.delivery.canCancel && (confirmCancel || uncertain)" class="delivery-cancel-confirm">
         <p>取消这条尚未开始发送的投递？不删除消息，也不影响其他设备。</p>
         <div class="management-actions"><NButton attr-type="button" class="secondary compact" :disabled="sending || busy || loading" @click="cancel">{{ sending ? '正在取消…' : uncertain ? '重试取消同一投递' : '确认取消' }}</NButton><NButton attr-type="button" v-if="!uncertain" class="text-button" :disabled="sending" @click="confirmCancel = false">暂不取消</NButton></div>
       </div>
       <p v-if="!data.includesCreation" class="management-hint" role="status">仅记录开始留存后的变化，此前历史未知。</p>
-      <p v-if="!data.items.length" class="muted">尚无可读取的变化记录。</p>
+      <ConsoleState v-if="!data.items.length" compact>尚无可读取的变化记录。</ConsoleState>
       <ol v-else class="delivery-timeline"><li v-for="item in data.items" :key="item.sequence">
         <div class="record-heading"><strong>{{ kindNames[item.kind] || '状态记录' }}</strong><time :datetime="item.recordedAt">{{ historyTime(item.recordedAt) }}</time></div>
         <p><template v-if="item.previousStatus">{{ deliveryNames[item.previousStatus] || item.previousStatus }} → </template>{{ deliveryNames[item.status] || item.status }} · 本轮尝试 {{ item.attempts }}</p>

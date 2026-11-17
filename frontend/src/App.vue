@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import ConsoleForm from './ConsoleForm.vue';
 import { fieldRule } from './formRules';
@@ -471,7 +472,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
         />
       </ConsoleField>
       <NCheckbox class="checkbox-label" v-model:checked="tokenVisible">显示令牌</NCheckbox>
-      <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
+      <ConsoleState v-if="error" kind="error" compact class="inline-error">{{ error }}</ConsoleState>
       <NButton type="primary" attr-type="submit" class="primary full-width" :disabled="loading">
         {{ loading ? '正在连接…' : '进入消息中心' }}
       </NButton>
@@ -492,14 +493,14 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
   >
     <main id="main-content" class="content" tabindex="-1">
       <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide = false" @navigate="tab = $event" />
-      <div v-if="error" class="feedback error" role="alert">
-        <span>{{ error }}</span>
-        <NButton attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton>
-      </div>
-      <div v-else-if="notice" class="feedback" role="status">
-        <span>{{ notice }}</span>
-        <NButton attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton>
-      </div>
+      <ConsoleState v-if="error" kind="error" compact class="global-feedback">
+        {{ error }}
+        <template #actions><NButton attr-type="button" :disabled="loading" @click="fullRefresh(true)">重试</NButton></template>
+      </ConsoleState>
+      <ConsoleState v-else-if="notice" kind="success" compact class="global-feedback">
+        {{ notice }}
+        <template #actions><NButton attr-type="button" aria-label="关闭提示" @click="notice = ''">×</NButton></template>
+      </ConsoleState>
       <InboxPanel
         v-if="tab === 'inbox'"
         :data="messages"
@@ -527,13 +528,15 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
         v-else-if="tab === 'devices'"
         :items="selectedDevice ? devices.filter((d) => d.deviceId === selectedDevice) : devices"
         :busy="busy"
+        :loading="loading"
+        :failed="readFailed"
         :api="api"
         :register="register"
         :enable="enable"
         :rename="rename"
       />
       <section v-else-if="tab === 'connectors'">
-        <ConnectorsPanel :items="connectors" :busy="busy" :poll="poll" :import-comment="importComment" />
+        <ConnectorsPanel :items="connectors" :busy="busy" :loading="loading" :failed="readFailed" :poll="poll" :import-comment="importComment" />
         <PullPanel :api="api" :busy="busy" :session="pullSession" :mutate="mutate" @messages="pullMessages" />
         <SourcesPanel :api="api" :devices="devices" :busy="busy" :session="sourceSession" :mutate="mutate" />
       </section>

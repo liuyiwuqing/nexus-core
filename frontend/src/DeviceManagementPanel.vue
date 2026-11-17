@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -200,10 +201,10 @@ onUnmounted(() => {
         <NButton attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
       </div>
     </div>
-    <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
-    <p v-else-if="loading && !data" role="status">正在读取设备状态…</p>
+    <ConsoleState v-if="loadError" kind="error" compact>{{ loadError }}</ConsoleState>
+    <ConsoleState v-else-if="loading && !data" kind="loading" compact>正在读取设备状态…</ConsoleState>
     <template v-if="data">
-      <p v-if="!data.telemetry" class="management-status">尚未收到设备状态，连接设备后将自动显示。</p>
+      <ConsoleState v-if="!data.telemetry" compact>尚未收到设备状态，连接设备后将自动显示。</ConsoleState>
       <template v-else>
         <div class="management-status">
           <span class="badge" :class="data.fresh ? 'success' : ''" :title="data.fresh ? '90 秒内收到的新遥测' : '超过 90 秒未收到新遥测'">
@@ -254,8 +255,8 @@ onUnmounted(() => {
           <NButton attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton>
         </template>
       </StatusNote>
-      <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
-      <p v-else-if="notice" class="management-hint" role="status">{{ notice }}</p>
+      <ConsoleState v-if="submitError" kind="error" compact>{{ submitError }}</ConsoleState>
+      <ConsoleState v-else-if="notice" kind="success" compact>{{ notice }}</ConsoleState>
       <ConsoleForm v-if="form" class="management-form" @submit.prevent="submit">
         <div class="form-fields">
           <div class="form-columns">
@@ -439,10 +440,10 @@ onUnmounted(() => {
             导出 CSV
           </NButton>
         </div>
-        <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
-        <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
+        <ConsoleState v-if="historyError" kind="error" compact>{{ historyError }}</ConsoleState>
+        <ConsoleState v-else-if="historyLoading && !history" kind="loading" compact>正在读取历史…</ConsoleState>
         <template v-else-if="history">
-          <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
+          <ConsoleState v-if="!history.points.length" compact>所选范围内没有采样点。</ConsoleState>
           <template v-else>
             <TelemetryChart
               :points="history.points"
@@ -479,8 +480,9 @@ onUnmounted(() => {
             {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
           </NButton>
           <template v-if="auditId === item.requestId">
-            <p v-if="auditLoading" role="status">正在读取…</p>
-            <p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p>
+            <ConsoleState v-if="auditLoading" kind="loading" compact>正在读取…</ConsoleState>
+            <ConsoleState v-else-if="auditError" kind="error" compact>{{ auditError }}</ConsoleState>
+            <ConsoleState v-else-if="!audit.length" compact>尚无操作记录。</ConsoleState>
             <ol v-else class="audit-list">
               <li v-for="entry in audit" :key="entry.sequence">
                 {{ formatTime(entry.createdAt) }} · {{ eventNames[entry.event] || '状态更新' }}

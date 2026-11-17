@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -65,7 +66,7 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">Mac 工具</h1>
-        <p>
+        <p v-if="catalog || error">
           {{
             error
               ? 'Bridge 状态未知'
@@ -81,8 +82,8 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
       </div>
       <NButton attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
     </div>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取工具状态…</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!catalog">正在读取工具状态…</ConsoleState>
     <StatusNote v-if="uncertain" tone="warn">工具请求结果尚未确认，重试将核对同一请求和参数。刷新或关闭页面后请先核对请求列表。</StatusNote>
     <ConsoleForm v-if="catalog && !error" class="inline-form task-form" @submit.prevent="prepare">
       <div class="form-columns">
@@ -143,10 +144,7 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
         </NButton>
       </div>
     </ConsoleForm>
-    <div v-if="!jobs.length && !loading && !error" class="empty-state">
-      <h2>暂无工具请求</h2>
-      <p>执行状态和确认记录会保留在这里。</p>
-    </div>
+    <ConsoleState v-if="!jobs.length && !loading && !error" title="暂无工具请求" />
     <div class="record-list">
       <article v-for="job in jobs" :key="job.jobId" class="record-card">
         <div class="record-heading">
@@ -160,7 +158,7 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
           {{ formatTime(job.createdAt) }}
           <template v-if="job.state === 'awaiting_confirmation'">· 确认期限 {{ formatTime(job.expiresAt) }}</template>
         </small>
-        <p v-if="job.lastError" class="inline-error">{{ errorNames[job.lastError] || '执行未完成，请检查 Bridge 配置与白名单。' }}</p>
+        <ConsoleState v-if="job.lastError" kind="error" compact>{{ errorNames[job.lastError] || '执行未完成，请检查 Bridge 配置与白名单。' }}</ConsoleState>
         <p v-if="job.state === 'unknown'" class="scope-note">先核对原请求结果，避免重复执行。</p>
         <dl v-if="job.result && Object.keys(job.result).length" class="tool-result">
           <div v-for="(value, key) in job.result" :key="key">
@@ -201,9 +199,9 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
             {{ auditId === job.jobId ? '收起记录' : '查看记录' }}
           </NButton>
         </div>
-        <p v-if="auditId === job.jobId && auditLoading" class="muted" role="status">正在读取记录…</p>
-        <p v-else-if="auditId === job.jobId && auditError" class="inline-error" role="alert">{{ auditError }}</p>
-        <p v-else-if="auditId === job.jobId && !audit.length" class="muted">尚无审计记录。</p>
+        <ConsoleState v-if="auditId === job.jobId && auditLoading" kind="loading" compact>正在读取记录…</ConsoleState>
+        <ConsoleState v-else-if="auditId === job.jobId && auditError" kind="error" compact>{{ auditError }}</ConsoleState>
+        <ConsoleState v-else-if="auditId === job.jobId && !audit.length" compact>尚无审计记录。</ConsoleState>
         <ol v-else-if="auditId === job.jobId" class="audit-list">
           <li v-for="row in audit" :key="row.sequence">
             {{ formatTime(row.createdAt) }} · {{ events[row.event] || row.event }}

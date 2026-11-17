@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -134,12 +135,12 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
         <NButton attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
       </div>
     </div>
-    <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
-    <p v-else-if="loading && !data" role="status">正在读取升级状态…</p>
+    <ConsoleState v-if="loadError" kind="error" compact>{{ loadError }}</ConsoleState>
+    <ConsoleState v-else-if="loading && !data" kind="loading" compact>正在读取升级状态…</ConsoleState>
     <template v-if="data">
-      <p v-if="!data.enabled" class="management-hint">远程升级尚未启用。</p>
+      <ConsoleState v-if="!data.enabled" kind="info" compact>远程升级尚未启用。</ConsoleState>
       <template v-else>
-        <p v-if="!data.observation" class="management-hint">尚未收到设备升级状态。</p>
+        <ConsoleState v-if="!data.observation" compact>尚未收到设备升级状态。</ConsoleState>
         <div v-else class="management-status">
           <span class="badge" :class="data.fresh ? 'success' : ''">{{ data.fresh ? '状态已更新' : '状态已过期' }}</span>
           <span>{{ names[data.observation.state] || '等待核对' }}</span>
@@ -169,8 +170,8 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
             <span :style="{ width: writtenPercent + '%' }"></span>
           </div>
         </template>
-        <p v-if="error && !pending" class="inline-error" role="alert">{{ error }}</p>
-        <p v-else-if="notice && !pending" class="management-hint" role="status">{{ notice }}</p>
+        <ConsoleState v-if="error && !pending" kind="error" compact>{{ error }}</ConsoleState>
+        <ConsoleState v-else-if="notice && !pending" kind="success" compact>{{ notice }}</ConsoleState>
         <p v-if="data.installBlock" class="management-hint" role="status">
           {{ errorNames[data.installBlock] || '请核对设备状态后再安装。' }}
         </p>
@@ -188,7 +189,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
               :input-props="{ id: 'remoteotapanel-field-1', 'aria-label': '可安装版本' }"
             />
           </ConsoleField>
-          <p v-if="!compatible.length" class="management-hint">没有匹配设备身份且序号更高的版本。</p>
+          <ConsoleState v-if="!compatible.length" compact>没有匹配设备身份且序号更高的版本。</ConsoleState>
           <StatusNote v-if="pending" tone="warn">
             提交结果未确认，保留原请求，等待核对。
             <template #actions>
@@ -240,14 +241,14 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
               <NButton attr-type="button" :disabled="blocked">选择 manifest 文件</NButton>
             </NUpload>
           </ConsoleField>
-          <p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p>
+          <ConsoleState v-if="fileError" kind="error" compact>{{ fileError }}</ConsoleState>
           <p class="management-hint">先将签名包部署到设备配置的 HTTPS 发布根，登记后目录不可换包。</p>
           <div class="form-footer">
             <span></span>
             <NButton attr-type="submit" class="secondary" :disabled="blocked || !manifest || !catalogId">登记</NButton>
           </div>
         </ConsoleForm>
-        <p v-if="!data.deployments.length" class="management-hint">暂无升级记录。</p>
+        <ConsoleState v-if="!data.deployments.length" compact>暂无升级记录。</ConsoleState>
         <ConsoleDisclosure v-if="data.deployments.length" label="升级记录" class="ota-history" :level="3"
           :summary="`${data.deployments.length} 条`" :force-open="!!pending || !!confirming || data.deployments.some(item => item.status !== 'healthy')">
         <div v-for="item in data.deployments" :key="item.requestId" class="management-record">
@@ -306,8 +307,9 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
             {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
           </NButton>
           <template v-if="auditId === item.requestId">
-            <p v-if="auditLoading" role="status">正在读取…</p>
-            <p v-if="auditError" class="inline-error" role="alert">{{ auditError }}</p>
+            <ConsoleState v-if="auditLoading" kind="loading" compact>正在读取…</ConsoleState>
+            <ConsoleState v-else-if="auditError" kind="error" compact>{{ auditError }}</ConsoleState>
+            <ConsoleState v-else-if="!audit.length" compact>尚无操作记录。</ConsoleState>
             <ol v-else class="audit-list">
               <li v-for="entry in audit" :key="entry.sequence">
                 {{ formatTime(entry.createdAt) }} · {{ events[entry.event] || names[entry.event] || '状态更新' }}

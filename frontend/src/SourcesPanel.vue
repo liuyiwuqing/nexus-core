@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -45,8 +46,8 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </NButton>
       </div>
     </div>
-    <p v-if="loading" role="status">正在读取来源…</p>
-    <p v-if="error" role="alert" class="feedback error">{{ error }}</p>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!items.length">正在读取来源…</ConsoleState>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <StatusNote v-if="session.pending" tone="warn">
       操作结果尚未确认，重试保持同一请求与参数。
       <template #actions>
@@ -147,7 +148,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       </div>
     </ConsoleForm>
     <div v-if="!loading && !error" class="record-list spaced">
-      <p v-if="!items.length" class="empty-state">暂无 Webhook 来源</p>
+      <ConsoleState v-if="!items.length" title="暂无 Webhook 来源" compact />
       <article v-for="s in items" :key="s.id" class="record-card">
         <div class="record-heading">
           <h3>{{ s.name }}</h3>

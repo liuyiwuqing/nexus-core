@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -45,14 +46,14 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
 </script>
 
 <template>
-  <section>
+  <section :aria-busy="loading">
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">一起成长</h1>
       </div>
       <NButton attr-type="button" class="text-button" :disabled="loading" @click="load">刷新</NButton>
     </div>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <template v-if="profile">
       <h2 class="profile-heading">CORE 专注档案</h2>
       <dl class="pet-stats">
@@ -127,7 +128,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
       </div>
       </ConsoleDisclosure>
     </template>
-    <p v-else-if="loading" class="muted" role="status">正在读取成长档案…</p>
+    <ConsoleState v-else-if="loading && !error" kind="loading" :compact="false">正在读取成长档案…</ConsoleState>
     <DeviceGrowthPanel :api="api" />
   </section>
 </template>

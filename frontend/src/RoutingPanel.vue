@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -48,8 +49,8 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </NButton>
       </div>
     </div>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <p v-if="loading" role="status">正在读取路由…</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!rules.length">正在读取路由…</ConsoleState>
     <div v-if="!loading && !error" class="inline-form">
       <div class="record-heading">
         <h2>{{ policy.mode === 'broadcast' ? '默认广播' : '按规则路由' }}</h2>
@@ -289,7 +290,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       </div>
     </ConsoleForm>
     <div v-if="!loading && !error" class="record-list spaced">
-      <p v-if="!rules.length" class="empty-state">暂无路由规则</p>
+      <ConsoleState v-if="!rules.length" title="暂无路由规则" compact />
       <article v-for="r in rules" :key="r.ruleId" class="record-card">
         <div class="record-heading">
           <h2>{{ r.definition.name }}</h2>

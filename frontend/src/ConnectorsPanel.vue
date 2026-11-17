@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -7,7 +8,7 @@ import { useAccess } from './access';
 const { admin } = useAccess();
 import { formatTime, errorNames, type Connector } from './types';
 import { ref } from 'vue';
-const props = defineProps<{ items: Connector[]; busy: boolean; poll: () => Promise<boolean>; importComment: (name: string) => Promise<boolean> }>();
+const props = defineProps<{ items: Connector[]; busy: boolean; loading: boolean; failed: boolean; poll: () => Promise<boolean>; importComment: (name: string) => Promise<boolean> }>();
 const commentName = ref('');
 const importOpen = ref<Record<string, boolean>>({});
 async function importOne() { if (await props.importComment(commentName.value.trim())) commentName.value = ''; }
@@ -20,7 +21,9 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
         <h1 tabindex="-1">接入</h1>
       </div>
     </div>
-    <article v-for="connector in items" :key="connector.id" class="connector-card">
+    <ConsoleState v-if="loading && !items.length && !failed" kind="loading">正在读取接入…</ConsoleState>
+    <ConsoleState v-else-if="!failed && !items.length" title="暂无 Halo 接入" compact />
+    <article v-for="connector in failed ? [] : items" :key="connector.id" class="connector-card">
       <div class="connector-top">
         <div class="source-icon" aria-hidden="true">H</div>
         <div>
@@ -45,7 +48,7 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
           <dd>{{ formatTime(connector.since) }}</dd>
         </div>
       </dl>
-      <p v-if="connector.lastError" class="inline-error">{{ errorNames['halo_' + connector.lastError] || '同步失败，请检查连接配置。' }}</p>
+      <ConsoleState v-if="connector.lastError" kind="error" compact>{{ errorNames['halo_' + connector.lastError] || '同步失败，请检查连接配置。' }}</ConsoleState>
       <div class="connector-footer">
         <span>{{ connector.configured ? '每分钟自动同步，重复评论会自动合并。' : '在本机配置 Halo 只读令牌后启用。' }}</span>
         <NButton attr-type="button" v-if="admin" class="secondary" :disabled="busy || !connector.configured" @click="poll">

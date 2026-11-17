@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -29,8 +30,8 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       </div>
       <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新权限与审计</NButton>
     </div>
-    <p v-if="loading" role="status">正在读取…</p>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!tokens.length">正在读取…</ConsoleState>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <div v-if="issued" class="inline-form">
       <h2>本次角色令牌</h2>
       <NInput
@@ -109,6 +110,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
     </ConsoleForm>
     </ConsoleDisclosure>
     <div v-if="!loading && !error" class="record-list spaced">
+      <ConsoleState v-if="!tokens.length" title="暂无角色令牌" compact />
       <article v-for="t in tokens" :key="t.tokenId" class="record-card">
         <div class="record-heading">
           <h2>{{ t.name }}</h2>
@@ -163,7 +165,8 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </ConsoleField>
       </div>
       <p>记录请求结果，不含令牌、消息正文或参数；未完成记录表示结果需要核对。</p>
-      <div class="table-shell" tabindex="0" role="region" aria-label="操作审计，可用方向键横向滚动查看全部列">
+      <ConsoleState v-if="!loading && !error && !audit.length" compact>暂无操作审计。</ConsoleState>
+      <div v-if="audit.length && !error" class="table-shell" tabindex="0" role="region" aria-label="操作审计，可用方向键横向滚动查看全部列">
         <table>
           <thead>
             <tr>

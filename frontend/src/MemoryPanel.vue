@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -57,7 +58,7 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
 </script>
 
 <template>
-  <section aria-label="长期记忆">
+  <section aria-label="长期记忆" :aria-busy="checking || loading">
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">长期记忆</h1>
@@ -65,7 +66,7 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
       </div>
       <NButton attr-type="button" class="text-button" :disabled="checking" @click="load">刷新记忆状态</NButton>
     </div>
-    <p v-if="healthError" class="feedback error" role="alert">{{ healthError }}</p>
+    <ConsoleState v-if="healthError" kind="error" compact>{{ healthError }}</ConsoleState>
     <dl v-if="health" class="management-metrics memory-metrics">
       <div>
         <dt>已保存</dt>
@@ -80,10 +81,11 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
         <dd>{{ health.deletionErrors }}</dd>
       </div>
     </dl>
-    <p v-if="health && (health.identityBlockedCopies || 0) > 0" class="feedback" role="status">
+    <ConsoleState v-if="health && (health.identityBlockedCopies || 0) > 0" kind="warn" compact>
       {{ health.identityBlockedCopies }} 条旧副本的身份需要核对，已暂停检索和删除。
-    </p>
-    <p v-if="health && !health.configured" class="muted">长期记忆未启用，请在 CORE 配置中启用服务。</p>
+    </ConsoleState>
+    <ConsoleState v-if="checking && !health && !healthError" kind="loading" compact>正在读取记忆状态…</ConsoleState>
+    <ConsoleState v-if="health && !health.configured" kind="info" compact>长期记忆未启用，请在 CORE 配置中启用服务。</ConsoleState>
     <ConsoleForm class="inline-form memory-search" @submit.prevent="search">
       <ConsoleField
         path="field-1"
@@ -99,17 +101,17 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
         />
       </ConsoleField>
       <div class="form-footer">
-        <span v-if="loading" role="status">正在检索并核验来源…</span>
+        <ConsoleState v-if="loading" kind="loading" compact>正在检索并核验来源…</ConsoleState>
         <span v-else></span>
         <NButton type="primary" attr-type="submit" class="primary" :disabled="loading || !health?.configured || !query.trim()">
           {{ loading ? '检索中…' : '检索' }}
         </NButton>
       </div>
     </ConsoleForm>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <p v-if="partial" class="feedback" role="status">部分来源暂时无法核验，已隐藏相关结果。</p>
-    <p v-if="expired" class="muted" role="status">结果已过期，请重新检索。</p>
-    <p v-else-if="searched && !hits.length" class="muted" role="status">没有可返回的公开评论。</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
+    <ConsoleState v-if="partial" kind="warn" compact>部分来源暂时无法核验，已隐藏相关结果。</ConsoleState>
+    <ConsoleState v-if="expired" kind="info" compact>结果已过期，请重新检索。</ConsoleState>
+    <ConsoleState v-else-if="searched && !hits.length" compact>没有可返回的公开评论。</ConsoleState>
     <div class="record-list memory-results" aria-live="polite">
       <article v-for="hit in hits" :key="hit.messageId" class="record-card">
         <div class="record-heading">

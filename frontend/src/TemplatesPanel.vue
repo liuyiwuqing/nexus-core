@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -46,8 +47,8 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </NButton>
       </div>
     </div>
-    <p v-if="loading" role="status">正在读取模板…</p>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!items.length">正在读取模板…</ConsoleState>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <ConsoleForm v-if="session.draft" class="inline-form" aria-label="模板编辑" @submit.prevent="save">
       <h2>{{ session.version ? '编辑模板' : '创建模板' }}</h2>
       <StatusNote v-if="session.uncertain" tone="warn">保存结果未确认，重试原版本或只读核对。</StatusNote>
@@ -139,7 +140,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       </div>
     </ConsoleForm>
     <div v-if="!loading && !error" class="record-list spaced">
-      <p v-if="!items.length" class="empty-state">暂无模板</p>
+      <ConsoleState v-if="!items.length" title="暂无模板" compact />
       <article v-for="t in items" :key="t.templateId" class="record-card">
         <div class="record-heading">
           <h2>{{ t.definition.name }}</h2>

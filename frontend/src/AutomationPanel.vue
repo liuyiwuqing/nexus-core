@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
@@ -104,8 +105,8 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         </NButton>
       </div>
     </div>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取自动化状态…</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
+    <ConsoleState v-if="loading" kind="loading" :compact="!!rules.length">正在读取自动化状态…</ConsoleState>
     <StatusNote v-if="uncertain" tone="warn">规则保存结果尚未确认，重试保持同一规则和参数。刷新或关闭页面后请先核对规则列表。</StatusNote>
     <RuleEditor
       v-if="editor"
@@ -148,11 +149,11 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         </div>
       </div>
     </ConsoleForm>
-    <div v-if="previewLoading" class="scope-note" role="status">正在预演规则…</div>
-    <p v-if="previewError" class="feedback error" role="alert">
+    <ConsoleState v-if="previewLoading" kind="loading" compact>正在预演规则…</ConsoleState>
+    <ConsoleState v-if="previewError" kind="error" compact>
       {{ previewError }}
-      <NButton attr-type="button" class="text-button" @click="closePreview">关闭</NButton>
-    </p>
+      <template #actions><NButton attr-type="button" @click="closePreview">关闭</NButton></template>
+    </ConsoleState>
     <section v-if="preview" class="inline-form rule-preview" aria-label="规则预演结果">
       <div class="record-heading">
         <h2>{{ preview.rule.name }} · 版本 {{ preview.rule.version }}</h2>
@@ -311,10 +312,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         </NButton>
       </div>
     </ConsoleForm>
-    <div v-if="!rules.length && !loading && !error" class="empty-state">
-      <h2>暂无自动化规则</h2>
-      <p>规则启用后才处理新事件。</p>
-    </div>
+    <ConsoleState v-if="!rules.length && !loading && !error" title="暂无自动化规则" />
     <div v-else class="record-list">
       <article v-for="rule in rules" :key="rule.ruleId" class="record-card">
         <div class="record-heading">

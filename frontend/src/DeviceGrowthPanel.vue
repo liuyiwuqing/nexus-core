@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import { NButton } from 'naive-ui';
 import { onUnmounted, ref } from 'vue';
 import { formatTime, type Api } from './types';
@@ -33,10 +34,10 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(poll); });
 <template>
   <section class="record-card" aria-labelledby="device-growth-title" :aria-busy="loading">
     <div class="record-heading"><h2 id="device-growth-title">设备成长</h2><NButton attr-type="button" class="text-button" :disabled="loading" @click="load">刷新设备成长</NButton></div>
-    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <p v-if="!loaded && loading" class="muted" role="status">正在读取设备成长…</p>
-    <p v-else-if="loaded && !enabled" class="muted">设备成长同步未启用。</p>
-    <p v-else-if="loaded && !items.length" class="muted">暂无已注册设备。</p>
+    <ConsoleState v-if="error" kind="error" compact>{{ error }}</ConsoleState>
+    <ConsoleState v-if="!loaded && loading && !error" kind="loading" compact>正在读取设备成长…</ConsoleState>
+    <ConsoleState v-else-if="loaded && !error && !enabled" kind="info" compact>设备成长同步未启用。</ConsoleState>
+    <ConsoleState v-else-if="loaded && !error && !items.length" compact>暂无已注册设备。</ConsoleState>
     <div v-else class="record-list">
       <article v-for="item in items" :key="item.deviceId" class="record-card">
         <div class="record-heading"><h3>{{ item.name }}</h3><span class="badge" :class="item.fresh && !error && item.deviceEnabled ? 'success' : ''">{{ !item.deviceEnabled ? '设备已禁用' : !item.snapshot ? '等待同步' : error ? '刷新失败' : item.fresh ? '已同步' : '数据已过期' }}</span></div>
@@ -49,7 +50,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(poll); });
           </p>
           <small>{{ formatTime(new Date(item.snapshot.observedAt * 1000).toISOString()) }}</small>
         </template>
-        <p v-else class="muted">尚未收到设备成长数据。</p>
+        <ConsoleState v-else compact>尚未收到设备成长数据。</ConsoleState>
       </article>
     </div>
     <p v-if="enabled && items.length" class="scope-note">设备存档只读展示，CORE 专注奖励单独结算。</p>

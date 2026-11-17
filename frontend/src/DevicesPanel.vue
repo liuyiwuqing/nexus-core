@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -10,7 +11,7 @@ import { computed, nextTick, ref } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
-const props = defineProps<{ items: Device[]; busy: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const props = defineProps<{ items: Device[]; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
 const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
@@ -99,11 +100,9 @@ async function submit() {
         <NButton type="primary" attr-type="submit" class="primary" :disabled="busy">登记</NButton>
       </div>
     </ConsoleForm>
-    <div v-if="!items.length" class="empty-state">
-      <h2>还没有设备</h2>
-      <p>登记设备并完成本机配网后，即可接收提醒。</p>
-    </div>
-    <div v-else class="device-grid">
+    <ConsoleState v-if="loading && !items.length && !failed" kind="loading">正在读取设备…</ConsoleState>
+    <ConsoleState v-else-if="!failed && !items.length" title="还没有设备">登记设备并完成本机配网后，即可接收提醒。</ConsoleState>
+    <div v-else-if="!failed" class="device-grid" :aria-busy="loading">
       <article
         v-for="device in items"
         :key="device.deviceId"
@@ -153,7 +152,7 @@ async function submit() {
               :input-props="{ required: true, id: 'devicespanel-field-3', 'aria-label': '设备名称' }"
             />
           </ConsoleField>
-          <p v-if="nameConflict" class="inline-error" role="alert">当前名称已变化，你的编辑已保留。</p>
+          <ConsoleState v-if="nameConflict" kind="error" compact>当前名称已变化，你的编辑已保留。</ConsoleState>
           <div class="management-actions">
             <NButton attr-type="button" v-if="nameConflict" class="secondary compact" :disabled="busy" @click="loadName">
               加载当前名称
