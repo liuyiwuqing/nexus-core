@@ -50,7 +50,7 @@ public class ConsoleEvents {
         try{next=snapshot();}catch(RuntimeException unavailable){clients.forEach(c->{c.emitter().complete();clients.remove(c);});return;}
         boolean changed=!next.equals(revision);revision=next;
         for(var client:clients)try{
-            if(client.session()!=null&&!sessions.active(client.session())||!admin.acceptsAdmin(client.authorization())&&roles.authenticate(client.authorization())==null){client.emitter().send(SseEmitter.event().name("unauthorized").data(Map.of("schemaVersion",1)));client.emitter().complete();clients.remove(client);continue;}
+            if(client.session()!=null?(!sessions.active(client.session())||!admin.acceptsAdminFingerprint(client.session().fingerprint())&&roles.authenticateFingerprint(client.session().fingerprint())==null):!admin.acceptsAdmin(client.authorization())&&roles.authenticate(client.authorization())==null){client.emitter().send(SseEmitter.event().name("unauthorized").data(Map.of("schemaVersion",1)));client.emitter().complete();clients.remove(client);continue;}
             client.emitter().send(SseEmitter.event().name(changed?"invalidate":"heartbeat").id(next).data(Map.of("schemaVersion",1,"revision",next)));
         }catch(IOException|RuntimeException disconnected){client.emitter().complete();clients.remove(client);}
     }

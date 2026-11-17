@@ -54,7 +54,7 @@ python3 tools/run_local.py run
 
 `init_local.py` 生成随机管理员/数据库/Broker/设备/Bridge 凭据、私有 CA、Broker 证书及 ACL；目录 `data/` 为 700、私有文件为 600。已有配置时保留原件，不旋转凭据。`run_local.py` 自动查找本机 Java 21，也支持 `NEXUS_JAVA_HOME`。项目 Maven 设置仅使用公共 Central，不修改全局 JDK 或 Maven 设置。
 
-打开 [管理台](http://127.0.0.1:8088)，环境模式从本机编辑器读取 `data/local.env` 的 `NEXUS_ADMIN_TOKEN` 登录；已配置 `NEXUS_AUTH_TOKEN_FILE` 时，使用该受保护文件的 `admin.current.token`，旧环境值不作后备。默认保持登录 8 小时，刷新会核验并恢复服务端会话；退出、令牌失效或 CORE 重启后重新登录。取消“保持登录”则仅保留当前页内存。管理员登录令牌可在“权限 → 修改管理员令牌”维护（受保护文件模式），角色令牌可编辑和重新生成；详见[会话与维护契约](docs/roles-and-audit.md#浏览器登录与管理员令牌--console-26)。HTTP 管理端默认仅绑定回环地址。
+打开 [管理台](http://127.0.0.1:8088)，环境模式从本机编辑器读取 `data/local.env` 的 `NEXUS_ADMIN_TOKEN` 登录；已配置 `NEXUS_AUTH_TOKEN_FILE` 时，使用该受保护文件的 `admin.current.token`，旧环境值不作后备。默认保持登录 8 小时，刷新、CORE 重启或保留会话卷的容器重建后，都会核验并恢复有效会话；退出、令牌失效或 8 小时到期后重新登录。取消“保持登录”则仅保留当前页内存。管理员登录令牌可在“权限 → 修改管理员令牌”维护（受保护文件模式），角色令牌可编辑和重新生成；详见[会话与维护契约](docs/roles-and-audit.md#浏览器登录与管理员令牌--console-26)。本地会话目录默认 `data/auth/sessions`，可用 `NEXUS_AUTH_SESSION_DIRECTORY` 指定私有持久目录；旧版仅内存会话在本次升级后需要登录一次。HTTP 管理端默认仅绑定回环地址。
 
 测试消息在结果未知时保留同一请求 ID 和正文，切换导航可继续重试，收到确认后才开始下一条消息。退出/刷新页面后不恢复正文；详细行为和验证边界见 [测试消息与断线重试](docs/console-messages.md)。 加载、空结果与错误反馈使用统一紧凑样式；消息和投递读取失败集中显示一次原因与重试，字段校验、权限与未知结果核对保留，见 [状态反馈约定](docs/console-ui.md#加载空状态与错误反馈console-25)。
 

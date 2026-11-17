@@ -28,11 +28,17 @@
 
 ## 浏览器登录与管理员令牌 · CONSOLE-26
 
-登录默认选中“保持登录 8 小时”。`POST /session {remember:true}` 签发服务端内存会话，响应在身份之外包含 `{persisted:true,csrfToken,expiresAt}`；原始长期令牌不写入 Cookie/localStorage/sessionStorage，浏览器通过 host-only `nexus_console_session` HttpOnly/SameSite=Strict Cookie（Path=/api/v1）关联 32 随机字节的会话 ID。非回环主机始终加 Secure；本机 HTTP 回环用于开发，外部浏览器使用 HTTPS。无 remember 或 false 保持原 Bearer 接口兼容，清除本浏览器旧 Cookie，页面关闭/刷新后重新输入。
+登录默认选中“保持登录 8 小时”。`POST /session {remember:true}` 签发服务端持久会话，响应在身份之外包含 `{persisted:true,csrfToken,expiresAt}`；原始长期令牌不写入 Cookie/localStorage/sessionStorage，浏览器通过 host-only `nexus_console_session` HttpOnly/SameSite=Strict Cookie（Path=/api/v1）关联 32 随机字节的会话 ID。非回环主机或 HTTPS 始终加 Secure；代理传来的 HTTPS 提示也仅收紧 Secure，不用于身份或放宽 Cookie；本机 HTTP 回环用于开发，外部浏览器使用 HTTPS。无 remember 或 false 保持原 Bearer 接口兼容，清除本浏览器旧 Cookie，页面关闭/刷新后重新输入。
 
-刷新先调用 GET /session，确认身份后恢复页面和 SSE；所有 Cookie 请求都重新核验原始管理员/角色凭据，角色变更、撤销、轮换和到期不会沿用旧权限。会话绝对期限 8 h，不按访问续期；单进程最多 1024 个，过期懒清理；CORE 重启会清空会话，需要重新登录，不引入数据库迁移或分布式会话。配置暂不可用 503 保留 Cookie，登录页提供重试；无效会话 401 清除 Cookie。读取不增加显式登录审计记录。
+刷新先调用 GET /session，确认身份后恢复页面和 SSE；所有 Cookie 请求都重新核验原始管理员/角色凭据，角色变更、撤销、轮换和到期不会沿用旧权限。会话绝对期限 8 h，不按访问续期；每个私有会话目录最多 1024 个，过期惰性回收；CORE 正常停止、重启或容器重建后，在原有效期内继续恢复，不延长到期时间。退出提交删除会话文件并同步目录，重启不能恢复被退出的会话。不引入数据库迁移。配置暂不可用 503 保留 Cookie，登录页提供重试；无效会话 401 清除 Cookie。读取不增加显式登录审计记录。
 
 Cookie 的 POST/PUT/PATCH/DELETE 请求必须提供该会话独立的 `X-Nexus-CSRF`；缺失、重复或不匹配 403。明确提供 Bearer 时以该 header 为准，不能靠 Cookie 绕过错误/重复 header。Webhook 和 `/mcp/memory` 从不接受 Cookie；原机器 Bearer、记忆工具独立凭据与来源签名边界保留。SSE 定期检查原凭据、会话期限和撤销；CSV 导出同样支持会话。设计参考 [OWASP 会话管理](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) 和 [CSRF 同步令牌](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)。
+
+持久化补充（CONSOLE-27）：`NEXUS_AUTH_SESSION_DIRECTORY` 指定私有会话目录，本地默认 `data/auth/sessions`。目录 0700、文件 0600，文件名为 Cookie ID 的 SHA-256；内容仅包含格式版本、父凭据 SHA-256、CSRF 和绝对到期时间，不包含原始 Bearer 或原始 Cookie。每次授权用摘要核对当前管理员凭据文件/环境值或有效角色行，HTTP Bearer 接口不接受摘要作为凭据。SSE 同时核验文件仍存在和父凭据仍有效；角色修改、过期/撤销/重新生成以及管理员轮换在重启前后都生效。
+
+新建/替换使用跨进程 POSIX 写锁、0600 临时文件、文件同步及原子移动；退出删除后同步目录。缺失记录为 401；目录或文件不安全、损坏/不可读/不可写为固定 `503 session_store_unavailable`，不猜测身份、不重新放行、不退回未持久化的内存会话。修复后可重试，原 Cookie 不因临时存储故障被丢弃。仅在创建会话时有界回收已经到期的会话文件，不涉及业务保留清理。
+
+Docker 源码编排与 1Panel 模板将私有 `console-sessions` 命名卷挂载到 `/var/lib/nexus/sessions`，通过 `NEXUS_AUTH_SESSION_DIRECTORY` 使用；新版镜像默认使用此目录并预置 UID/GID 65534、0700，保留非 root、只读根目录和原安全约束。升级需一起使用新版镜像/模板并保留该卷；不要用 tmpfs 保存会话，也不要将会话目录放进 Git 或同步到浏览器。旧版仅内存的会话无法在升级时追溯恢复，本次升级后需登录一次，后续重启不再要求重输；取消“保持登录”仍仅限当前页面。
 
 显式 `POST /session/logout` 立即使当前服务端会话失效并清除 Cookie。退出/401 清除当前页数据和草稿；读响应含 epoch 检查，过时响应不能带回身份。浏览器 storage 只保存无秘密的退出意图，网络中断时也不在刷新后擅自恢复；退出结果未知明确提示。BroadcastChannel 只传登录/退出事件，不传令牌，其他同源标签页清空旧数据并重新验证身份。草稿、幂等 ID、一次性令牌不会跨刷新持久化。
 

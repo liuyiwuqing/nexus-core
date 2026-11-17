@@ -24,7 +24,10 @@ public class RoleTokens {
     private String hash(String value){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}
     public Identity authenticate(String authorization){
         if(authorization==null||!authorization.startsWith("Bearer ")||authorization.length()>300)return null;
-        var rows=db.queryForList("SELECT token_id,role FROM role_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>now()",hash(authorization.substring(7)));
+        return authenticateFingerprint(hash(authorization.substring(7)));
+    }
+    public Identity authenticateFingerprint(String fingerprint){
+        var rows=db.queryForList("SELECT token_id,role FROM role_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>now()",fingerprint);
         return rows.isEmpty()?null:new Identity(rows.getFirst().get("token_id").toString(),(String)rows.getFirst().get("role"));
     }
     public boolean ownsCredential(String token){return token!=null&&Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM role_tokens WHERE token_hash=?)",Boolean.class,hash(token)));}

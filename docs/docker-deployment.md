@@ -45,9 +45,11 @@ dc ps
 
 `Dockerfile` 在 Node 阶段执行 `npm ci`、类型检查与 Vue 构建，在 Maven/Java 21 阶段打包 JAR，最终仅保留 JRE/JAR。镜像打包跳过集成测试，不能把构建成功写成测试成功；独立验证见后文。`.dockerignore` 采用源码白名单，排除宿主 data/env、密钥、Git 历史及已有产物。镜像只在本机生成，本工具不上传镜像仓库。
 
-访问 `https://pet.example.com`，用安全编辑器读取 `/etc/nexus/docker/core.env` 的 `NEXUS_ADMIN_TOKEN` 登录，不把文件内容打印到聊天或日志。令牌仍只保存在当前页面内存。Caddy 的公网证书申请需要正确 DNS 和可达端口，自动证书及账户状态持久化在专用卷；见 [Caddy 自动 HTTPS](https://caddyserver.com/docs/automatic-https)。
+访问 `https://pet.example.com`，用安全编辑器读取 `/etc/nexus/docker/core.env` 的 `NEXUS_ADMIN_TOKEN` 登录，不把文件内容打印到聊天或日志。默认通过 HttpOnly Cookie 保持登录 8 小时，长期令牌不写浏览器存储；可取消保持登录。Caddy 的公网证书申请需要正确 DNS 和可达端口，自动证书及账户状态持久化在专用卷；见 [Caddy 自动 HTTPS](https://caddyserver.com/docs/automatic-https)。
 
 CORE 使用 UID/GID `65534:65534`、只读根文件系统和临时 `/tmp`；数据库只有私有容器网络入口，CORE 8088 仅供 Caddy 访问。Broker 只公开认证后的 TLS 8883，CORE 通过私有 CA 校验 `mqtt`。Docker 宿主管理员仍能读取容器环境，访问 Docker 权限应与这些凭据一起管理。
+
+新版镜像默认将会话摘要写入 `/var/lib/nexus/sessions`，源码编排挂载专用 `console-sessions` 卷，目录 UID/GID `65534:65534`、0700，文件 0600。使用同一项目和该卷，CORE 重启或重建均可恢复有效 Cookie，原到期时间不延长；退出或父令牌过期、撤销、轮换后仍失效。升级旧编排时随新版镜像添加环境和卷配置，不手工放宽权限；旧内存会话需重新登录一次。详见 [会话契约](roles-and-audit.md)。
 
 容器日志按每份 10 MiB、最多 3 份轮换；CORE 停止等待 30 秒。需要延长保留期或调整内存时由部署者按目标机监测结果修改，不把这些默认值当作生产容量保证。
 
@@ -68,7 +70,7 @@ CORE 健康检查在容器内调用受管理员鉴权的 `/api/v1/status`，只�
 
 使用 [凭据文件轮换](credential-rotation.md)时，额外以只读目录挂载该文件的父目录，再设置容器内绝对路径 `NEXUS_AUTH_TOKEN_FILE`。文件须由 UID `65534` 可读、权限 `600`，父目录不能被其他用户写；不能仅挂载单个文件，否则宿主原子替换可能不会反映到容器。默认方案使用 env，不会自动创建或更改既有凭据文件。
 
-`depends_on` 只负责初始启动依赖，不能代替运行时恢复。CORE 故障时先核对数据库、Broker、证书、私有配置权限和容器日志；不要用删除卷解决启动问题。普通停止/容器重建保留 PostgreSQL、Caddy 数据卷。**生产环境不要执行 `down -v`。**
+`depends_on` 只负责初始启动依赖，不能代替运行时恢复。CORE 故障时先核对数据库、Broker、证书、私有配置权限和容器日志；不要用删除卷解决启动问题。普通停止/容器重建保留 PostgreSQL、Caddy 与会话数据卷。**生产环境不要执行 `down -v`。**
 
 ## 升级、备份与恢复
 

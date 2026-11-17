@@ -2,6 +2,7 @@
 """Real isolated Compose/HTTPS/DB/MQTT smoke; removes only its own random project."""
 import argparse
 import hashlib
+import http.cookiejar
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.error
 import urllib.request
 import uuid
@@ -102,15 +104,22 @@ def main():
         context = ssl.create_default_context(cafile=str(ca))
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
 
-        def request(path, body=None, auth=True):
+        session_cookies = http.cookiejar.CookieJar()
+        session_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context), urllib.request.HTTPCookieProcessor(session_cookies))
+
+        def request(path, body=None, auth=True, *, session=False, csrf=None, cookie=None):
             # Re-query ports after container recreation; Docker chooses new host ports.
             headers = {"Content-Type": "application/json"}
+            if csrf:
+                headers["X-Nexus-CSRF"] = csrf
+            if cookie:
+                headers["Cookie"] = cookie
             if auth:
                 headers["Authorization"] = "Bearer " + private["NEXUS_ADMIN_TOKEN"]
             req = urllib.request.Request(f"https://localhost:{port('caddy', 443)}{path}",
                                          data=None if body is None else json.dumps(body).encode(), headers=headers)
             try:
-                with opener.open(req, timeout=15) as response:
+                with (session_opener if session else opener).open(req, timeout=15) as response:
                     return response.status, response.read()
             except urllib.error.HTTPError as error:
                 return error.code, error.read()
@@ -143,6 +152,21 @@ def main():
         report["jarSha256"] = hashlib.sha256(jar.read_bytes()).hexdigest()
         report["imageId"] = core["Image"]
         passed("trusted HTTPS, admin auth and actual JAR console assets")
+        stage = "durable browser session"
+        status, logged_in = request("/api/v1/session", {"remember": True}, session=True)
+        report["browserLoginStatus"] = status
+        assert status == 200, "browser_session_login_failed"
+        logged_in = json.loads(logged_in)
+        assert logged_in["persisted"] and logged_in["role"] == "admin"
+        session_cookie = next(c for c in session_cookies if c.name == "nexus_console_session")
+        report["browserCookieFlags"] = {"secure": session_cookie.secure, "httpOnly": session_cookie.has_nonstandard_attr("HttpOnly")}
+        assert session_cookie.secure and session_cookie.has_nonstandard_attr("HttpOnly"), "browser_cookie_flags"
+        replay_cookie = "nexus_console_session=" + session_cookie.value
+        assert request("/api/v1/session/logout", {}, auth=False, session=True)[0] == 403
+        assert any(mount["Destination"] == "/var/lib/nexus/sessions" and mount["Type"] == "volume" for mount in core["Mounts"])
+        mode = command(compose + ["exec", "-T", "core", "stat", "-c", "%u:%g:%a", "/var/lib/nexus/sessions"], env=env).stdout.strip()
+        assert mode == "65534:65534:700"
+        passed("secure browser session uses private non-root persistent volume and CSRF")
         stage = "MQTT TLS"
         mqtt_context = ssl.create_default_context(cafile=str(data / "mosquitto/certs/ca.crt"))
         with socket.create_connection(("127.0.0.1", port("mqtt", 8883)), timeout=5) as raw:
@@ -161,6 +185,14 @@ def main():
         assert status == 200 and json.loads(messages)["total"] == 1
         assert json.loads(messages)["items"][0]["messageId"] == message_id
         passed("message and TLS state survive full container recreation")
+        status, restored_session = request("/api/v1/session", auth=False, session=True)
+        assert status == 200 and json.loads(restored_session) == logged_in
+        assert request("/api/v1/session/logout", {}, auth=False, session=True, csrf=logged_in["csrfToken"])[0] == 204
+        command(compose + ["restart", "core"], env=env)
+        wait_ready()
+        wait_https()
+        assert request("/api/v1/session", auth=False, cookie=replay_cookie)[0] == 401
+        passed("browser session survives recreation and committed logout survives restart")
         stage = "broker failure and recovery"
         core_before_recovery = json.loads(command(["docker", "inspect", container("core")]).stdout)[0]
         command(compose + ["stop", "mqtt"], env=env)
@@ -184,6 +216,7 @@ def main():
     except Exception as error:
         report["failedStage"] = stage
         report["errorType"] = type(error).__name__
+        report["errorLine"] = traceback.extract_tb(error.__traceback__)[-1].lineno
         print("FAIL " + stage + " (" + type(error).__name__ + ")", file=sys.stderr)
     finally:
         cleanup = True

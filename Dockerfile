@@ -18,6 +18,8 @@ RUN mvn -s .mvn/settings.xml -B -ntp -DskipTests package
 FROM eclipse-temurin:21-jre-jammy@sha256:dff6eb46527bd293a3c06bbbe9e64e8c9f91f01905b5abbdad31761c03059d2c
 WORKDIR /app
 COPY --from=package --chown=65534:65534 /source/target/nexus-core-*.jar /app/core.jar
+ENV NEXUS_AUTH_SESSION_DIRECTORY=/var/lib/nexus/sessions
+RUN mkdir -p /var/lib/nexus/sessions && chown 65534:65534 /var/lib/nexus/sessions && chmod 700 /var/lib/nexus/sessions
 USER 65534:65534
 EXPOSE 8088
 ENTRYPOINT ["java", "-jar", "/app/core.jar"]

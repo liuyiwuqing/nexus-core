@@ -44,6 +44,7 @@ services:
     env_file:
       - ${NEXUS_DOCKER_DATA:-/etc/nexus/docker}/core.env
     environment:
+      NEXUS_AUTH_SESSION_DIRECTORY: /var/lib/nexus/sessions
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0 -XX:+ExitOnOutOfMemoryError"
     ports:
       - "${NEXUS_CONSOLE_BIND_ADDRESS:-127.0.0.1}:${NEXUS_CONSOLE_PORT:-18088}:8088"
@@ -52,6 +53,7 @@ services:
     tmpfs: ["/tmp:size=64m,mode=1777"]
     mem_limit: 1g
     volumes:
+      - console-sessions:/var/lib/nexus/sessions
       - type: bind
         source: ${NEXUS_DOCKER_DATA:-/etc/nexus/docker}/mosquitto/certs/ca.crt
         target: /etc/nexus/mqtt-ca.crt
@@ -77,4 +79,5 @@ networks:
     internal: true
   edge:
 volumes:
+  console-sessions:
   postgres-data:

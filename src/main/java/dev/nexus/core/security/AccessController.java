@@ -21,7 +21,7 @@ public class AccessController {
     public record Login(boolean remember){}
     public record Edit(@NotBlank String name,@NotBlank String role,@NotNull Instant expiresAt,@Min(1) int expectedVersion){}
     @PostMapping("/api/v1/session") Map<String,Object> login(HttpServletRequest request,HttpServletResponse response,@RequestBody(required=false) Login input){
-        if(input!=null&&input.remember())request.setAttribute("nexus.browserSession",sessions.create(request,response,(String)request.getAttribute("nexus.authorization")));
+        if(input!=null&&input.remember()){var current=(BrowserSessions.Session)request.getAttribute("nexus.browserSession");request.setAttribute("nexus.browserSession",current==null?sessions.create(request,response,(String)request.getAttribute("nexus.authorization")):sessions.renew(request,response,current));}
         else {sessions.invalidate(request,response);request.setAttribute("nexus.browserSession",null);}
         return session(request);
     }

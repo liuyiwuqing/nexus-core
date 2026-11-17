@@ -63,6 +63,16 @@ public final class TokenCredentials {
     public boolean acceptsAdmin(String supplied) {
         return file==null?matches(legacyAdmin,supplied):accepts(read().admin(),supplied);
     }
+    static String credentialFingerprint(String authorization){
+        if(authorization==null||!authorization.startsWith("Bearer "))throw new IllegalArgumentException("invalid_session_credential");
+        return digest(authorization.substring(7).getBytes(StandardCharsets.UTF_8));
+    }
+    public boolean acceptsAdminFingerprint(String fingerprint){
+        if(file==null)return MessageDigest.isEqual(digest(legacyAdmin.getBytes(StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8),fingerprint.getBytes(StandardCharsets.UTF_8));
+        boolean accepted=false;long now=Instant.now().getEpochSecond();
+        for(var entry:read().admin())accepted|=MessageDigest.isEqual(digest(Arrays.copyOfRange(entry.bearer(),7,entry.bearer().length)).getBytes(StandardCharsets.UTF_8),fingerprint.getBytes(StandardCharsets.UTF_8))&entry.expiresAt()>now;
+        return accepted;
+    }
     public boolean acceptsMemory(String supplied) {
         return memoryEnabled&&(file==null?matches(legacyMemory,supplied):accepts(read().memory(),supplied));
     }
@@ -116,7 +126,7 @@ public final class TokenCredentials {
         catch(Exception unavailable){throw new Unavailable();}
         finally{if(temporary!=null)try{Files.deleteIfExists(temporary);}catch(java.io.IOException ignored){/* No secret enters logs. */}}
     }
-    private static String digest(byte[] bytes) {
+    static String digest(byte[] bytes) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}
         catch(Exception impossible){throw new IllegalStateException("sha256_unavailable");}
     }

@@ -49,12 +49,14 @@ services:
       - path: ${NEXUS_DOCKER_DATA}/core.env
         format: raw
     environment:
+      NEXUS_AUTH_SESSION_DIRECTORY: /var/lib/nexus/sessions
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0 -XX:+ExitOnOutOfMemoryError"
     user: "65534:65534"
     read_only: true
     tmpfs: ["/tmp:size=64m,mode=1777"]
     mem_limit: 1g
     volumes:
+      - console-sessions:/var/lib/nexus/sessions
       - type: bind
         source: ${NEXUS_DOCKER_DATA}/mosquitto/certs/ca.crt
         target: /etc/nexus/mqtt-ca.crt
@@ -97,6 +99,7 @@ networks:
     internal: true
   edge:
 volumes:
+  console-sessions:
   postgres-data:
   caddy-data:
   caddy-config:

@@ -88,17 +88,17 @@ public class AdminAuthentication extends OncePerRequestFilter {
         BrowserSessions.Session browser=null;
         int headers=java.util.Collections.list(request.getHeaders("Authorization")).size();
         // Explicit Bearer credentials always take precedence, including invalid ones.
-        if(!memoryEndpoint&&headers==0){browser=sessions.resolve(request);if(browser!=null)supplied=browser.authorization();}
-        try {accepted=(headers==1||browser!=null)&&
-            (memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));
-            if(!accepted&&!memoryEndpoint&&(headers==1||browser!=null)){identity=roles.authenticate(supplied);accepted=identity!=null;}
+        try {
+            if(!memoryEndpoint&&headers==0)browser=sessions.resolve(request);
+            accepted=browser!=null?credentials.acceptsAdminFingerprint(browser.fingerprint()):headers==1&&(memoryEndpoint?memoryTools.accepts(supplied):credentials.acceptsAdmin(supplied));
+            if(!accepted&&!memoryEndpoint&&(headers==1||browser!=null)){identity=browser!=null?roles.authenticateFingerprint(browser.fingerprint()):roles.authenticate(supplied);accepted=identity!=null;}
+            if(!accepted&&!memoryEndpoint&&headers==0&&sessions.hasCookie(request))sessions.invalidate(request,response);
         }
-        catch(TokenCredentials.Unavailable unavailable) {
+        catch(TokenCredentials.Unavailable|BrowserSessionStore.Unavailable unavailable) {
             response.setStatus(503);response.setHeader("Retry-After","1");response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"authentication_configuration_unavailable\"}");return;
+            response.getWriter().write("{\"error\":\""+unavailable.getMessage()+"\"}");return;
         }
         if (!accepted) {
-            if(!memoryEndpoint&&headers==0&&sessions.hasCookie(request))sessions.invalidate(request,response);
             response.setHeader("WWW-Authenticate", "Bearer");
             response.setStatus(401);
             response.setContentType("application/json");

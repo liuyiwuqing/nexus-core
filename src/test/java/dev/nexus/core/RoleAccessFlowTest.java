@@ -35,6 +35,9 @@ import tools.jackson.databind.ObjectMapper;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class RoleAccessFlowTest {
+    static final java.nio.file.Path SESSION_DIRECTORY=sessionsDirectory();
+    static java.nio.file.Path sessionsDirectory(){try{return java.nio.file.Files.createTempDirectory("nexus-role-sessions-");}catch(java.io.IOException e){throw new ExceptionInInitializerError(e);}}
+    @org.junit.jupiter.api.AfterAll static void cleanupSessions()throws Exception{try(var files=java.nio.file.Files.walk(SESSION_DIRECTORY)){for(var file:files.sorted(java.util.Comparator.reverseOrder()).toList())java.nio.file.Files.delete(file);}}
     static final String TOKEN="history-test-token-at-least-32-characters";
     @Container static final PostgreSQLContainer DB=new PostgreSQLContainer("postgres:17-alpine");
     @Container static final GenericContainer<?> MQTT=new GenericContainer<>("eclipse-mosquitto:2.0.22")
@@ -44,6 +47,7 @@ class RoleAccessFlowTest {
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);p.add("spring.datasource.password",DB::getPassword);
+        p.add("nexus.auth.session-directory",()->SESSION_DIRECTORY.toString());
         p.add("nexus.admin-token",()->TOKEN);p.add("nexus.mqtt.uri",()->"tcp://"+MQTT.getHost()+":"+MQTT.getMappedPort(1883));
         p.add("nexus.mqtt.password",()->"history-password");p.add("nexus.mqtt.allow-insecure",()->"true");p.add("nexus.mqtt.ca-cert",()->"");
         p.add("nexus.delivery.tick-ms",()->"600000");
@@ -123,6 +127,16 @@ class RoleAccessFlowTest {
         fixtures.update("UPDATE role_tokens SET expires_at=now()-interval '1 second' WHERE token_id=?",java.util.UUID.fromString(id));
         assertThat(cookieRequest("GET","session","",cookie,null).statusCode()).isEqualTo(401);
         assertThat(request("POST","access/tokens/"+id+"/rotate","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(409);
+    }
+    @Test void unreadableSessionMetadataFailsClosedAndRecoversWithoutDroppingTheCookie()throws Exception {
+        var login=request("POST","session","{\"remember\":true}",TOKEN);assertThat(login.statusCode()).isEqualTo(200);String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        String identifier=cookie.substring(cookie.indexOf('=')+1);String hash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(identifier.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        var file=SESSION_DIRECTORY.resolve(hash+".json");
+        try{
+            java.nio.file.Files.setPosixFilePermissions(file,java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));var unavailable=cookieRequest("GET","session","",cookie,null);
+            assertThat(unavailable.statusCode()).isEqualTo(503);assertThat(unavailable.body()).contains("session_store_unavailable");assertThat(unavailable.headers().firstValue("Set-Cookie")).isEmpty();
+        }finally{java.nio.file.Files.setPosixFilePermissions(file,java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));}
+        assertThat(cookieRequest("GET","session","",cookie,null).statusCode()).isEqualTo(200);
     }
     @Test void rolesAreEnforcedByEveryServerMutationBoundary() throws Exception {
         String viewer=issue("viewer").path("token").asText(),operator=issue("operator").path("token").asText();

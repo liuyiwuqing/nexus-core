@@ -59,11 +59,11 @@ docker run --rm --read-only --cap-drop ALL \
 
 在 1Panel 为域名配置 HTTPS 反向代理。OpenResty 使用 host 网络时，上游为 `http://127.0.0.1:18088`；使用 bridge 网络时，`127.0.0.1` 指向 OpenResty 自身，需将其加入 CORE 的 edge 网络并代理到 `http://core:8088`，核对实际网络名与服务别名。不要为解决代理可达性直接把管理 API 发布到公网。
 
-通过安全编辑器读取 `core.env` 中的 `NEXUS_ADMIN_TOKEN` 登录。AI、Halo、记忆、Bridge、清理、OTA 与成长同步默认仍关闭。设备配置在 `device.json`，不要把它或 CA 私钥粘贴到聊天。
+通过安全编辑器读取 `core.env` 中的 `NEXUS_ADMIN_TOKEN` 登录。新版镜像生成的编排包含 `console-sessions` 私有卷，默认保持登录 8 小时，CORE 重启或重建恢复同一有效会话；退出和父令牌失效仍实时校验。升级旧编排需配套加入该卷和 `NEXUS_AUTH_SESSION_DIRECTORY=/var/lib/nexus/sessions`，保留同一项目名，旧内存会话重新登录一次。AI、Halo、记忆、Bridge、清理、OTA 与成长同步默认仍关闭。设备配置在 `device.json`，不要把它或 CA 私钥粘贴到聊天。
 
 ## 更新与恢复
 
-- 重启、更新和重新创建 CORE 时不再运行初始化镜像。保留原目录、凭据、CA、设备配置、编排项目名和 PostgreSQL 卷。
+- 重启、更新和重新创建 CORE 时不再运行初始化镜像。保留原目录、凭据、CA、设备配置、编排项目名、PostgreSQL 和 `console-sessions` 卷。
 - 按 [既有备份步骤](docker-deployment.md)备份后，将编排中 CORE 的 `image` 改成下一次通过验证的 digest，拉取并重新创建 CORE。更新 `core.env` 后也需重新创建；单纯 restart 不重新读取 env。
 - 不混用新初始化的数据库/MQTT 密码与原卷，不通过重新初始化修复连接。镜像回滚需同时核对数据库 schema 兼容性，更换镜像不等于数据库回滚。
 

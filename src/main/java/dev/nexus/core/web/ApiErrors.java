@@ -18,8 +18,8 @@ public class ApiErrors {
         return ResponseEntity.badRequest().body(Map.of("error", "invalid_request"));
     }
 
-    @ExceptionHandler(dev.nexus.core.security.TokenCredentials.Unavailable.class)
-    ResponseEntity<?> credentialsUnavailable(){return ResponseEntity.status(503).body(Map.of("error","authentication_configuration_unavailable"));}
+    @ExceptionHandler({dev.nexus.core.security.TokenCredentials.Unavailable.class,dev.nexus.core.security.BrowserSessionStore.Unavailable.class})
+    ResponseEntity<?> credentialsUnavailable(RuntimeException error){return ResponseEntity.status(503).body(Map.of("error",error.getMessage()));}
 
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<?> status(ResponseStatusException e) {

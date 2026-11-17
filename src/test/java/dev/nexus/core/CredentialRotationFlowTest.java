@@ -69,6 +69,7 @@ class CredentialRotationFlowTest {
         Files.write(temporary,JSON.writeValueAsBytes(value));Files.move(temporary,FILE,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
     }
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
+        p.add("nexus.auth.session-directory",()->DIRECTORY.resolve("sessions").toString());
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);p.add("spring.datasource.password",DB::getPassword);
         p.add("nexus.admin-token",()->LEGACY);p.add("nexus.auth.token-file",FILE::toString);
         p.add("nexus.memory.mcp.enabled",()->true);p.add("nexus.memory.mcp.token",()->"legacy-memory-credential-fixture-long-enough");
@@ -93,7 +94,7 @@ class CredentialRotationFlowTest {
             .POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}")).build(),HttpResponse.BodyHandlers.ofString());
     }
     @BeforeEach void reset()throws Exception {replace(OLD,null,0);}
-    @AfterAll static void cleanup()throws Exception {PROVIDER.stop(0);Files.deleteIfExists(FILE);Files.deleteIfExists(FILE.resolveSibling("tokens.json.lock"));Files.deleteIfExists(DIRECTORY);}
+    @AfterAll static void cleanup()throws Exception {PROVIDER.stop(0);try(var files=Files.walk(DIRECTORY)){for(var file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}}
     @Test void administratorCanChangeTheProtectedCredentialWithoutChangingActorOrMemoryScope()throws Exception {
         var before=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/access/admin-token")).header("Authorization","Bearer "+OLD).GET().build(),HttpResponse.BodyHandlers.ofString());
         assertThat(before.statusCode()).isEqualTo(200);var metadata=JSON.readTree(before.body());

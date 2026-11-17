@@ -27,6 +27,7 @@ nexus:
     enabled: ${NEXUS_GROWTH_SYNC_ENABLED:false}
   auth:
     token-file: ${NEXUS_AUTH_TOKEN_FILE:}
+    session-directory: ${NEXUS_AUTH_SESSION_DIRECTORY:data/auth/sessions}
   ota:
     enabled: ${NEXUS_OTA_ENABLED:false}
   retention:
