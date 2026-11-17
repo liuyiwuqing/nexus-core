@@ -183,6 +183,41 @@ public class TelemetryHistoryService {
         return result;
     }
 
+    /**
+     * Read-only disconnect events. A row is an event when the reported
+     * (reason, time) pair differs from the previous sample, so a stable pair
+     * that merely repeats on heartbeats is not listed twice. Samples without a
+     * reason are not events, and the first sample of a device never produces a
+     * synthetic "before" event.
+     */
+    public Map<String,Object> disconnects(String device,String limitValue) {
+        if(db.queryForObject("SELECT count(*) FROM devices WHERE device_id=?",Integer.class,device)==0)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"device_not_found");
+        int limit=20;
+        if(limitValue!=null&&!limitValue.isBlank()) {
+            try { limit=Integer.parseInt(limitValue.strip()); }
+            catch(NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_disconnect_limit"); }
+        }
+        if(limit<1||limit>100)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_disconnect_limit");
+        var result=new LinkedHashMap<String,Object>();
+        result.put("deviceId",device);result.put("limit",limit);result.put("retentionDays",retentionDays);
+        result.put("items",ApiRows.normalize(db.queryForList("""
+            SELECT observed_at AS "observedAt",reason AS "reason",disconnected_at AS "disconnectedAt"
+            FROM (
+                SELECT observed_at,wifi_disconnect_reason AS reason,wifi_disconnected_at AS disconnected_at,
+                    lag(wifi_disconnect_reason) OVER w AS previous_reason,
+                    lag(wifi_disconnected_at) OVER w AS previous_at
+                FROM device_telemetry_samples WHERE device_id=?
+                WINDOW w AS (ORDER BY observed_at)
+            ) sampled
+            WHERE reason IS NOT NULL
+              AND (previous_reason IS DISTINCT FROM reason OR previous_at IS DISTINCT FROM disconnected_at)
+            ORDER BY observed_at DESC LIMIT ?
+            """,device,limit)));
+        return result;
+    }
+
     private static long bucketSeconds(String bucket) {
         return switch(bucket) {
             case "1m" -> 60; case "5m" -> 300; case "15m" -> 900; case "1h" -> 3600; case "1d" -> 86400;

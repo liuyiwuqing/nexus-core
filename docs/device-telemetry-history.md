@@ -113,6 +113,40 @@
 
 前端若展示“实时”标签，仍应以 `GET .../management` 的 `fresh` 和 `observedAt` 为准；历史接口的最后一个桶不代表设备当前在线。
 
+## 断线事件列表（TELEMETRY-08）
+
+`GET /api/v1/devices/{deviceId}/telemetry/disconnects`
+
+只读、管理员 Bearer 鉴权，接口不写入样本、不触发设备动作。事件来自 `device_telemetry_samples` 中已记录的断线原因，不新建表、不迁移，也不回放或补造历史。
+
+| 参数 | 约束 | 默认 |
+| --- | --- | --- |
+| `limit` | 1–100 的整数 | 20 |
+
+判定口径：按 `observed_at` 逐条比较相邻样本，只有 `(wifi_disconnect_reason, wifi_disconnected_at)` 与上一条不同、且原因非 `null` 的样本才算一次事件。
+
+- 原因变化立即成为事件（采样规则本就把原因变化视为变化样本）。
+- 原因相同但断线时刻更新时，`wifiDisconnectedAt` 本身不触发立即写入，事件会在下一次心跳样本（默认 30 秒内）出现。
+- 同一（原因、时刻）在后续心跳中重复上报只算一次；原因回到 `null` 不算事件，只表示设备已重新上报可用网络。
+- 设备未对时只报原因、不报时刻时，`disconnectedAt` 为 `null`，仍按上报顺序列出。
+- 事件量为零（从未断线或样本已过保留期）时返回空数组，不补造“在线”或“从未断线”记录。
+
+响应：
+
+```json
+{
+  "deviceId": "dodo-1",
+  "limit": 20,
+  "retentionDays": 30,
+  "items": [
+    { "observedAt": "2026-11-17T02:15:30Z", "reason": 202, "disconnectedAt": "2026-11-17T02:10:00Z" },
+    { "observedAt": "2026-11-17T01:05:00Z", "reason": 201, "disconnectedAt": null }
+  ]
+}
+```
+
+`observedAt` 为记录该事件的样本时间，`disconnectedAt` 为设备上报的断线时刻（可能缺失）。原因码为 ESP-IDF `wifi_err_reason_t`，服务端只透传数字，名称由管理台映射；未知码直接显示数字。设备不存在返回 404 `device_not_found`，`limit` 非整数或越界返回 400 `invalid_disconnect_limit`。
+
 ## 配置
 
 ```dotenv

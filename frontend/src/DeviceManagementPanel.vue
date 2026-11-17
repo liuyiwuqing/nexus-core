@@ -7,8 +7,8 @@ import ConsoleForm from './ConsoleForm.vue';
 import { NButton, NCheckbox, NAutoComplete, NInputNumber, NSlider, NTimePicker } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { errorNames, formatRelative, formatTime, wifiDisconnectName, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryHistory, type TelemetryMetric } from './types';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { errorNames, formatRelative, formatTime, wifiDisconnectName, type Api, type Device, type DeviceConfig, type DeviceManagement, type TelemetryDisconnects, type TelemetryHistory, type TelemetryMetric } from './types';
 import StatusNote from './StatusNote.vue';
 import TelemetryChart from './TelemetryChart.vue';
 import { readFailure } from './failure';
@@ -108,6 +108,27 @@ function pickRange(id: RangeId) {
   if (range.value === id) return;
   range.value = id; history.value = null; void loadHistory();
 }
+const disconnects = ref<TelemetryDisconnects | null>(null), disconnectsLoading = ref(false), disconnectsError = ref('');
+const disconnectsPath = `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=20`;
+// 没有断线原因、也读不到列表时不渲染整段，避免给未断线设备增加空区块。
+const disconnectVisible = computed(() => !!data.value?.telemetry?.wifiDisconnectReason || !!disconnectsError.value
+  || !!disconnects.value?.items.length);
+let disconnectGeneration = 0, disconnectRead: AbortController | undefined;
+async function loadDisconnects() {
+  disconnectRead?.abort(); disconnectRead = new AbortController(); const current = ++disconnectGeneration;
+  disconnectsLoading.value = true; disconnectsError.value = '';
+  try {
+    const value = await props.api<TelemetryDisconnects>(disconnectsPath, 'GET', undefined, disconnectRead.signal);
+    if (alive && current === disconnectGeneration) disconnects.value = value;
+  } catch (failure) {
+    if (alive && current === disconnectGeneration && !(failure instanceof DOMException && failure.name === 'AbortError'))
+      disconnectsError.value = readFailure(failure, '断线记录读取失败，请稍后重试。');
+  } finally { if (alive && current === disconnectGeneration) disconnectsLoading.value = false; }
+}
+// 设备报告新的断线时刻后立即重读，避免等待下一次手动刷新。
+watch(() => data.value?.telemetry?.wifiDisconnectedAt, (next, previous) => {
+  if (previous !== undefined && next !== previous) void loadDisconnects();
+});
 function exportHistory() {
   const value = history.value;
   if (!value?.points.length) return;
@@ -133,7 +154,7 @@ function exportHistory() {
   document.body.appendChild(link); link.click(); link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function refreshAll() { void refresh(); void loadHistory(); }
+function refreshAll() { void refresh(); void loadHistory(); void loadDisconnects(); }
 async function submit() {
   if (sending.value || props.busy) return;
   if (!uncertain.value) {
@@ -173,14 +194,14 @@ function setDuration(value: number | null) {
   if (form.value && value !== null) form.value.message.durationMs = Math.round(value * 1000);
 }
 onMounted(() => {
-  void refresh(); void loadHistory();
+  void refresh(); void loadHistory(); void loadDisconnects();
   interval = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void refresh(); }, 3000);
   historyTimer = setInterval(() => { if (document.visibilityState === 'visible' && !sending.value) void loadHistory(); }, 60000);
 });
 onUnmounted(() => {
-  alive = false; generation++; historyGeneration++;
+  alive = false; generation++; historyGeneration++; disconnectGeneration++;
   clearInterval(interval); clearInterval(historyTimer);
-  read?.abort(); historyRead?.abort();
+  read?.abort(); historyRead?.abort(); disconnectRead?.abort();
 });
 </script>
 
@@ -459,6 +480,25 @@ onUnmounted(() => {
               历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。
             </p>
           </template>
+        </template>
+      </ConsoleDisclosure>
+      <ConsoleDisclosure v-if="disconnectVisible" label="最近断线" class="disconnect-history" :level="3"
+        :summary="disconnects?.items.length ? `${disconnects.items.length} 条` : '来自设备已上报的遥测'"
+        :force-open="!!disconnectsError">
+        <ConsoleState v-if="disconnectsError" kind="error" compact>{{ disconnectsError }}</ConsoleState>
+        <ConsoleState v-else-if="disconnectsLoading && !disconnects" kind="loading" compact>正在读取断线记录…</ConsoleState>
+        <ConsoleState v-else-if="!disconnects?.items.length" compact>历史样本中没有断线记录。</ConsoleState>
+        <template v-else>
+          <div v-for="item in disconnects.items" :key="item.observedAt + item.reason" class="management-record">
+            <div class="record-heading">
+              <span>{{ formatTime(item.disconnectedAt || item.observedAt) }}</span>
+              <span class="badge">{{ wifiDisconnectName(item.reason) }}</span>
+            </div>
+            <p class="management-hint">
+              {{ item.disconnectedAt ? `记录于 ${formatTime(item.observedAt)}` : '设备当时尚未对时，按上报时刻排序' }}
+            </p>
+          </div>
+          <p class="management-hint">保留 {{ disconnects.retentionDays }} 天，最多 {{ disconnects.limit }} 条。</p>
         </template>
       </ConsoleDisclosure>
       <ConsoleDisclosure v-if="data.configRequests.length" label="最近配置记录" class="management-history" :level="3"

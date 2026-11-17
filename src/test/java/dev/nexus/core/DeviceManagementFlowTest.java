@@ -63,7 +63,7 @@ class DeviceManagementFlowTest {
             pattern write nexus/v1/devices/%u/config_acks
             pattern write nexus/v1/devices/%u/telemetry
             """),"/mosquitto/config/acl")
-        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
+        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network dodo-disconnects; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);
@@ -159,6 +159,14 @@ class DeviceManagementFlowTest {
             .replace("\"freeHeap\"","\"wifiIp\":\""+ip+"\",\"wifiRssi\":"+rssi
                 +",\"wifiSsid\":\""+ssid+"\",\"wifiChannel\":"+channel
                 +",\"wifiDisconnectReason\":"+reason+",\"wifiDisconnectedAt\":"+(observedAt-60)+",\"freeHeap\"");
+        d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
+    }
+    void publishDisconnectTelemetry(MqttClient d,String id,long observedAt,int reason,long disconnectedAt)throws Exception {
+        String value=telemetry(id,0,CONFIG)
+            .replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observedAt)
+            .replace("\"freeHeap\"","\"wifiIp\":\"192.168.1.23\",\"wifiRssi\":-58"
+                +",\"wifiSsid\":\"HomeLab-2.4G\",\"wifiChannel\":6"
+                +",\"wifiDisconnectReason\":"+reason+",\"wifiDisconnectedAt\":"+disconnectedAt+",\"freeHeap\"");
         d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
     }
     @Test void configurationReusesRequestAndOnlyDeviceAckConfirmsSaving()throws Exception {
@@ -435,6 +443,41 @@ class DeviceManagementFlowTest {
             var points=awaitHistoryPoints(id,base-60,base+120,3).path("points");
             for(var point:points)assertThat(point.path("volume").asInt()).isNotIn(99,98);
             assertThat(points.get(2).hasNonNull("wifiIp")).isFalse();
+            d.disconnect();
+        }
+    }
+    @Test void telemetryDisconnectHistoryListsEachRecordedEvent()throws Exception {
+        String id="dodo-disconnects",path="devices/"+id+"/telemetry/disconnects";
+        assertThat(request("GET",path,"",null).statusCode()).isEqualTo(401);
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"断线历史\"}",TOKEN).statusCode()).isEqualTo(201);
+        assertThat(request("GET","devices/missing-disconnects/telemetry/disconnects","",TOKEN).statusCode()).isEqualTo(404);
+        long base=Instant.now().getEpochSecond()/60*60-300;
+        try(var d=device(id)) {
+            waitForCore();
+            publishDisconnectTelemetry(d,id,base,201,base-60);      // 首次断线
+            awaitHistoryPoints(id,base-60,base+120,1);
+            publishDisconnectTelemetry(d,id,base+5,202,base-55);   // 原因变化立即成条
+            publishDisconnectTelemetry(d,id,base+35,202,base-40);  // 原因未变、时刻变化，随心跳成条
+            publishDisconnectTelemetry(d,id,base+65,202,base-40);  // 同一(原因,时刻)只随心跳复查，不重复成事件
+            publishTelemetryAt(d,id,base+95,40);                   // 无断线字段，不成事件
+            var historyPoints=awaitHistoryPoints(id,base-60,base+120,5).path("points");
+            assertThat(historyPoints.size()).isEqualTo(5);
+            var all=json.readTree(request("GET",path,"",TOKEN).body());
+            assertThat(all.path("deviceId").asText()).isEqualTo(id);
+            assertThat(all.path("limit").asInt()).isEqualTo(20);
+            assertThat(all.path("retentionDays").asInt()).isEqualTo(30);
+            var items=all.path("items");
+            assertThat(items.size()).isEqualTo(3);
+            assertThat(items.get(0).path("reason").asInt()).isEqualTo(202);
+            assertThat(Instant.parse(items.get(0).path("disconnectedAt").asText()).getEpochSecond()).isEqualTo(base-40);
+            assertThat(Instant.parse(items.get(0).path("observedAt").asText()).getEpochSecond()).isEqualTo(base+35);
+            assertThat(items.get(1).path("reason").asInt()).isEqualTo(202);
+            assertThat(Instant.parse(items.get(1).path("disconnectedAt").asText()).getEpochSecond()).isEqualTo(base-55);
+            assertThat(items.get(2).path("reason").asInt()).isEqualTo(201);
+            assertThat(Instant.parse(items.get(2).path("disconnectedAt").asText()).getEpochSecond()).isEqualTo(base-60);
+            assertThat(json.readTree(request("GET",path+"?limit=2","",TOKEN).body()).path("items").size()).isEqualTo(2);
+            for(String query:new String[]{"limit=0","limit=101","limit=abc"})
+                assertThat(request("GET",path+"?"+query,"",TOKEN).statusCode()).withFailMessage(query).isEqualTo(400);
             d.disconnect();
         }
     }

@@ -46,6 +46,10 @@ export interface TelemetryHistory {
   deviceId: string; from: string; to: string; bucket: string;
   sampleSeconds: number; retentionDays: number; truncated: boolean; points: TelemetryPoint[];
 }
+export interface TelemetryDisconnect { observedAt: string; reason: number; disconnectedAt: string | null }
+export interface TelemetryDisconnects {
+  deviceId: string; limit: number; retentionDays: number; items: TelemetryDisconnect[];
+}
 export interface OtaTarget { releaseId: string; version: string; imageSha256: string; imageSize: number; releaseSequence: number }
 export interface OtaRelease { releaseId: string; target: OtaTarget; identity: Record<string, string | number>; createdAt: string }
 export interface OtaView {
