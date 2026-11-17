@@ -20,6 +20,7 @@ export interface DeviceTelemetry {
   muted: boolean; dnd: boolean; volume: number; brightness: number; unread: number;
   freeHeap: number; minFreeHeap: number; audioUnderruns?: number; audioFaulted?: boolean;
   wifiIp?: string; wifiRssi?: number; wifiSsid?: string; wifiChannel?: number;
+  wifiBssid?: string; wifiChannelWidth?: number;
   wifiDisconnectReason?: number; wifiDisconnectedAt?: number; config?: DeviceConfig;
 }
 export interface ConfigRequest {
@@ -39,6 +40,7 @@ export interface TelemetryPoint {
   audioUnderruns: number | null; inferenceMaxMs: number | null; displayMaxMs: number | null;
   audioFaulted: boolean | null; wifiIp: string | null; wifiRssi: number | null;
   wifiSsid: string | null; wifiChannel: number | null;
+  wifiBssid: string | null; wifiChannelWidth: number | null;
   wifiDisconnectReason: number | null; wifiDisconnectedAt: string | null;
 }
 export type TelemetryMetric = 'heap' | 'volume' | 'unread' | 'audio' | 'network';

@@ -58,7 +58,8 @@ const networkSummary = computed(() => {
   const telemetry = data.value?.telemetry;
   if (!telemetry || (!telemetry.wifiSsid && !telemetry.wifiIp)) return '';
   return [telemetry.wifiSsid, telemetry.wifiIp, telemetry.wifiChannel ? `信道 ${telemetry.wifiChannel}` : '',
-    telemetry.wifiRssi === undefined ? '' : `${telemetry.wifiRssi} dBm`].filter(Boolean).join(' · ');
+    telemetry.wifiChannelWidth ? `${telemetry.wifiChannelWidth} MHz` : '',
+    telemetry.wifiRssi === undefined ? '' : `${telemetry.wifiRssi} dBm`, telemetry.wifiBssid].filter(Boolean).join(' · ');
 });
 const disconnectSummary = computed(() => {
   const telemetry = data.value?.telemetry;
@@ -134,7 +135,7 @@ function exportHistory() {
   if (!value?.points.length) return;
   const header = ['采样时间', '接收时间', '样本数', '固件版本', '配置版本', '音量%', '亮度%', '静音', '免打扰', '未读',
     '可用内存(B)', '桶内最小(B)', '桶内最大(B)', '启动以来最小(B)', '音频欠载', '推理最长(ms)', '显示最长(ms)', '音频异常',
-    'Wi-Fi IP', '信号(dBm)', 'SSID', '信道', '断线原因', '断线时间'];
+    'Wi-Fi IP', '信号(dBm)', 'SSID', '信道', '信道宽度(MHz)', 'BSSID', '断线原因', '断线时间'];
   const cell = (item: unknown) => {
     const text = item === null || item === undefined ? '' : String(item);
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -144,7 +145,7 @@ function exportHistory() {
     point.volume, point.brightness, point.muted, point.dnd, point.unread,
     point.freeHeap, point.freeHeapMin, point.freeHeapMax, point.minFreeHeap,
     point.audioUnderruns, point.inferenceMaxMs, point.displayMaxMs, point.audioFaulted,
-    point.wifiIp, point.wifiRssi, point.wifiSsid, point.wifiChannel,
+    point.wifiIp, point.wifiRssi, point.wifiSsid, point.wifiChannel, point.wifiChannelWidth, point.wifiBssid,
     point.wifiDisconnectReason, point.wifiDisconnectedAt,
   ].map(cell).join(','))];
   const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));

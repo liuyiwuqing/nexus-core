@@ -153,11 +153,12 @@ class DeviceManagementFlowTest {
         d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
     }
     void publishNetworkTelemetry(MqttClient d,String id,long observedAt,String ip,int rssi,int volume,
-        String ssid,int channel,int reason)throws Exception {
+        String ssid,int channel,int reason,String bssid,int width)throws Exception {
         String value=telemetry(id,0,CONFIG.replace("\"volume\":25","\"volume\":"+volume))
             .replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observedAt)
             .replace("\"freeHeap\"","\"wifiIp\":\""+ip+"\",\"wifiRssi\":"+rssi
                 +",\"wifiSsid\":\""+ssid+"\",\"wifiChannel\":"+channel
+                +",\"wifiBssid\":\""+bssid+"\",\"wifiChannelWidth\":"+width
                 +",\"wifiDisconnectReason\":"+reason+",\"wifiDisconnectedAt\":"+(observedAt-60)+",\"freeHeap\"");
         d.publish("nexus/v1/devices/"+id+"/telemetry",value.getBytes(StandardCharsets.UTF_8),1,false);
     }
@@ -412,24 +413,31 @@ class DeviceManagementFlowTest {
         long base=Instant.now().getEpochSecond()/60*60-300;
         try(var d=device(id)) {
             waitForCore();
-            publishNetworkTelemetry(d,id,base,"192.168.1.23",-58,25,"HomeLab-2.4G",6,201);
+            publishNetworkTelemetry(d,id,base,"192.168.1.23",-58,25,"HomeLab-2.4G",6,201,"AA:BB:CC:DD:EE:01",20);
             var raw=awaitHistoryPoints(id,base-60,base+120,1);
             var first=raw.path("points").get(0);
             assertThat(first.path("wifiIp").asText()).isEqualTo("192.168.1.23");
             assertThat(first.path("wifiRssi").asInt()).isEqualTo(-58);
             assertThat(first.path("wifiSsid").asText()).isEqualTo("HomeLab-2.4G");
             assertThat(first.path("wifiChannel").asInt()).isEqualTo(6);
+            assertThat(first.path("wifiBssid").asText()).isEqualTo("AA:BB:CC:DD:EE:01");
+            assertThat(first.path("wifiChannelWidth").asInt()).isEqualTo(20);
             assertThat(first.path("wifiDisconnectReason").asInt()).isEqualTo(201);
             assertThat(Instant.parse(first.path("wifiDisconnectedAt").asText()).getEpochSecond()).isEqualTo(base-60);
-            publishNetworkTelemetry(d,id,base+10,"192.168.1.24",-52,25,"HomeLab-5G",149,201); // 地址与网络变化立即入库
+            publishNetworkTelemetry(d,id,base+10,"192.168.1.24",-52,25,"HomeLab-5G",149,201,"AA:BB:CC:DD:EE:02",40); // 地址与网络变化立即入库
             awaitHistoryPoints(id,base-60,base+120,2);
             var grouped=telemetryHistory(id,historyWindow(base-60,base+120)+"&bucket=1m").path("points").get(0);
             assertThat(grouped.path("wifiIp").asText()).isEqualTo("192.168.1.24");
             assertThat(grouped.path("wifiRssi").asInt()).isEqualTo(-55);
             assertThat(grouped.path("wifiSsid").asText()).isEqualTo("HomeLab-5G");
             assertThat(grouped.path("wifiChannel").asInt()).isEqualTo(149);
+            assertThat(grouped.path("wifiBssid").asText()).isEqualTo("AA:BB:CC:DD:EE:02");
+            assertThat(grouped.path("wifiChannelWidth").asInt()).isEqualTo(40);
             assertThat(grouped.path("wifiDisconnectReason").asInt()).isEqualTo(201);
             assertThat(Instant.parse(grouped.path("wifiDisconnectedAt").asText()).getEpochSecond()).isEqualTo(base-50);
+            var managed=json.readTree(request("GET","devices/"+id+"/management","",TOKEN).body()).path("telemetry");
+            assertThat(managed.path("wifiBssid").asText()).isEqualTo("AA:BB:CC:DD:EE:02");
+            assertThat(managed.path("wifiChannelWidth").asInt()).isEqualTo(40);
             JsonNode card=null;
             for(var item:json.readTree(request("GET","devices","",TOKEN).body()).path("items"))
                 if(id.equals(item.path("deviceId").asText())) card=item;
@@ -437,12 +445,19 @@ class DeviceManagementFlowTest {
             assertThat(card.path("wifiIp").asText()).isEqualTo("192.168.1.24");
             assertThat(card.path("wifiRssi").asInt()).isEqualTo(-52);
             assertThat(card.path("wifiSsid").asText()).isEqualTo("HomeLab-5G");
-            publishNetworkTelemetry(d,id,base+20,"192.168.1.999",12,99,"HomeLab-2.4G",6,201); // 非法地址与信号整条拒绝
-            publishNetworkTelemetry(d,id,base+30,"192.168.1.24",-52,98,"HomeLab-5G",200,201); // 非法信道同样整条拒绝
+            publishNetworkTelemetry(d,id,base+20,"192.168.1.999",12,99,"HomeLab-2.4G",6,201,"AA:BB:CC:DD:EE:05",20); // 非法地址与信号整条拒绝
+            publishNetworkTelemetry(d,id,base+30,"192.168.1.24",-52,98,"HomeLab-5G",200,201,"AA:BB:CC:DD:EE:06",40); // 非法信道同样整条拒绝
             publishTelemetryAt(d,id,base+40,40);
-            var points=awaitHistoryPoints(id,base-60,base+120,3).path("points");
-            for(var point:points)assertThat(point.path("volume").asInt()).isNotIn(99,98);
-            assertThat(points.get(2).hasNonNull("wifiIp")).isFalse();
+            publishNetworkTelemetry(d,id,base+50,"192.168.1.24",-52,25,"HomeLab-5G",149,201,"aa:bb:cc:dd:ee:07",40); // 小写 BSSID 拒绝
+            publishNetworkTelemetry(d,id,base+60,"192.168.1.24",-52,25,"HomeLab-5G",149,201,"AA:BB:CC:DD:EE:08",80); // 非 20/40 宽度拒绝
+            publishTelemetryAt(d,id,base+70,41);
+            var points=awaitHistoryPoints(id,base-60,base+130,4).path("points");
+            for(var point:points) {
+                assertThat(point.path("volume").asInt()).isNotIn(99,98);
+                assertThat(point.hasNonNull("wifiBssid")?point.path("wifiBssid").asText():"").isNotEqualTo("aa:bb:cc:dd:ee:07");
+                assertThat(point.path("wifiChannelWidth").asInt(0)).isNotEqualTo(80);
+            }
+            assertThat(points.get(3).hasNonNull("wifiIp")).isFalse();
             d.disconnect();
         }
     }

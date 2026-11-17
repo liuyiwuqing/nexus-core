@@ -75,7 +75,8 @@ final class ManagementCodec {
         fields(value,Set.of("schemaVersion","deviceId","observedAt","firmwareVersion","configRevision","configWritable",
             "muted","dnd","volume","brightness","unread","freeHeap","minFreeHeap"),
             Set.of("audioUnderruns","inferenceMaxMs","displayMaxMs","audioFaulted","wifiIp","wifiRssi",
-                "wifiSsid","wifiChannel","wifiDisconnectReason","wifiDisconnectedAt","config"));
+                "wifiSsid","wifiChannel","wifiBssid","wifiChannelWidth","wifiDisconnectReason",
+                "wifiDisconnectedAt","config"));
         integer(value.get("schemaVersion"),1,1);
         if(!text(value.get("deviceId"),40).equals(device))throw new IllegalArgumentException("device_mismatch");
         integer(value.get("observedAt"),1,Instant.now().getEpochSecond()+5);
@@ -93,6 +94,15 @@ final class ManagementCodec {
         if(value.has("wifiRssi"))integer(value.get("wifiRssi"),-130,0);
         if(value.has("wifiSsid"))text(value.get("wifiSsid"),32);
         if(value.has("wifiChannel"))integer(value.get("wifiChannel"),1,196);
+        if(value.has("wifiBssid")) {
+            String bssid=text(value.get("wifiBssid"),17);
+            if(!bssid.matches("([0-9A-F]{2}:){5}[0-9A-F]{2}"))
+                throw new IllegalArgumentException("invalid_telemetry_wifi_bssid");
+        }
+        if(value.has("wifiChannelWidth")) {
+            int width=(int)integer(value.get("wifiChannelWidth"),20,40);
+            if(width!=20&&width!=40)throw new IllegalArgumentException("invalid_telemetry_wifi_width");
+        }
         if(value.has("wifiDisconnectReason"))integer(value.get("wifiDisconnectReason"),1,255);
         if(value.has("wifiDisconnectedAt"))integer(value.get("wifiDisconnectedAt"),1,Instant.now().getEpochSecond()+5);
         if(value.has("config")) {

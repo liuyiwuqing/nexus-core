@@ -54,7 +54,7 @@ public class TelemetryHistoryService {
         long observed=value.get("observedAt").asLong();
         var rows=db.queryForList("""
             SELECT observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,audio_faulted,
-                wifi_ip,wifi_ssid,wifi_channel,wifi_disconnect_reason
+                wifi_ip,wifi_ssid,wifi_channel,wifi_bssid,wifi_channel_width,wifi_disconnect_reason
             FROM device_telemetry_samples WHERE device_id=? ORDER BY observed_at DESC LIMIT 1
             """,device);
         if(!rows.isEmpty()) {
@@ -68,8 +68,9 @@ public class TelemetryHistoryService {
             INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,
                 volume,brightness,muted,dnd,unread,free_heap,min_free_heap,
                 audio_underruns,inference_max_ms,display_max_ms,audio_faulted,
-                wifi_ip,wifi_rssi,wifi_ssid,wifi_channel,wifi_disconnect_reason,wifi_disconnected_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                wifi_ip,wifi_rssi,wifi_ssid,wifi_channel,wifi_bssid,wifi_channel_width,
+                wifi_disconnect_reason,wifi_disconnected_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(device_id,observed_at) DO NOTHING
             """,device,Timestamp.from(Instant.ofEpochSecond(observed)),
             value.get("firmwareVersion").asText(),value.get("configRevision").asLong(),
@@ -81,6 +82,7 @@ public class TelemetryHistoryService {
             value.has("audioFaulted")?value.get("audioFaulted").asBoolean():null,
             value.has("wifiIp")?value.get("wifiIp").asText():null,optionalLong(value,"wifiRssi"),
             value.has("wifiSsid")?value.get("wifiSsid").asText():null,optionalLong(value,"wifiChannel"),
+            value.has("wifiBssid")?value.get("wifiBssid").asText():null,optionalLong(value,"wifiChannelWidth"),
             optionalLong(value,"wifiDisconnectReason"),
             value.has("wifiDisconnectedAt")?Timestamp.from(Instant.ofEpochSecond(value.get("wifiDisconnectedAt").asLong())):null);
     }
@@ -102,6 +104,10 @@ public class TelemetryHistoryService {
                 value.has("wifiSsid")?value.get("wifiSsid").asText():null)
             || !java.util.Objects.equals(asInteger(last,"wifi_channel"),
                 value.has("wifiChannel")?value.get("wifiChannel").asInt():null)
+            || !java.util.Objects.equals(last.get("wifi_bssid"),
+                value.has("wifiBssid")?value.get("wifiBssid").asText():null)
+            || !java.util.Objects.equals(asInteger(last,"wifi_channel_width"),
+                value.has("wifiChannelWidth")?value.get("wifiChannelWidth").asInt():null)
             || !java.util.Objects.equals(asInteger(last,"wifi_disconnect_reason"),
                 value.has("wifiDisconnectReason")?value.get("wifiDisconnectReason").asInt():null);
     }
@@ -138,6 +144,7 @@ public class TelemetryHistoryService {
                     inference_max_ms AS "inferenceMaxMs",display_max_ms AS "displayMaxMs",
                     audio_faulted AS "audioFaulted",wifi_ip AS "wifiIp",wifi_rssi AS "wifiRssi",
                     wifi_ssid AS "wifiSsid",wifi_channel AS "wifiChannel",
+                    wifi_bssid AS "wifiBssid",wifi_channel_width AS "wifiChannelWidth",
                     wifi_disconnect_reason AS "wifiDisconnectReason",wifi_disconnected_at AS "wifiDisconnectedAt"
                 FROM device_telemetry_samples
                 WHERE device_id=? AND observed_at>=? AND observed_at<?
@@ -167,6 +174,9 @@ public class TelemetryHistoryService {
                     round(avg(wifi_rssi))::int AS "wifiRssi",
                     (array_agg(wifi_ssid ORDER BY observed_at DESC) FILTER (WHERE wifi_ssid IS NOT NULL))[1] AS "wifiSsid",
                     (array_agg(wifi_channel ORDER BY observed_at DESC) FILTER (WHERE wifi_channel IS NOT NULL))[1] AS "wifiChannel",
+                    (array_agg(wifi_bssid ORDER BY observed_at DESC) FILTER (WHERE wifi_bssid IS NOT NULL))[1] AS "wifiBssid",
+                    (array_agg(wifi_channel_width ORDER BY observed_at DESC)
+                        FILTER (WHERE wifi_channel_width IS NOT NULL))[1] AS "wifiChannelWidth",
                     (array_agg(wifi_disconnect_reason ORDER BY observed_at DESC)
                         FILTER (WHERE wifi_disconnect_reason IS NOT NULL))[1] AS "wifiDisconnectReason",
                     (array_agg(wifi_disconnected_at ORDER BY observed_at DESC)
