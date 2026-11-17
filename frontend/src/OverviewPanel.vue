@@ -29,7 +29,7 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
 
 <template>
   <section class="overview-panel" aria-label="运行概览">
-    <div class="section-heading"><div><h1 tabindex="-1">运行概览</h1><p v-if="snapshot">{{ snapshot.dayStart.slice(0, 10) }} · UTC 当日起算</p><p v-else>设备在线、今日收件与投递健康</p></div><NButton quaternary size="small" attr-type="button" class="text-button" :disabled="loading" @click="load"><template #icon><RefreshCw :size="15" :class="{ spinning: loading }" /></template>刷新概览</NButton></div>
+    <div class="section-heading"><div><h1 tabindex="-1">运行概览</h1><p v-if="snapshot">{{ snapshot.dayStart.slice(0, 10) }} · UTC 当日起算</p><p v-else>设备在线、今日收件与投递健康</p></div><NButton attr-type="button" class="text-button" :disabled="loading" @click="load"><template #icon><RefreshCw :size="15" :class="{ spinning: loading }" /></template>刷新概览</NButton></div>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取概览…</p>
     <p v-else-if="error" class="feedback error" role="alert">{{ error }}</p>
     <template v-else-if="snapshot">

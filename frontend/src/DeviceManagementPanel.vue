@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -193,10 +194,10 @@ onUnmounted(() => {
     <div class="record-heading">
       <h2>设置与状态</h2>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refreshAll">
+        <NButton attr-type="button" class="text-button" :disabled="loading" @click="refreshAll">
           {{ loading ? '刷新中…' : '刷新状态' }}
         </NButton>
-        <NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
+        <NButton attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
       </div>
     </div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
@@ -243,77 +244,14 @@ onUnmounted(() => {
           本机语音策略与已保存设置不同，请在设备上核对静音选择。
         </p>
       </template>
-      <section class="telemetry-history" aria-label="遥测历史">
-        <div class="history-heading">
-          <div>
-            <h3>状态历史</h3>
-            <p>来自设备已上报的遥测</p>
-          </div>
-          <div class="history-range" role="group" aria-label="历史时间范围">
-            <NButton
-              v-for="item in ranges"
-              :key="item.id"
-              size="small"
-              attr-type="button"
-              :type="range === item.id ? 'primary' : 'default'"
-              :quaternary="range !== item.id"
-              @click="pickRange(item.id)"
-            >
-              {{ item.label }}
-            </NButton>
-          </div>
-        </div>
-        <div class="history-metrics" role="group" aria-label="历史指标">
-          <NButton
-            v-for="item in metrics"
-            :key="item.id"
-            size="small"
-            attr-type="button"
-            :type="metric === item.id ? 'primary' : 'default'"
-            :quaternary="metric !== item.id"
-            @click="metric = item.id"
-          >
-            {{ item.label }}
-          </NButton>
-          <NButton
-            size="small"
-            quaternary
-            attr-type="button"
-            class="history-export"
-            :disabled="!history?.points.length"
-            @click="exportHistory"
-          >
-            导出 CSV
-          </NButton>
-        </div>
-        <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
-        <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
-        <template v-else-if="history">
-          <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
-          <template v-else>
-            <TelemetryChart
-              :points="history.points"
-              :from="history.from"
-              :to="history.to"
-              :bucket-seconds="currentRange.bucketSeconds"
-              :metric="metric"
-            />
-            <p class="management-hint">
-              {{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}
-              <template v-if="history.truncated">· 仅显示最新 2000 个点</template>
-              <br />
-              历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。
-            </p>
-          </template>
-        </template>
-      </section>
+
       <p v-if="data.configBlock" class="management-hint" role="status">
         {{ errorNames[data.configBlock] || '当前不能修改设置，请刷新后核对。' }}
       </p>
       <StatusNote v-if="staleDraft" tone="warn">
         设备设置已变化，你的编辑仍保留。
         <template #actions>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton>
+          <NButton attr-type="button" class="text-button" :disabled="sending" @click="resetDraft">加载设备新设置</NButton>
         </template>
       </StatusNote>
       <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
@@ -342,6 +280,9 @@ onUnmounted(() => {
             <NCheckbox class="checkbox-label" v-model:checked="form.dnd.manual" :disabled="disabled" :aria-disabled="disabled">手动免打扰</NCheckbox>
             <NCheckbox class="checkbox-label" v-model:checked="form.dnd.allowCritical" :disabled="disabled" :aria-disabled="disabled">免打扰时允许紧急提醒</NCheckbox>
           </div>
+          <ConsoleDisclosure label="更多设置" class="management-options" :level="3"
+            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${duration ?? '—'} 秒${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
+            :force-open="!!uncertain || !!submitError || staleDraft">
           <NCheckbox class="checkbox-label" v-model:checked="form.dnd.enabled" :disabled="disabled" :aria-disabled="disabled">定时免打扰</NCheckbox>
           <div v-if="form.dnd.enabled" class="form-columns">
             <ConsoleField
@@ -452,6 +393,7 @@ onUnmounted(() => {
           <p v-if="data.telemetry?.config && form.message.queueDepth < data.telemetry.config.message.queueDepth" class="management-hint">
             缩小容量不会删除已接收消息。
           </p>
+          </ConsoleDisclosure>
         </div>
         <div class="form-footer">
           <span v-if="dirty && !uncertain">有未提交的修改</span>
@@ -464,8 +406,62 @@ onUnmounted(() => {
           </NButton>
         </div>
       </ConsoleForm>
-      <details v-if="data.configRequests.length" class="management-history" open>
-        <summary>最近配置记录</summary>
+      <ConsoleDisclosure label="状态历史" summary="来自设备已上报的遥测" class="telemetry-history" aria-label="遥测历史" :level="3" :force-open="!!historyError">
+        <div class="history-heading">
+          <div class="history-range" role="group" aria-label="历史时间范围">
+            <NButton
+              v-for="item in ranges"
+              :key="item.id"
+              attr-type="button"
+              :type="range === item.id ? 'primary' : 'default'"
+              @click="pickRange(item.id)"
+            >
+              {{ item.label }}
+            </NButton>
+          </div>
+        </div>
+        <div class="history-metrics" role="group" aria-label="历史指标">
+          <NButton
+            v-for="item in metrics"
+            :key="item.id"
+            attr-type="button"
+            :type="metric === item.id ? 'primary' : 'default'"
+            @click="metric = item.id"
+          >
+            {{ item.label }}
+          </NButton>
+          <NButton
+            attr-type="button"
+            class="history-export"
+            :disabled="!history?.points.length"
+            @click="exportHistory"
+          >
+            导出 CSV
+          </NButton>
+        </div>
+        <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
+        <p v-else-if="historyLoading && !history" class="muted" role="status">正在读取历史…</p>
+        <template v-else-if="history">
+          <p v-if="!history.points.length" class="history-empty">所选范围内没有采样点。</p>
+          <template v-else>
+            <TelemetryChart
+              :points="history.points"
+              :from="history.from"
+              :to="history.to"
+              :bucket-seconds="currentRange.bucketSeconds"
+              :metric="metric"
+            />
+            <p class="management-hint">
+              {{ currentRange.label }} · {{ bucketLabels[history.bucket] }} · 最后一条 {{ formatTime(lastPoint?.observedAt) }}
+              <template v-if="history.truncated">· 仅显示最新 2000 个点</template>
+              <br />
+              历史按设备上报时间排序，缺失区间留空；最后一条不代表设备在线。保留 {{ history.retentionDays }} 天。
+            </p>
+          </template>
+        </template>
+      </ConsoleDisclosure>
+      <ConsoleDisclosure v-if="data.configRequests.length" label="最近配置记录" class="management-history" :level="3"
+        :summary="`${data.configRequests.length} 条`" :force-open="data.configRequests.some(item => item.status !== 'applied')">
         <div v-for="item in data.configRequests" :key="item.requestId" class="management-record">
           <div class="record-heading">
             <span>{{ formatTime(item.createdAt) }}</span>
@@ -479,7 +475,7 @@ onUnmounted(() => {
             {{ errorNames[item.lastError] || '设备未能确认此次设置，请核对状态。' }}
             <span v-if="item.deviceCode !== null">（{{ item.deviceCode }}）</span>
           </p>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">
+          <NButton attr-type="button" class="text-button" :disabled="auditLoading" @click="showAudit(item.requestId)">
             {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
           </NButton>
           <template v-if="auditId === item.requestId">
@@ -493,7 +489,7 @@ onUnmounted(() => {
             </ol>
           </template>
         </div>
-      </details>
+      </ConsoleDisclosure>
     </template>
   </section>
 </template>

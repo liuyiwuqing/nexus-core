@@ -494,11 +494,11 @@ onUnmounted(() => { document.removeEventListener('visibilitychange',visibleRefre
       <SetupGuide v-if="showGuide" :api="api" :refresh-key="devices.length" @close="showGuide = false" @navigate="tab = $event" />
       <div v-if="error" class="feedback error" role="alert">
         <span>{{ error }}</span>
-        <NButton quaternary attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton>
+        <NButton attr-type="button" class="text-button" @click="fullRefresh(true)">重试</NButton>
       </div>
       <div v-else-if="notice" class="feedback" role="status">
         <span>{{ notice }}</span>
-        <NButton quaternary attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton>
+        <NButton attr-type="button" class="text-button" aria-label="关闭提示" @click="notice = ''">×</NButton>
       </div>
       <InboxPanel
         v-if="tab === 'inbox'"

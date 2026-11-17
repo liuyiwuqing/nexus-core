@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -127,10 +128,10 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
     <div class="record-heading">
       <h2>固件升级</h2>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="refresh">
+        <NButton attr-type="button" class="text-button" :disabled="loading" @click="refresh">
           {{ loading ? '刷新中…' : '刷新状态' }}
         </NButton>
-        <NButton quaternary attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
+        <NButton attr-type="button" class="text-button" @click="emit('close')">收起</NButton>
       </div>
     </div>
     <p v-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
@@ -207,7 +208,6 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
           </div>
         </ConsoleForm>
         <NButton
-          quaternary
           attr-type="button"
           class="text-button spaced"
           :disabled="blocked"
@@ -248,6 +248,8 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
           </div>
         </ConsoleForm>
         <p v-if="!data.deployments.length" class="management-hint">暂无升级记录。</p>
+        <ConsoleDisclosure v-if="data.deployments.length" label="升级记录" class="ota-history" :level="3"
+          :summary="`${data.deployments.length} 条`" :force-open="!!pending || !!confirming || data.deployments.some(item => item.status !== 'healthy')">
         <div v-for="item in data.deployments" :key="item.requestId" class="management-record">
           <div class="record-heading">
             <strong>{{ item.target.version }} · {{ item.releaseId }}</strong>
@@ -261,7 +263,6 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
           </p>
           <p v-if="item.lastError" class="management-hint">{{ errorNames[item.lastError] || '请核对设备状态与操作记录。' }}</p>
           <NButton
-            size="small"
             attr-type="button"
             v-if="data.canReboot && data.observation?.requestId === item.requestId && !confirming"
             class="secondary compact"
@@ -289,7 +290,6 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
                 确认重启
               </NButton>
               <NButton
-                quaternary
                 attr-type="button"
                 class="text-button"
                 :disabled="sending"
@@ -302,7 +302,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
               </NButton>
             </div>
           </ConsoleForm>
-          <NButton quaternary attr-type="button" class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">
+          <NButton attr-type="button" class="text-button spaced" :disabled="auditLoading" @click="showAudit(item.requestId)">
             {{ auditId === item.requestId ? '收起操作记录' : '查看操作记录' }}
           </NButton>
           <template v-if="auditId === item.requestId">
@@ -316,6 +316,7 @@ onUnmounted(() => { alive = false; generation++; clearInterval(timer); read?.abo
             </ol>
           </template>
         </div>
+        </ConsoleDisclosure>
       </template>
     </template>
   </section>

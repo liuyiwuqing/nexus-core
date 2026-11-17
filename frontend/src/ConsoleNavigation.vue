@@ -29,13 +29,17 @@ const groups = computed(() => visibleNavigation(props.role));
       </div>
     </nav>
     <div class="sidebar-bottom">
-      <span class="local-indicator">{{ role === 'admin' ? '管理员' : role === 'operator' ? '操作员' : '只读访问' }}</span>
-      <div class="sidebar-actions">
-        <NButton quaternary class="text-button" :circle="!!collapsed" :size="collapsed ? 'small' : 'medium'" :aria-label="collapsed ? '退出登录' : undefined" :title="collapsed ? '退出登录' : undefined" @click="$emit('logout')"><template #icon><LogOut :size="16" /></template><span class="nav-label">退出登录</span></NButton>
-        <NButton quaternary circle size="small" class="sidebar-collapse" :aria-label="collapsed ? '展开导航' : '折叠导航'" :aria-pressed="!!collapsed" :title="collapsed ? '展开导航' : '折叠导航'" @click="$emit('toggleCollapse')">
+      <div class="sidebar-account">
+        <span class="local-indicator">{{ role === 'admin' ? '管理员' : role === 'operator' ? '操作员' : '只读访问' }}</span>
+        <NButton square attr-type="button" class="sidebar-collapse" :aria-label="collapsed ? '展开导航' : '折叠导航'"
+          :aria-pressed="!!collapsed" :title="collapsed ? '展开导航' : '折叠导航'" @click="$emit('toggleCollapse')">
           <template #icon><ChevronsRight v-if="collapsed" :size="16" /><ChevronsLeft v-else :size="16" /></template>
         </NButton>
       </div>
+      <NButton class="sidebar-logout" attr-type="button" :square="!!collapsed" :block="!collapsed"
+        aria-label="退出登录" :title="collapsed ? '退出登录' : undefined" @click="$emit('logout')">
+        <template #icon><LogOut :size="16" /></template><span class="nav-label">退出登录</span>
+      </NButton>
     </div>
   </aside>
 </template>

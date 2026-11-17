@@ -32,7 +32,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(poll); });
 
 <template>
   <section class="record-card" aria-labelledby="device-growth-title" :aria-busy="loading">
-    <div class="record-heading"><h2 id="device-growth-title">设备成长</h2><NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="load">刷新设备成长</NButton></div>
+    <div class="record-heading"><h2 id="device-growth-title">设备成长</h2><NButton attr-type="button" class="text-button" :disabled="loading" @click="load">刷新设备成长</NButton></div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="!loaded && loading" class="muted" role="status">正在读取设备成长…</p>
     <p v-else-if="loaded && !enabled" class="muted">设备成长同步未启用。</p>

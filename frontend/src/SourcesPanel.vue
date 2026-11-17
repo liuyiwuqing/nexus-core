@@ -33,7 +33,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         <p>独立令牌、签名与设备范围</p>
       </div>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新来源</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新来源</NButton>
         <NButton
           attr-type="button"
           v-if="admin"
@@ -51,7 +51,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       操作结果尚未确认，重试保持同一请求与参数。
       <template #actions>
         <NButton attr-type="button" class="secondary" :disabled="busy || loading" @click="execute()">重试原来源操作</NButton>
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="readOnlyCheck">放弃重试并只读核对</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="readOnlyCheck">放弃重试并只读核对</NButton>
       </template>
     </StatusNote>
     <div v-if="session.credentials" class="inline-form">
@@ -77,7 +77,6 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       </ConsoleField>
       <NCheckbox class="checkbox-label spaced" v-model:checked="show">显示本次凭据</NCheckbox>
       <NButton
-        quaternary
         attr-type="button"
         class="text-button"
         @click="
@@ -143,7 +142,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </ConsoleField>
       </div>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="creating = false">关闭</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="creating = false">关闭</NButton>
         <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || !!session.pending">保存来源</NButton>
       </div>
     </ConsoleForm>
@@ -158,17 +157,16 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         <p>范围：{{ s.deviceIds.join('、') }} · 已接收 {{ s.received }} 条</p>
         <p class="muted">最近事件：{{ formatTime(s.lastReceivedAt) }}</p>
         <div v-if="admin" class="management-actions">
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending || creating" @click="begin(s)">
+          <NButton attr-type="button" class="text-button" :disabled="busy || !!session.pending || creating" @click="begin(s)">
             编辑来源
           </NButton>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="toggle(s)">
+          <NButton attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="toggle(s)">
             {{ s.enabled ? '停用来源' : '启用来源' }}
           </NButton>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="test(s)">
+          <NButton attr-type="button" class="text-button" :disabled="busy || !!session.pending" @click="test(s)">
             测试来源
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             class="text-button"
             :disabled="busy || s.enabled || !!session.pending"
@@ -197,7 +195,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         />
       </ConsoleField>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="rotateSource = null">取消轮换</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="rotateSource = null">取消轮换</NButton>
         <NButton type="error" attr-type="submit" class="primary" :disabled="busy || !!session.pending || confirmName !== rotateSource.name">
           确认轮换来源凭据
         </NButton>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -89,10 +90,9 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">自动化</h1>
-        <p>消息条件、评论分析与每日提醒</p>
       </div>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
         <NButton
           attr-type="button"
           class="secondary"
@@ -132,7 +132,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         />
       </ConsoleField>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="closeDelete">关闭</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="closeDelete">关闭</NButton>
         <div class="management-actions">
           <NButton attr-type="button" v-if="deletion.uncertain" class="secondary" :disabled="busy" @click="confirmDelete(true)">
             核对删除结果
@@ -151,12 +151,12 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
     <div v-if="previewLoading" class="scope-note" role="status">正在预演规则…</div>
     <p v-if="previewError" class="feedback error" role="alert">
       {{ previewError }}
-      <NButton quaternary attr-type="button" class="text-button" @click="closePreview">关闭</NButton>
+      <NButton attr-type="button" class="text-button" @click="closePreview">关闭</NButton>
     </p>
     <section v-if="preview" class="inline-form rule-preview" aria-label="规则预演结果">
       <div class="record-heading">
         <h2>{{ preview.rule.name }} · 版本 {{ preview.rule.version }}</h2>
-        <NButton quaternary attr-type="button" class="text-button" @click="closePreview">关闭预演</NButton>
+        <NButton attr-type="button" class="text-button" @click="closePreview">关闭预演</NButton>
       </div>
       <p>预演未执行动作，不创建消息、分析任务或投递。</p>
       <p v-if="preview.rule.action === 'notify_device'">
@@ -258,7 +258,10 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
           />
         </ConsoleField>
       </template>
-      <div v-if="kind !== 'daily'" class="form-columns spaced">
+      <ConsoleDisclosure v-if="kind !== 'daily'" label="匹配条件" class="automation-conditions" :level="3"
+        :summary="Object.values(conditions).filter(Boolean).length ? `${Object.values(conditions).filter(Boolean).length} 项` : '不限'"
+        :force-open="!!pending">
+      <div class="form-columns">
         <ConsoleField
           v-for="(label, key) in { source: '匹配来源', eventType: '匹配事件类型', keyword: '包含关键词', priority: '匹配优先级' }"
           :key="key"
@@ -294,6 +297,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
           />
         </ConsoleField>
       </div>
+      </ConsoleDisclosure>
       <div class="form-footer">
         <span>
           {{
@@ -346,7 +350,6 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         <p v-if="rule.action === 'analyze_public_comment' && !ai" class="scope-note">AI 服务未配置。</p>
         <div class="management-actions spaced">
           <NButton
-            quaternary
             attr-type="button"
             :id="`edit-rule-${rule.ruleId}`"
             class="text-button"
@@ -357,7 +360,6 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
             编辑
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             class="text-button"
             :disabled="busy || loading || previewLoading || !!editor || !!deletion"
@@ -366,7 +368,6 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
             测试预演
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             :id="`delete-rule-${rule.ruleId}`"
             class="text-button"
@@ -379,8 +380,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
         </div>
       </article>
     </div>
-    <div v-if="runs.length" class="automation-history">
-      <h2>最近执行</h2>
+    <ConsoleDisclosure v-if="runs.length" label="最近执行" class="automation-history" :summary="`${runs.length} 条`" :force-open="runs.some(r => r.state === 'failed')">
       <div class="table-shell" tabindex="0" role="region" aria-label="最近执行，可用方向键横向滚动查看全部列">
         <table>
           <thead>
@@ -407,7 +407,6 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
               </td>
               <td>
                 <NButton
-                  size="small"
                   attr-type="button"
                   v-if="
                     run.state === 'failed' &&
@@ -426,7 +425,7 @@ onUnmounted(() => { alive = false; generation++; controller?.abort(); previewCon
           </tbody>
         </table>
       </div>
-    </div>
+    </ConsoleDisclosure>
     <p class="scope-note">停用会取消尚未开始的任务。设备确认、用户已读和 AI 分析结果可在消息及投递中核对。</p>
   </section>
 </template>

@@ -18,7 +18,6 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">接入</h1>
-        <p>平台授权与同步状态</p>
       </div>
     </div>
     <article v-for="connector in items" :key="connector.id" class="connector-card">
@@ -54,7 +53,7 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
         </NButton>
       </div>
       <div v-if="admin && connector.configured" class="import-comment">
-        <NButton quaternary attr-type="button" class="import-toggle" :aria-expanded="!!importOpen[connector.id]"
+        <NButton attr-type="button" class="import-toggle" :aria-expanded="!!importOpen[connector.id]"
           :aria-controls="`import-${connector.id}`" @click="importOpen[connector.id] = !importOpen[connector.id]">导入一条历史公开评论</NButton>
         <ConsoleForm v-show="importOpen[connector.id]" :id="`import-${connector.id}`" @submit.prevent="importOne">
           <ConsoleField
@@ -72,7 +71,7 @@ const stateNames: Record<string, string> = { ready: '连接正常', not_checked:
           </ConsoleField>
           <div class="form-footer">
             <span>重新核验公开状态后入库并提醒设备。</span>
-            <NButton size="small" attr-type="submit" class="secondary compact" :disabled="busy">导入</NButton>
+            <NButton attr-type="submit" class="secondary compact" :disabled="busy">导入</NButton>
           </div>
         </ConsoleForm>
       </div>

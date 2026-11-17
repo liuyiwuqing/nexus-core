@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -33,10 +34,9 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">路由</h1>
-        <p>新消息的设备选择与条件</p>
       </div>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新</NButton>
         <NButton
           attr-type="button"
           v-if="operate"
@@ -67,7 +67,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       <div v-if="confirmPolicy || session.policy" class="spaced">
         <p>仅影响新消息；全部规则停用不会自动切回广播。待确认时重试固定目标，不反向切换。</p>
         <div class="management-actions">
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="confirmPolicy = false">取消</NButton>
+          <NButton attr-type="button" class="text-button" :disabled="busy" @click="confirmPolicy = false">取消</NButton>
           <NButton type="primary" attr-type="button" class="primary" :disabled="busy" @click="switchPolicy">
             {{ session.policy ? '重试原目标模式' : '确认切换模式' }}
           </NButton>
@@ -97,6 +97,9 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
             :input-props="{ required: true, id: 'routingpanel-field-1', 'aria-label': '名称' }"
           />
         </ConsoleField>
+        <ConsoleDisclosure label="匹配条件" class="routing-conditions" :level="3"
+          :summary="`${session.draft.source} · ${session.draft.eventType}${session.draft.match !== 'all' ? ' · ' + session.draft.match : ''}`"
+          :force-open="!!session.pending">
         <div class="form-columns spaced">
           <ConsoleField
             path="field-2"
@@ -174,6 +177,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
           </ConsoleField>
         </div>
         <p v-if="session.draft.match === 'regex'" class="scope-note">支持文字、首尾锚点及一次 .*；不支持分组、回溯或其他量词。</p>
+        </ConsoleDisclosure>
         <ConsoleField
           class="spaced"
           path="field-6"
@@ -275,7 +279,7 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </NCheckbox>
       </div>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="close">关闭草稿</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="close">关闭草稿</NButton>
         <div class="management-actions">
           <NButton attr-type="button" v-if="session.pending" class="secondary" :disabled="busy" @click="check">核对当前路由</NButton>
           <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || loading || !!error">
@@ -293,11 +297,10 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </div>
         <p>{{ r.definition.source }} → {{ r.definition.deviceIds.join('、') }}</p>
         <div class="management-actions">
-          <NButton quaternary attr-type="button" class="text-button" :disabled="!operate || busy || !!session.draft" @click="edit(r)">
+          <NButton attr-type="button" class="text-button" :disabled="!operate || busy || !!session.draft" @click="edit(r)">
             编辑路由
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             class="text-button"
             :disabled="!operate || busy || !!session.draft"
@@ -321,14 +324,15 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         />
       </ConsoleField>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="deleting = null">取消删除</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="deleting = null">取消删除</NButton>
         <NButton type="error" attr-type="submit" class="primary" :disabled="busy || deleteName !== deleting.definition.name">
           确认删除路由
         </NButton>
       </div>
     </ConsoleForm>
-    <ConsoleForm class="inline-form spaced" @submit.prevent="test">
-      <h2>路由预演</h2>
+    <ConsoleDisclosure label="测试与预演" class="routing-tests" :force-open="!!session.test">
+    <ConsoleForm class="inline-form routing-preview" @submit.prevent="test">
+      <h3>路由预演</h3>
       <div class="form-columns spaced">
         <ConsoleField
           path="field-13"
@@ -380,8 +384,8 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
       </div>
       <p v-if="preview" role="status">{{ preview.length ? `匹配：${preview.join('、')}` : '无匹配设备' }}</p>
     </ConsoleForm>
-    <ConsoleForm v-if="operate" class="inline-form spaced" @submit.prevent="send">
-      <h2>定向测试消息</h2>
+    <ConsoleForm v-if="operate" class="inline-form routing-test" @submit.prevent="send">
+      <h3>定向测试消息</h3>
       <p>使用上方标题与内容，仅向选择的启用设备建立投递；离线会等待，设备免打扰仍生效。</p>
       <ConsoleField
         path="field-17"
@@ -441,5 +445,6 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </NButton>
       </div>
     </ConsoleForm>
+    </ConsoleDisclosure>
   </section>
 </template>

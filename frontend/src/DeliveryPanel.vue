@@ -101,7 +101,6 @@ async function closeHistory() {
             <td>
               <div class="management-actions">
                 <NButton
-                  size="small"
                   attr-type="button"
                   v-if="operate && delivery.status === 'failed'"
                   class="secondary compact"
@@ -111,7 +110,6 @@ async function closeHistory() {
                   重试
                 </NButton>
                 <NButton
-                  quaternary
                   attr-type="button"
                   :id="`delivery-history-${delivery.eventId}`"
                   class="text-button"
@@ -126,12 +124,11 @@ async function closeHistory() {
         </tbody>
       </table>
       <div class="pagination">
-        <NButton quaternary attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">
+        <NButton attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="pageChanged(data.page - 1)">
           上一页
         </NButton>
         <span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span>
         <NButton
-          quaternary
           attr-type="button"
           :disabled="data.page * data.size >= data.total || loading || busy"
           @click="pageChanged(data.page + 1)"

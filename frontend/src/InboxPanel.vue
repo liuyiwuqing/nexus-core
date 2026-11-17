@@ -91,7 +91,6 @@ async function send() {
       </ConsoleField>
       <template #extra-actions="{ blocked }">
         <NButton
-          quaternary
           attr-type="button"
           v-if="admin"
           class="text-button"
@@ -198,12 +197,11 @@ async function send() {
           <span class="message-preview">{{ message.summary }}</span>
         </NButton>
         <div class="pagination">
-          <NButton quaternary attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">
+          <NButton attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">
             上一页
           </NButton>
           <span>{{ data.page }} / {{ Math.max(1, Math.ceil(data.total / data.size)) }}</span>
           <NButton
-            quaternary
             attr-type="button"
             :disabled="data.page * data.size >= data.total || loading || busy"
             @click="emit('page', data.page + 1)"
@@ -213,7 +211,7 @@ async function send() {
         </div>
       </div>
       <article v-if="selected" class="message-detail">
-        <NButton quaternary attr-type="button" class="mobile-back text-button" @click="selectedId = ''">← 返回消息</NButton>
+        <NButton attr-type="button" class="mobile-back text-button" @click="selectedId = ''">← 返回消息</NButton>
         <div class="detail-top">
           <span class="eyebrow">
             {{ selected.source === 'halo' ? 'HALO' : selected.source === 'manual' ? '本机消息' : selected.source }}

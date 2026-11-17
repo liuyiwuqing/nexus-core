@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -30,10 +31,9 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">模板</h1>
-        <p>标题、摘要与设备卡片预览</p>
       </div>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新模板</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新模板</NButton>
         <NButton
           id="template-create-entry"
           attr-type="button"
@@ -129,7 +129,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         变量：{{ variables.map((v) => '{' + v + '}').join('、') }}。当前设备契约为无提示音、显示 8 秒，标题 96 字节、摘要 180 字节。
       </p>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="closeDraft">关闭模板草稿</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="closeDraft">关闭模板草稿</NButton>
         <div class="management-actions">
           <NButton attr-type="button" v-if="session.pending" class="secondary" :disabled="busy" @click="check">核对当前模板</NButton>
           <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || loading || !!error">
@@ -147,12 +147,11 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </div>
         <p>{{ t.definition.title }}</p>
         <div class="management-actions">
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="render(t)">预览此模板</NButton>
-          <NButton quaternary attr-type="button" v-if="operate" class="text-button" :disabled="busy || !!session.draft" @click="edit(t)">
+          <NButton attr-type="button" class="text-button" :disabled="busy" @click="render(t)">预览此模板</NButton>
+          <NButton attr-type="button" v-if="operate" class="text-button" :disabled="busy || !!session.draft" @click="edit(t)">
             编辑模板
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             v-if="operate"
             class="text-button"
@@ -178,14 +177,14 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       </ConsoleField>
       <p>被路由引用的模板不能删除；已有投递不会重写。</p>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="deleting = null">取消删除模板</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="deleting = null">取消删除模板</NButton>
         <NButton type="error" attr-type="submit" class="primary" :disabled="busy || deleteName !== deleting.definition.name">
           确认删除模板
         </NButton>
       </div>
     </ConsoleForm>
-    <div class="inline-form spaced">
-      <h2>变量预览</h2>
+    <ConsoleDisclosure label="变量预览" class="template-preview" :force-open="!!session.pending || !!preview">
+    <div class="inline-form">
       <ConsoleField
         path="field-6"
         :rule="fieldRule(() => example, { maxlength: 8192 })"
@@ -208,5 +207,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         <span class="muted">{{ preview.eventType }} · 仅预览，未发送</span>
       </article>
     </div>
+    </ConsoleDisclosure>
   </section>
 </template>

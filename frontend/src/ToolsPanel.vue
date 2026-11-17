@@ -79,12 +79,12 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
           }}
         </p>
       </div>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
+      <NButton attr-type="button" class="text-button" :disabled="loading || busy" @click="load()">刷新</NButton>
     </div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
     <p v-if="loading" class="muted" role="status" aria-busy="true">正在读取工具状态…</p>
     <StatusNote v-if="uncertain" tone="warn">工具请求结果尚未确认，重试将核对同一请求和参数。刷新或关闭页面后请先核对请求列表。</StatusNote>
-    <ConsoleForm v-if="catalog && !error" class="inline-form" @submit.prevent="prepare">
+    <ConsoleForm v-if="catalog && !error" class="inline-form task-form" @submit.prevent="prepare">
       <div class="form-columns">
         <ConsoleField path="field-1" :label-props="{ id: 'toolspanel-field-1' + '-label', for: 'toolspanel-field-1' }">
           <template #label>工具</template>
@@ -171,7 +171,6 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
         <div class="record-actions">
           <NButton
             type="primary"
-            size="small"
             attr-type="button"
             v-if="job.state === 'awaiting_confirmation'"
             class="primary compact"
@@ -181,7 +180,6 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
             确认打开 {{ job.arguments.applicationId }}
           </NButton>
           <NButton
-            size="small"
             attr-type="button"
             v-if="['queued', 'awaiting_confirmation'].includes(job.state)"
             class="secondary compact"
@@ -191,7 +189,6 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
             取消
           </NButton>
           <NButton
-            size="small"
             attr-type="button"
             v-if="job.state === 'unknown'"
             class="secondary compact"
@@ -200,7 +197,7 @@ onUnmounted(() => { alive = false; generation++; auditGeneration++; controller?.
           >
             核对原请求结果
           </NButton>
-          <NButton quaternary attr-type="button" class="text-button" @click="history(job)">
+          <NButton attr-type="button" class="text-button" @click="history(job)">
             {{ auditId === job.jobId ? '收起记录' : '查看记录' }}
           </NButton>
         </div>

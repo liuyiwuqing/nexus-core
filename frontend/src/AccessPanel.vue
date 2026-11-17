@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -25,9 +26,8 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">权限与审计</h1>
-        <p>角色令牌与操作结果</p>
       </div>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新权限与审计</NButton>
+      <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="load">刷新权限与审计</NButton>
     </div>
     <p v-if="loading" role="status">正在读取…</p>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
@@ -41,7 +41,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       />
       <NCheckbox class="checkbox-label spaced" v-model:checked="revealed">显示令牌</NCheckbox>
       <NButton
-        quaternary
         attr-type="button"
         class="text-button"
         @click="
@@ -52,8 +51,8 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         已保存，隐藏角色令牌
       </NButton>
     </div>
-    <ConsoleForm class="inline-form spaced" @submit.prevent="issue">
-      <h2>签发角色令牌</h2>
+    <ConsoleDisclosure label="签发角色令牌" class="access-issue" :force-open="pendingIssue">
+    <ConsoleForm class="inline-form" @submit.prevent="issue">
       <ConsoleField
         path="field-1"
         :rule="fieldRule(() => name, { required: true, maxlength: 80, disabled: () => busy || pendingIssue })"
@@ -100,7 +99,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       <StatusNote v-if="pendingIssue" tone="warn">
         签发结果未确认，不能直接重复签发；请刷新核对列表，撤销无法取得的令牌后再操作。
         <template #actions>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="startNewIssue">已核对，开始新的签发</NButton>
+          <NButton attr-type="button" class="text-button" :disabled="busy" @click="startNewIssue">已核对，开始新的签发</NButton>
         </template>
       </StatusNote>
       <div class="form-footer">
@@ -108,6 +107,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         <NButton type="primary" attr-type="submit" class="primary" :disabled="busy || loading || !!error || pendingIssue">签发令牌</NButton>
       </div>
     </ConsoleForm>
+    </ConsoleDisclosure>
     <div v-if="!loading && !error" class="record-list spaced">
       <article v-for="t in tokens" :key="t.tokenId" class="record-card">
         <div class="record-heading">
@@ -116,7 +116,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </div>
         <p>{{ t.revokedAt ? '已撤销' : `到期：${formatTime(t.expiresAt)}` }}</p>
         <NButton
-          quaternary
           attr-type="button"
           class="text-button"
           :disabled="busy || !!t.revokedAt"
@@ -139,13 +138,12 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         />
       </ConsoleField>
       <div class="form-footer">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="revoking = null">取消撤销</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="busy" @click="revoking = null">取消撤销</NButton>
         <NButton type="error" attr-type="submit" class="primary" :disabled="busy || confirmName !== revoking.name">确认撤销令牌</NButton>
       </div>
     </ConsoleForm>
-    <section class="spaced">
+    <ConsoleDisclosure label="操作审计" class="access-audit" :summary="`${total} 条`" :force-open="audit.some(a => !a.completedAt)">
       <div class="section-heading">
-        <h2>操作审计</h2>
         <ConsoleField path="field-5" :label-props="{ id: 'accesspanel-field-5' + '-label', for: 'accesspanel-field-5' }">
           <template #label>角色筛选</template>
           <NSelect
@@ -191,7 +189,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       </div>
       <div class="pagination">
         <NButton
-          quaternary
           attr-type="button"
           :disabled="loading || page <= 1"
           @click="
@@ -203,7 +200,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
         </NButton>
         <span>{{ page }} / {{ Math.max(1, Math.ceil(total / 100)) }}</span>
         <NButton
-          quaternary
           attr-type="button"
           :disabled="loading || page * 100 >= total"
           @click="
@@ -214,6 +210,6 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
           下一页审计
         </NButton>
       </div>
-    </section>
+    </ConsoleDisclosure>
   </section>
 </template>

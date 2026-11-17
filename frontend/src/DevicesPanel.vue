@@ -155,11 +155,10 @@ async function submit() {
           </ConsoleField>
           <p v-if="nameConflict" class="inline-error" role="alert">当前名称已变化，你的编辑已保留。</p>
           <div class="management-actions">
-            <NButton size="small" attr-type="button" v-if="nameConflict" class="secondary compact" :disabled="busy" @click="loadName">
+            <NButton attr-type="button" v-if="nameConflict" class="secondary compact" :disabled="busy" @click="loadName">
               加载当前名称
             </NButton>
             <NButton
-              size="small"
               attr-type="submit"
               v-else
               class="secondary compact"
@@ -167,7 +166,7 @@ async function submit() {
             >
               {{ nameSaving ? '保存中…' : '保存名称' }}
             </NButton>
-            <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="closeName">取消</NButton>
+            <NButton attr-type="button" class="text-button" :disabled="busy" @click="closeName">取消</NButton>
           </div>
         </ConsoleForm>
         <div class="switch-row">
@@ -193,7 +192,6 @@ async function submit() {
             设置与状态
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             :id="'device-ota-' + device.deviceId"
             class="text-button"
@@ -205,7 +203,6 @@ async function submit() {
             固件升级
           </NButton>
           <NButton
-            quaternary
             attr-type="button"
             v-if="admin && renameId !== device.deviceId"
             :id="'device-rename-' + device.deviceId"

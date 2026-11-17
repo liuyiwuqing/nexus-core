@@ -42,7 +42,7 @@ function apply() {
 }
 </script>
 <template>
-  <ConsoleForm class="list-filters" :class="{ 'message-filters': kind === 'messages' }" @submit.prevent="apply">
+  <ConsoleForm class="list-filters compact-filters" :class="{ 'message-filters': kind === 'messages' }" @submit.prevent="apply">
     <slot />
     <ConsoleField
       path="field-1"
@@ -71,11 +71,10 @@ function apply() {
     </ConsoleField>
     <div class="filter-actions">
       <NButton attr-type="submit" class="secondary" :disabled="disabled">应用筛选</NButton>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="disabled || (!active && !dirty)" @click="emit('clear')">
+      <NButton attr-type="button" class="text-button" :disabled="disabled || (!active && !dirty)" @click="emit('clear')">
         清空筛选
       </NButton>
-      <NButton
-        v-if="kind === 'messages'" quaternary attr-type="button" class="filter-expand"
+      <NButton attr-type="button" class="filter-expand"
         :aria-expanded="advancedOpen" :aria-controls="`${sectionId}-advanced`"
         @click="advancedOpen = !advancedOpen"
       >
@@ -83,7 +82,7 @@ function apply() {
         <template #icon><ChevronDown :size="15" :class="{ 'disclosure-open': advancedOpen }" aria-hidden="true" /></template>
       </NButton>
       <div ref="exportMenu" class="export-actions" @keydown.esc.stop.prevent="escapeExport">
-        <NButton quaternary attr-type="button" class="export-trigger" :aria-expanded="exportOpen" :aria-controls="`${sectionId}-export`" @click="toggleExport">
+        <NButton attr-type="button" class="export-trigger" :aria-expanded="exportOpen" :aria-controls="`${sectionId}-export`" @click="toggleExport">
           <template #icon><Download :size="15" aria-hidden="true" /></template>导出
         </NButton>
         <div v-show="exportOpen" :id="`${sectionId}-export`" class="export-menu" role="group" aria-label="导出选项">
@@ -95,7 +94,7 @@ function apply() {
         </div>
       </div>
     </div>
-    <div v-show="kind === 'deliveries' || advancedOpen" :id="`${sectionId}-advanced`" class="advanced-filters">
+    <div v-show="advancedOpen" :id="`${sectionId}-advanced`" class="advanced-filters">
       <ConsoleField
         path="field-2"
         :rule="fieldRule(() => draft.receivedFrom, { min: '0001-01-01T00:00', max: '9999-12-31T23:59', disabled: () => disabled })"

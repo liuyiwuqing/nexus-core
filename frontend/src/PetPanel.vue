@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -48,12 +49,10 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">一起成长</h1>
-        <p>完成专注，积累经验。</p>
       </div>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="loading" @click="load">刷新</NButton>
+      <NButton attr-type="button" class="text-button" :disabled="loading" @click="load">刷新</NButton>
     </div>
     <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-    <DeviceGrowthPanel :api="api" />
     <template v-if="profile">
       <h2 class="profile-heading">CORE 专注档案</h2>
       <dl class="pet-stats">
@@ -91,7 +90,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
           <NButton type="primary" attr-type="button" class="primary" :disabled="busy || remaining > 0" @click="finish('complete')">
             完成并结算
           </NButton>
-          <NButton quaternary attr-type="button" class="text-button" :disabled="busy" @click="finish('cancel')">取消本次专注</NButton>
+          <NButton attr-type="button" class="text-button" :disabled="busy" @click="finish('cancel')">取消本次专注</NButton>
         </div>
       </article>
       <ConsoleForm v-else-if="admin" class="inline-form" @submit.prevent="start">
@@ -115,6 +114,7 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
           <NButton type="primary" attr-type="submit" class="primary" :disabled="busy">开始专注</NButton>
         </div>
       </ConsoleForm>
+      <ConsoleDisclosure v-if="sessions.some(s => s.state !== 'active')" label="最近专注" class="focus-history" :summary="`${sessions.filter(s => s.state !== 'active').length} 条`">
       <div class="record-list">
         <article v-for="session in sessions.filter((s) => s.state !== 'active')" :key="session.sessionId" class="record-card">
           <div class="record-heading">
@@ -125,7 +125,9 @@ onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); cle
           <p v-if="session.state === 'completed'">+{{ session.experienceReward }} 经验 · +{{ session.coinReward }} 金币</p>
         </article>
       </div>
+      </ConsoleDisclosure>
     </template>
     <p v-else-if="loading" class="muted" role="status">正在读取成长档案…</p>
+    <DeviceGrowthPanel :api="api" />
   </section>
 </template>

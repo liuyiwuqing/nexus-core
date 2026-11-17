@@ -12,8 +12,12 @@ async function submit(event: Event) {
   try {
     await form.value?.validate();
   } catch {
-    await nextTick();
     const root = (event.currentTarget ?? event.target) as HTMLElement;
+    await nextTick();
+    root.querySelectorAll('.n-form-item-blank--error').forEach(field => {
+      field.dispatchEvent(new Event('console-reveal', { bubbles: true }));
+    });
+    await nextTick();
     root
       .querySelector<HTMLElement>(
         '.n-form-item-blank--error input, .n-form-item-blank--error textarea, .n-form-item-blank--error [tabindex="0"]',

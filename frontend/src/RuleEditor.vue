@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
@@ -120,7 +121,10 @@ onMounted(() => nameInput.value?.focus());
         />
       </ConsoleField>
     </template>
-    <div v-if="session.rule.trigger === 'message.received'" class="form-columns spaced">
+    <ConsoleDisclosure v-if="session.rule.trigger === 'message.received'" label="匹配条件" class="rule-conditions" :level="3"
+      :summary="Object.values(session.draft.conditions || {}).filter(Boolean).length ? `${Object.values(session.draft.conditions || {}).filter(Boolean).length} 项` : '不限'"
+      :force-open="!!session.pending">
+    <div class="form-columns">
       <ConsoleField
         v-for="(label, key) in { source: '匹配来源', eventType: '匹配事件类型', keyword: '包含关键词', priority: '匹配优先级' }"
         :key="key"
@@ -154,7 +158,8 @@ onMounted(() => nameInput.value?.focus());
         />
       </ConsoleField>
     </div>
-    <details v-if="session.observed" class="rule-readback spaced" open>
+    </ConsoleDisclosure>
+    <details v-if="session.observed" class="rule-readback spaced" :open="blocked || changed || !!session.pending">
       <summary>当前服务端定义 · 版本 {{ session.observed.version }} · {{ session.observed.enabled ? '已启用' : '已停用' }}</summary>
       <p>{{ session.observed.name }}</p>
       <template v-if="session.observed.action === 'notify_device'">
@@ -172,7 +177,7 @@ onMounted(() => nameInput.value?.focus());
             .join(' · ') || '不限'
         }}
       </p>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="disabled" @click="emit('check', true)">
+      <NButton attr-type="button" class="text-button" :disabled="disabled" @click="emit('check', true)">
         放弃草稿并载入当前版本
       </NButton>
     </details>
@@ -187,7 +192,7 @@ onMounted(() => nameInput.value?.focus());
         }}
       </span>
       <div class="management-actions">
-        <NButton quaternary attr-type="button" class="text-button" :disabled="disabled" @click="emit('close')">关闭编辑</NButton>
+        <NButton attr-type="button" class="text-button" :disabled="disabled" @click="emit('close')">关闭编辑</NButton>
         <NButton attr-type="button" class="secondary" :disabled="disabled" @click="emit('check', false)">核对当前规则</NButton>
         <NButton type="primary" attr-type="submit" class="primary" :disabled="disabled || failed || (!session.pending && blocked)">
           {{ session.uncertain ? '重试原版本修改' : '保存修改' }}

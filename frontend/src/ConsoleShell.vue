@@ -65,7 +65,7 @@ function selectDevice(value: string) { emit('update:selectedDevice', value); voi
     />
     <NDrawer v-model:show="menuOpen" placement="left" :width="280" :close-on-esc="true" aria-label="主导航" @after-leave="afterLeave">
       <NDrawerContent :native-scrollbar="true" body-content-style="padding: 0" class="mobile-navigation">
-        <NButton class="close-navigation" quaternary circle aria-label="关闭导航" @click="menuOpen = false"><X :size="20" /></NButton>
+        <NButton class="close-navigation" square aria-label="关闭导航" @click="menuOpen = false"><X :size="20" /></NButton>
         <ConsoleNavigation :tab="tab" :role="role" @navigate="navigate" @logout="emit('logout')" />
       </NDrawerContent>
     </NDrawer>
@@ -75,9 +75,7 @@ function selectDevice(value: string) { emit('update:selectedDevice', value); voi
         <div class="workspace-heading">
           <NButton
             ref="menuButton"
-            class="mobile-menu"
-            quaternary
-            circle
+            class="mobile-menu" square
             aria-label="打开导航"
             :aria-expanded="menuOpen"
             @click="menuOpen = true"
@@ -102,13 +100,11 @@ function selectDevice(value: string) { emit('update:selectedDevice', value); voi
             />
           </div>
           <span class="topbar-divider" aria-hidden="true"></span>
-          <NButton quaternary size="small" class="text-button" @click="emit('guide')">
+          <NButton class="text-button" @click="emit('guide')">
             <template #icon><CircleHelp :size="16" /></template>
             接入引导
           </NButton>
           <NButton
-            quaternary
-            size="small"
             class="text-button"
             :disabled="loading"
             :aria-busy="loading"

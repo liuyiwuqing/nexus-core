@@ -154,7 +154,7 @@ const summary = computed(() => {
         <span v-if="faults.length"><i class="swatch-fault"></i>音频异常</span>
         <span class="chart-unit">{{ config.unit }}</span>
       </div>
-      <NButton v-if="zoom" attr-type="button" size="small" class="chart-reset" @click="zoom = null">重置缩放</NButton>
+      <NButton v-if="zoom" attr-type="button" class="chart-reset" @click="zoom = null">重置缩放</NButton>
     </div>
     <div class="chart-scroll">
       <svg class="telemetry-chart" :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summary" tabindex="0"

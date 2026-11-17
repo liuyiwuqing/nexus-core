@@ -114,15 +114,17 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .app-layout.is-collapsed .sidebar .local-indicator { display: none; }
 .app-layout.is-collapsed .nav-group button { justify-content: center; padding-inline: 0; }
 .app-layout.is-collapsed .nav-group .n-button__icon { margin-right: 0; }
-.app-layout.is-collapsed .sidebar-bottom { padding-inline: 0; }
-.app-layout.is-collapsed .sidebar-actions { flex-direction: column; align-items: center; justify-content: center; }
+.app-layout.is-collapsed .sidebar-bottom { padding-inline: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.app-layout.is-collapsed .sidebar-account { justify-content: center; margin-bottom: 0; }
 /* 跳过导航：只在键盘落焦时出现，避免给鼠标用户增加一条常驻横幅。 */
 .skip-link { position: fixed; top: var(--space-2); left: var(--space-2); z-index: var(--z-skip-link); padding: 8px 14px; border-radius: var(--radius-md); background: var(--accent); color: var(--on-accent); font-size: var(--text-base); font-weight: 600; text-decoration: none; transform: translateY(-200%); transition: transform var(--motion-fast) var(--ease); }
 .skip-link:focus-visible { transform: translateY(0); outline: 2px solid var(--focus); outline-offset: 2px; }
 .content:focus { outline: none; }
 .sidebar-bottom { margin-top: auto; padding: var(--space-4) var(--space-3) 0; border-top: 1px solid var(--divider); }
-.sidebar-actions { display: flex; align-items: center; gap: var(--space-1); justify-content: space-between; }
-.local-indicator { display: block; font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-1); }
+.sidebar-account { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.sidebar-logout { width: 100%; }
+.app-layout.is-collapsed .sidebar-logout { width: var(--control-h); }
+.local-indicator { display: block; font-size: var(--text-sm); color: var(--muted); margin-bottom: 0; }
 .workspace { min-width: 0; }
 /* 单层页头：页面位置、设备视图与全局动作同处一行。原 62px 工具栏整条并入这里 ——
    它只放了三个控件，却让每个页面的内容起点下移 62px，移动端吸顶合计 125px。 */
@@ -160,9 +162,9 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .list-filters { display: grid; grid-template-columns: minmax(110px,.8fr) minmax(140px,1fr) repeat(2,minmax(170px,1.1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .list-filters > .n-form-item { min-width: 0; }
 .advanced-filters { display: contents; }
-.message-filters { grid-template-columns: minmax(130px,180px) minmax(180px,280px) minmax(0,1fr); }
-.message-filters > .advanced-filters { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--divider); }
-.message-filters > .filter-actions { order: 0; grid-column: 3; grid-row: 1; align-self: end; justify-content: flex-end; border: 0; padding-top: 0; }
+.compact-filters { grid-template-columns: minmax(130px,180px) minmax(180px,280px) minmax(0,1fr); }
+.compact-filters > .advanced-filters { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--divider); }
+.compact-filters > .filter-actions { order: 0; grid-column: 3; grid-row: 1; align-self: end; justify-content: flex-end; border: 0; padding-top: 0; }
 .filter-expand svg { transition: transform var(--motion-fast) var(--ease); }
 .filter-expand svg.disclosure-open { transform: rotate(180deg); }
 .list-filters select, .list-filters input { font-size: var(--text-base); }
@@ -299,7 +301,6 @@ tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-hover); }
 .cell-sub { display: block; margin-top: var(--space-1); color: var(--muted); font-size: var(--text-sm); }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3) var(--space-4); color: var(--muted); font-size: var(--text-sm); }
-.pagination button.n-button { height: 30px; font-size: var(--text-sm); }
 button.mobile-back { display: none; }
 .analysis-section { margin-top: 20px; padding-top: var(--space-5); border-top: 1px solid var(--divider); font-size: var(--text-base); }
 .analysis-heading, .memory-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-3); }
@@ -322,18 +323,16 @@ button.mobile-back { display: none; }
 .record-heading .checkbox-label { margin: 0; }
 .record-card h2 { font-size: var(--text-lg); }
 .record-target { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-md); overflow-wrap: anywhere; }
-.record-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.record-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 .tool-result { max-width: 560px; }
 .tool-result dd { overflow-wrap: anywhere; }
 .audit-list { margin-bottom: 0; padding-left: 20px; color: var(--muted); font-size: var(--text-sm); line-height: 2; }
-.spaced { margin-top: var(--space-5); }
-.automation-history { margin-top: 32px; }
-.automation-history h2 { margin-bottom: 16px; }
+.spaced { margin-top: var(--space-3); }
 .management-panel { margin-top: var(--space-6); padding: var(--pad-card); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); outline-offset: 4px; }
 /* 只在真正落焦时画环；常驻会把内联进卡片的面板又框成另一个盒子。 */
 .management-panel:focus { outline: 2px solid var(--focus); }
 .management-panel h2 { font-size: var(--text-lg); }
-.management-actions, .management-status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.management-actions, .management-status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .management-status { margin: var(--space-4) 0; color: var(--muted); font-size: var(--text-sm); }
 /* 列数跟着可用宽度走：两栏后窄桌面上面板只有 302–492px，写死 4 列会让版本号断成 2–3 行。
    140px 是"固件版本这类长串不断行"的实测下限。 */
@@ -351,10 +350,9 @@ button.mobile-back { display: none; }
 .management-checks { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-5) 0; }
 .management-checks .checkbox-label { margin: 0; }
 .management-hint { margin: var(--space-4) 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.8; }
-.management-history { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); }
-.management-history summary { cursor: pointer; font-size: var(--text-md); }
+.management-history { margin-top: var(--space-3); }
 /* 快照是最后一条设备遥测，历史是采样后的趋势；两块用同一边框层级但不同标题表达。 */
-.telemetry-history { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.telemetry-history { margin-top: var(--space-3); }
 .history-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-3) var(--space-5); }
 .history-heading h3 { margin: 0; font-size: var(--text-md); }
 .history-heading p { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
@@ -367,7 +365,7 @@ button.mobile-back { display: none; }
 .pet-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin: 0 0 var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
 /* 档案区的小标题与下方指标条同属一组：给 12px，避免标题贴着边框。 */
 .profile-heading { margin-bottom: var(--space-3); }
-.pet-stats > div { display: block; padding: var(--space-5) var(--space-6); margin: 0; border-right: 1px solid var(--border); }
+.pet-stats > div { display: block; padding: var(--space-4); margin: 0; border-right: 1px solid var(--border); }
 .pet-stats > div:last-child { border-right: 0; }
 .pet-stats dt { font-size: var(--text-sm); color: var(--muted); }
 .pet-stats dd { margin-top: var(--space-2); text-align: left; font-size: var(--text-4xl); line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -401,8 +399,8 @@ button.mobile-menu { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 1150px) {
   :root { --gutter: 24px; --sidebar-w: 208px; }
-  .list-filters, .message-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .message-filters > .filter-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
+  .list-filters, .compact-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .compact-filters > .filter-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
   .message-detail { padding: var(--space-6); }
   .device-view { width: 148px; flex-basis: 148px; }
   .topbar { gap: var(--space-3); }
@@ -420,17 +418,16 @@ button.mobile-menu { display: none; }
   /* 窄屏只留"能操作"的三项：接入引导、刷新、主题。设备视图与连接状态在这里挤出视口，
      页面内的筛选与错误横幅已覆盖同一事实。文字仍在 DOM 中（断言按 textContent 读取）。 */
   .session-role, .device-view, .connection-status, .connection-divider { display: none; }
-  .topbar-tools { gap: 0; }
-  .topbar-tools button.n-button { padding-inline: 8px; font-size: var(--text-sm); }
+  .topbar-tools { gap: var(--space-1); }
   .topbar-divider { margin: 0 var(--space-1); }
   .section-heading { align-items: flex-start; gap: var(--space-3); }
   .section-heading p { line-height: 1.7; }
   .section-heading > .management-actions { justify-content: flex-end; }
   .list-filters { gap: var(--space-3); padding: var(--space-4); }
-  .list-filters, .message-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .message-filters > .filter-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
+  .list-filters, .compact-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .compact-filters > .filter-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
   .list-filters > .n-form-item:has(.n-date-picker) { grid-column: 1 / -1; }
-  .message-filters > .advanced-filters { grid-template-columns: minmax(0,1fr); }
+  .compact-filters > .advanced-filters { grid-template-columns: minmax(0,1fr); }
   .filter-actions .export-actions { margin-left: auto; }
   .inbox-layout, .inbox-layout.short-list { display: block; height: auto; }
   .message-list, .message-detail { overflow: visible; min-height: 360px; }
@@ -505,3 +502,27 @@ button.mobile-menu { display: none; }
 .ota-phases li.current i { opacity: 1; }
 .ota-progress { height: 8px; margin-top: var(--space-3); border-radius: var(--radius-pill); background: var(--divider); overflow: hidden; }
 .ota-progress span { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--state-busy); transition: width var(--motion) var(--ease); }
+
+/* 详细条件和记录保留挂载，折叠不丢草稿；异常区域由 forceOpen 保持可见。 */
+.console-disclosure { min-width: 0; margin-top: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.disclosure-heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.disclosure-heading h2, .disclosure-heading h3 { margin: 0; font-size: var(--text-md); }
+.disclosure-summary { min-width: 0; font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+.disclosure-body { padding-top: var(--space-3); }
+.disclosure-body > .inline-form { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.disclosure-body > .inline-form + .inline-form { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--divider); }
+.disclosure-toggle svg { transition: transform var(--motion-fast) var(--ease); }
+.disclosure-toggle svg.disclosure-open { transform: rotate(180deg); }
+.form-fields > .console-disclosure { grid-column: 1 / -1; margin: 0; }
+.management-options .form-columns { margin-top: 0; }
+.task-form .form-footer, .memory-search .form-footer { margin-top: var(--space-3); }
+.memory-search { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: var(--space-3); }
+.memory-search .form-footer { margin: 0; padding: 0; border: 0; }
+.memory-metrics > div { padding: var(--space-3) var(--space-4); }
+.memory-metrics dd { font-size: var(--text-3xl); }
+.profile-heading { margin-top: var(--space-3); }
+@media (max-width: 760px) {
+  .console-disclosure { padding-inline: var(--space-3); }
+  .memory-search { grid-template-columns: minmax(0,1fr); }
+  .topbar-tools .n-button:not(.n-button--square-type) { padding-inline: var(--space-2); }
+}

@@ -61,9 +61,9 @@ onUnmounted(() => { generation++; checkGeneration++; controller?.abort(); checkC
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">长期记忆</h1>
-        <p>检索显式保存、且来源仍公开的评论。</p>
+        <p>检索已保存的公开评论</p>
       </div>
-      <NButton quaternary attr-type="button" class="text-button" :disabled="checking" @click="load">刷新记忆状态</NButton>
+      <NButton attr-type="button" class="text-button" :disabled="checking" @click="load">刷新记忆状态</NButton>
     </div>
     <p v-if="healthError" class="feedback error" role="alert">{{ healthError }}</p>
     <dl v-if="health" class="management-metrics memory-metrics">
