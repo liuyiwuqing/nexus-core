@@ -18,13 +18,15 @@ gh workflow run publish-images.yml \
 
 两者均发布 `linux/amd64`、`linux/arm64` manifest。前端和 Java 字节码在构建机架构打包，JRE 与初始化工具按目标架构生成。发布后的独立 job 检查两种架构的 manifest，重新从 GHCR 按 digest 拉取镜像，在 Ubuntu amd64 上运行完整的镜像部署检查。成功后下载该次运行的 `published-image-verification` artifact，内含 `published-images.env`（两个已验证镜像的 digest，无密码）及检查报告。提交标签标识源码，运行时用 digest 固定实际镜像字节，不依赖 `latest`。
 
-发布不会改变仓库或包的可见性。CI 使用该仓库短期 `GITHUB_TOKEN` 的 `packages: write/read`，无需发布 PAT。服务器使用具有对应包读取权限、`read:packages` 权限的 PAT classic 登录 GHCR，见 [GitHub 官方说明](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry)。在密码提示处输入令牌，不把它写进命令、编排或聊天：
+发布不会按“仓库是否开源”自动改变包的可见性：仓库 Public 与 GHCR 包可见性是两处独立设置。CI 使用该仓库短期 `GITHUB_TOKEN` 的 `packages: write/read`，无需发布 PAT。
+
+`nexus-core` 与 `nexus-core-init` 两个包已在 GitHub 包设置中改为 Public，服务器与 1Panel 可直接匿名 `docker pull`，不需要 `docker login`，也不需要在 1Panel 的镜像仓库里加 `ghcr.io` 账号。实测匿名按 digest 与 `sha-<提交号>` 标签取 manifest 均为 200，含 `linux/amd64`、`linux/arm64`。自建或包改回私有后，需要改用具有 `read:packages` 权限的 PAT classic 登录，见 [GitHub 官方说明](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry)；在密码提示处输入令牌，不要写进命令、编排或聊天：
 
 ```sh
 docker login ghcr.io -u liuyiwuqing
 ```
 
-在 1Panel 的镜像仓库设置中也添加 `ghcr.io` 与该读取账号/令牌，确保面板拉取时能认证。无需给服务器镜像写入或源码读取权限。
+无需给服务器镜像写入或源码读取权限。
 
 ## 第一次部署
 
@@ -65,13 +67,25 @@ docker run --rm --read-only --cap-drop ALL \
 
 - 重启、更新和重新创建 CORE 时不再运行初始化镜像。保留原目录、凭据、CA、设备配置、编排项目名、PostgreSQL 和 `console-sessions` 卷。
 - 按 [既有备份步骤](docker-deployment.md)备份后，将编排中 CORE 的 `image` 改成下一次通过验证的 digest，拉取并重新创建 CORE。更新 `core.env` 后也需重新创建；单纯 restart 不重新读取 env。
+- 从 `043f134` 之前的编排升级到本版需先补齐登录会话持久化的三处改动，否则新镜像的健康检查仍通过、但重启后会话无法留存：`core.environment` 增加 `NEXUS_AUTH_SESSION_DIRECTORY: /var/lib/nexus/sessions`；`core.volumes` 增加 `console-sessions:/var/lib/nexus/sessions`；顶层 `volumes` 增加 `console-sessions:`。保留同一项目名，升级后旧的内存会话需重新登录一次。
 - 不混用新初始化的数据库/MQTT 密码与原卷，不通过重新初始化修复连接。镜像回滚需同时核对数据库 schema 兼容性，更换镜像不等于数据库回滚。
 
 ## 验证与边界
 
 本地入口：`python3 -m unittest discover -s tools -p 'test_*.py'`、`tools/test_docker_deployment.py` 和 `tools/test_image_deployment.py --image <CORE> --init-image <INIT>`。新增检查覆盖无源码/socket 初始化、私有权限/密码哈希、重复初始化原样拒绝、普通 env/特殊路径、三服务配置、认证/实际 JAR 资源、MQTT TLS 与重建持久性，仅清理自身随机项目和卷；测试端口随机绑定回环地址。
 
-CI、镜像发布、从仓库拉取后的验证分别以实际运行和报告为准。提交 `043f134e2be179cf51cd7ea713cba93053e948dc` 的发布运行 [43584412344](https://github.com/liuyiwuqing/nexus-core/actions/runs/43584412344) 已成功，最终 digest 为 `ghcr.io/liuyiwuqing/nexus-core@sha256:2653a588d45b7e46fdf3c8e9672d62bb8be2223a7d5058b7292b01820dbe259f` 与 `ghcr.io/liuyiwuqing/nexus-core-init@sha256:6195bb0732f248eaf6c43cda4778bbe115c67c69f0633c165461bb55c460759c`；回拉后的 7 项验证通过。目标 1Panel 版本、Debian DNS/防火墙、OpenResty 网络、域名 HTTPS、真实供应商及设备仍需目标机验收；流水线不自动连接用户服务器，不修改包的公开可见性。
+CI、镜像发布、从仓库拉取后的验证分别以实际运行和报告为准。当前发布记录见 [镜像发布记录](#镜像发布记录)。
+
+目标 1Panel 版本、Debian DNS/防火墙、OpenResty 网络、域名 HTTPS、真实供应商及设备仍需目标机验收；流水线不自动连接用户服务器，不修改包的公开可见性。
+
+## 镜像发布记录
+
+| 提交 | 发布运行 | CORE digest | INIT digest |
+| --- | --- | --- | --- |
+| `043f134e2be179cf51cd7ea713cba93053e948dc` | [43584412344](https://github.com/liuyiwuqing/nexus-core/actions/runs/43584412344) | `sha256:2653a588d45b7e46fdf3c8e9672d62bb8be2223a7d5058b7292b01820dbe259f` | `sha256:6195bb0732f248eaf6c43cda4778bbe115c67c69f0633c165461bb55c460759c` |
+| `e76732b3792313ea5f3744b09970a7972fc89a36` | [44094002890](https://github.com/liuyiwuqing/nexus-core/actions/runs/44094002890) | `sha256:0310e7335b24bae830108f47001b18fdc195a47f8456ad47f977d0b96453ddba` | `sha256:9b4d60ccc175fbcd2d349d7117ceeb068d06d26f98f868132e8dc8a2a85faad6` |
+
+两行均为 `validate`（源码镜像 + HTTPS Compose + 镜像初始化/1Panel 实容器）、`publish`（双架构）与 `verify-published`（按 digest 回拉后 7 项检查）全部通过的结果。`e76732b` 首次触发时 `validate` 曾因 Maven Central 返回 429 限流在 `mvn package` 阶段失败，未产出镜像；原样重试失败 job 后通过，未修改源码、Dockerfile 或镜像源配置。
 
 2026-11-14 本地：CLI 11 项通过；CORE 镜像执行前端类型检查/构建与 Maven package 成功；原 Compose 六组检查、新增镜像部署七组检查全部通过，并清理本轮隔离容器/卷。新增七组使用实际 `linux/arm64` 镜像，包含 `$`/空格路径和单引号 env 原样解析。初始化镜像首次默认构建网络因 Alpine DNS 失败，host 网络构建通过；未修改源码中的软件源或全局网络设置。两份 Actions workflow 的 actionlint 1.7.12 检查通过。远程发布与回拉验证另记实际运行，不把本地镜像当作已发布产物。
 
