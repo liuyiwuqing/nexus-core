@@ -34,9 +34,16 @@ public class DeviceController {
     @GetMapping
     Map<String,Object> list() {
         return Map.of("items", ApiRows.normalize(db.queryForList("""
-            SELECT device_id AS "deviceId",name,enabled,last_seen AS "lastSeen",
-                   (online AND last_seen > now()-interval '90 seconds') AS online,created_at AS "createdAt"
-            FROM devices ORDER BY created_at LIMIT 100
+            SELECT d.device_id AS "deviceId",d.name,d.enabled,d.last_seen AS "lastSeen",
+                   (d.online AND d.last_seen > now()-interval '90 seconds') AS online,d.created_at AS "createdAt",
+                   t.wifi_ip AS "wifiIp",t.wifi_rssi AS "wifiRssi",t.observed_at AS "telemetryAt"
+            FROM devices d
+            LEFT JOIN LATERAL (
+                SELECT wifi_ip,wifi_rssi,observed_at FROM device_telemetry_samples s
+                WHERE s.device_id=d.device_id AND s.wifi_ip IS NOT NULL
+                ORDER BY observed_at DESC LIMIT 1
+            ) t ON true
+            ORDER BY d.created_at LIMIT 100
             """)));
     }
 

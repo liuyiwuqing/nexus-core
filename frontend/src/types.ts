@@ -8,7 +8,8 @@ export interface Message {
   expiresAt: string; readAt: string | null; readStatus: 'read' | 'unread'; dataClass: string;
   contentPurgedAt?: string | null;
 }
-export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null }
+export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null;
+  wifiIp?: string | null; wifiRssi?: number | null; telemetryAt?: string | null }
 export interface DeviceConfig {
   schemaVersion: 1; timezone: string; language: 'zh-CN'; volume: number; brightness: number; muted: boolean;
   dnd: { enabled: boolean; manual: boolean; startMinute: number; endMinute: number; allowCritical: boolean };

@@ -410,6 +410,12 @@ class DeviceManagementFlowTest {
             var grouped=telemetryHistory(id,historyWindow(base-60,base+120)+"&bucket=1m").path("points").get(0);
             assertThat(grouped.path("wifiIp").asText()).isEqualTo("192.168.1.24");
             assertThat(grouped.path("wifiRssi").asInt()).isEqualTo(-55);
+            JsonNode card=null;
+            for(var item:json.readTree(request("GET","devices","",TOKEN).body()).path("items"))
+                if(id.equals(item.path("deviceId").asText())) card=item;
+            assertThat(card).isNotNull();
+            assertThat(card.path("wifiIp").asText()).isEqualTo("192.168.1.24");
+            assertThat(card.path("wifiRssi").asInt()).isEqualTo(-52);
             publishNetworkTelemetry(d,id,base+20,"192.168.1.999",12,99); // 非法地址与信号整条拒绝
             publishTelemetryAt(d,id,base+40,40);
             var points=awaitHistoryPoints(id,base-60,base+120,3).path("points");
