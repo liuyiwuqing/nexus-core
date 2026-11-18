@@ -25,7 +25,10 @@ public class DeliveryService {
     private final int retrySeconds;
     private final InboxService inbox;
     private static final List<String> ACK_ORDER = List.of("pending", "sent", "received", "displayed", "read");
-    private static final String CAN_CANCEL = "d.status='pending' AND d.attempts=0 AND NOT d.cancel_blocked AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
+    // Shared with MessageDeliveryBatchService so a batch can never touch a row the
+    // single-delivery endpoints would refuse.
+    static final String CAN_CANCEL = "d.status='pending' AND d.attempts=0 AND NOT d.cancel_blocked AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
+    static final String CAN_RETRY = "d.status='failed' AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
 
     public DeliveryService(JdbcTemplate db, @Value("${nexus.delivery.max-attempts}") int maxAttempts,
                            @Value("${nexus.delivery.retry-seconds}") int retrySeconds, InboxService inbox) {
@@ -176,9 +179,8 @@ public class DeliveryService {
     public void retry(UUID event) {
         int count = db.update("""
             UPDATE deliveries d SET status='pending',attempts=0,next_attempt_at=now(),last_error=NULL
-            FROM inbox_messages m,devices v WHERE d.message_id=m.message_id AND d.device_id=v.device_id AND d.event_id=?
-              AND d.status='failed' AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled
-            """, event);
+            FROM inbox_messages m,devices v WHERE d.message_id=m.message_id AND d.device_id=v.device_id AND d.event_id=?"""
+            + " AND " + CAN_RETRY, event);
         if (count == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "delivery_not_retryable");
     }
 }

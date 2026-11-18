@@ -11,6 +11,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { formatTime, type Api, type Message, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
+import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
 
 import StatusNote from './StatusNote.vue';
 const props = defineProps<{
@@ -242,6 +243,14 @@ async function send() {
           <span v-else class="read-label">✓ 已读</span>
           <a v-if="selected.originalUrl" :href="selected.originalUrl" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
         </div>
+        <MessageDeliveryBatch
+          v-if="operate"
+          :key="selected.messageId"
+          :message-id="selected.messageId"
+          :api="api"
+          :busy="busy"
+          :mutate="mutate"
+        />
       </article>
       <ConsoleState v-else compact class="detail-placeholder">选择一条消息，查看完整内容</ConsoleState>
     </div>

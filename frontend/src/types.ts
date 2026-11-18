@@ -66,6 +66,13 @@ export interface DeliveryHistory extends Page<{
   sequence: number; recordedAt: string; kind: string; previousStatus: string | null; status: string;
   attempts: number; lastError: string | null; nextAttemptAt: string; receivedAt: string | null; displayedAt: string | null; readAt: string | null;
 }> { includesCreation: boolean; delivery: Pick<Delivery, 'eventId' | 'status' | 'attempts' | 'canCancel'> }
+export interface DeliveryBatchRow { eventId: string; deviceId: string; status: string; attempts: number; reason?: string }
+/** 单条消息的批量撤销/重试计划或结果；dryRun 为 true 时 applied 必为 0。 */
+export interface DeliveryBatch {
+  messageId: string; action: 'cancel' | 'retry'; dryRun: boolean; applied: number;
+  counts: { deliveries: number; candidates: number; skipped: number; remaining: number };
+  candidates: DeliveryBatchRow[]; skipped: DeliveryBatchRow[]; asOf: string;
+}
 export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
@@ -137,6 +144,12 @@ export const deliveryNames: Record<string, string> = {
   pending: '等待投递', sent: '等待设备确认', received: '设备已保存', displayed: '设备已展示',
   read: '用户已读', failed: '投递失败', expired: '已结束', cancelled: '已取消',
 };
+/** 批量撤销/重试跳过某条投递的原因；与服务端逐条判定的条件一一对应。 */
+export const batchReasonNames: Record<string, string> = {
+  not_pending: '已经开始投递', attempted: '已经尝试过发送', cancel_blocked: '历史记录不允许撤销',
+  not_failed: '不在失败状态', message_expired: '消息已过期', message_read: '消息已读',
+  device_disabled: '设备已停用',
+};
 export const errorNames: Record<string, string> = {
   pull_configuration_changed:'来源配置已变化，请读取当前配置后再操作。',pull_version_conflict:'来源版本已变化，请核对当前状态。',pull_disabled:'来源已停用，请先启用。',pull_in_progress:'来源正在同步，请稍后核对结果。',pull_rate_limited:'拉取或测试过于频繁，请至少间隔一分钟。',pull_devices_missing:'请先登记该来源绑定的全部设备。',pull_provider_failed:'拉取失败，请检查网络、来源地址和供应商响应格式。',pull_interrupted:'拉取已中断，请核对最近同步。',pull_history_limit:'来源去重记录达到上限，请由管理员检查保留配置。',pull_failed:'同步未完成，请核对最近状态。',
 
@@ -164,6 +177,7 @@ export const errorNames: Record<string, string> = {
   delivery_not_retryable: '这条投递已处理、已过期或设备已停用，不能重试。',
   delivery_not_cancellable: '这条投递已开始、已结束或无法确认从未发送，不能取消。',
   delivery_not_found: '投递记录不存在或已按保留策略删除。', cancelled_by_admin: '管理员取消投递',
+  delivery_batch_confirmation_required: '批量操作需要再次确认后才执行。', batch_too_large: '这条消息的投递超过 500 条，请在投递页逐条核对。', message_not_found: '消息不存在或已按保留策略清除。',
   ack_timeout: '设备未在重试期限内确认', broker_unavailable: '消息连接暂不可用', busy: '设备队列已满',
   storage_error: '设备存储失败', time_unavailable: '设备尚未校时', read_elsewhere: '已在消息中心标记已读',
   expired: '消息已过期', device_disabled: '设备已停用', invalid: '设备拒绝了消息格式',
