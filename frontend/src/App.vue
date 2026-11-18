@@ -32,7 +32,7 @@ const MemoryPanel = asyncPanel('memory');
 const OverviewPanel = asyncPanel('overview');
 
 const role=ref<Role>('viewer');provide('role',role);
-const showGuide=ref(false),selectedDevice=ref(''),eventsConnected=ref(false);
+const showGuide=ref(false),selectedDevice=ref(''),deviceState=ref(''),eventsConnected=ref(false);
 let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|undefined,streamGeneration=0;
 function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
 function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh(false,invalidateScope());}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
@@ -102,7 +102,7 @@ async function api<T>(path: string, method = 'GET', body?: unknown, signal?: Abo
 
 function logout() {
   rememberSignOut(true);csrfToken.value='';cookieSession.value=false;restoring.value=false;restoreFailed.value=false;busy.value=false;
-  stopEvents();showGuide.value=false;selectedDevice.value='';
+  stopEvents();showGuide.value=false;selectedDevice.value='';deviceState.value='';
   cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
@@ -423,13 +423,18 @@ function pullMessages(source:string){tab.value='inbox';void searchMessages({...e
  * 上一次的搜索条件必须清掉，否则"查看等待投递"会被旧筛选悄悄收窄成别的结果集。
  */
 function drillAlert(target: OverviewAlertTarget) {
-  if (target.tab === 'devices') { tab.value = 'devices'; return; }
+  if (target.tab === 'devices') {
+    // 壳层的单设备筛选与状态筛选叠加只会得到空列表；钻取要看到的是这一类，不是某台。
+    selectedDevice.value = ''; deviceState.value = target.status; tab.value = 'devices'; return;
+  }
   deliverySearch.value = emptySearch();
   deliveryStatus.value = target.status;
   deliveryReason.value = target.error ?? '';
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
 }
+// 从壳层选具体设备时回到"全部"状态：单设备与状态筛选叠加只会得到空列表。
+function pickDevice(id: string) { selectedDevice.value = id; deviceState.value = ''; }
 const poll = () => mutate(() => api('connectors/halo/poll', 'POST'), 'Halo 同步完成。');
 const importComment = (name: string) => mutate(() => api(`connectors/halo/comments/${encodeURIComponent(name)}/import`, 'POST'), '公开评论已导入；重复导入会合并到原消息。');
 const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST'), '已重新加入投递队列。');
@@ -562,7 +567,8 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
   <ConsoleShell
     v-else
     v-model:tab="tab"
-    v-model:selected-device="selectedDevice"
+    :selected-device="selectedDevice"
+    @update:selected-device="pickDevice"
     :devices="devices"
     :role="role"
     :loading="loading"
@@ -607,6 +613,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
       <DevicesPanel
         v-else-if="tab === 'devices'"
         :items="selectedDevice ? devices.filter((d) => d.deviceId === selectedDevice) : devices"
+        :state="deviceState"
         :busy="busy"
         :loading="loading"
         :failed="readFailed"
@@ -614,6 +621,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :register="register"
         :enable="enable"
         :rename="rename"
+        @filter-state="deviceState = $event"
       />
       <section v-else-if="tab === 'connectors'">
         <ConnectorsPanel :items="connectors" :busy="busy" :loading="loading" :failed="readFailed" :poll="poll" :import-comment="importComment" />

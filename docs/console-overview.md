@@ -31,7 +31,7 @@
 | `code` | 级别 | 命中条件 | `value` / `threshold` / `unit` | 钻取目标 `target` |
 | --- | --- | --- | --- | --- |
 | `mqtt_connection` | `error` | 本次读取传输未就绪 | `0 < 1`，`unit=state`；只表达"发不出去"，不代表设备离线 | `null` |
-| `devices_online` | `warn` | 至少一台启用设备，但没有一台启用设备在线 | 在线启用设备数与 `1` 比较，`unit=count`；一台设备都没登记不报 | `devices` |
+| `devices_online` | `warn` | 至少一台启用设备，但没有一台启用设备在线 | 在线启用设备数与 `1` 比较，`unit=count`；一台设备都没登记不报 | `devices` + `status=offline` |
 | `delivery_backlog` | `warn` | 当前 `pending` 积压 ≥ 100 | 积压条数与 `100` 比较，`unit=count`；只算 `pending`，不算等待设备确认的 `sent` | `deliveries` + `status=pending` |
 | `delivery_failure_rate` | `warn` | 今日投递 ≥ 20 条且失败率 ≥ 10% | 比例与 `0.10` 比较，`unit=ratio` | `deliveries` + `status=failed` |
 
@@ -47,10 +47,12 @@
 
 - `delivery_backlog` → 投递页 + `status=pending`（看等待投递）；
 - `delivery_failure_rate` → 投递页 + `status=failed`（看失败投递），并可再由失败原因收一层；
-- `devices_online` → 设备页（该页没有离线筛选，因此只承诺"打开设备页"，不假装能筛出离线的那几台）；
+- `devices_online` → 设备页 + `status=offline`（只看启用且离线的一类；停用设备可另选「已停用」）；
 - `mqtt_connection` → `target` 为 `null`，不给按钮。传输不可用在管理台没有对应的列表筛选，给一个跳转等于假装能查。
 
-只有真的存在对应筛选时才给目标：这是"不发明能力"的同一原则。页面在跳转前清空投递页上一次的搜索条件（来源/设备/收件窗口），否则"查看等待投递"会被旧筛选悄悄收窄成另一批结果；状态筛选取代而不是叠加。
+只有真的存在对应筛选时才给目标：这是"不发明能力"的同一原则。页面在跳转前清空投递页上一次的搜索条件（来源/设备/收件窗口），否则"查看等待投递"会被旧筛选悄悄收窄成另一批结果；状态筛选取代而不是叠加。设备页的筛选在外壳上完成：钻取前会清掉壳层的单设备选择，状态筛选取代而不是叠加，避免"某一台 + 某一类"叠加出空列表。
+
+设备列表由 `GET /devices` 一次读取（最多 100 条），状态筛选在页面内过滤，不再为筛选单独请求接口；因此「离线」就是列表里 `enabled && !online` 的那一类，与概览 `devices_online` 的"启用且在线"口径互补。筛出空结果时给出「没有…设备」和「查看全部设备」。
 
 "失败投递"还能再收一层：概览列出今日失败原因，每条带 `lastError` 筛选跳转，见下一节。
 

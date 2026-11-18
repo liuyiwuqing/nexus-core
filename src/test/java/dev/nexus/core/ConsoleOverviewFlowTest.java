@@ -145,6 +145,8 @@ class ConsoleOverviewFlowTest {
         assertThat(backlog.path("alerts").get(1).path("comparison").asText()).isEqualTo("gte");
         // 钻取目标随告警下发：页面不需要自己维护"积压该跳到哪个筛选"的映射。
         assertThat(backlog.path("alerts").get(0).path("target").path("tab").asText()).isEqualTo("devices");
+        // 设备告警落到"启用且离线"这一现存筛选，不是只打开页面。
+        assertThat(backlog.path("alerts").get(0).path("target").path("status").asText()).isEqualTo("offline");
         assertThat(backlog.path("alerts").get(1).path("target").path("tab").asText()).isEqualTo("deliveries");
         assertThat(backlog.path("alerts").get(1).path("target").path("status").asText()).isEqualTo("pending");
     }

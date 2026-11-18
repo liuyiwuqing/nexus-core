@@ -36,7 +36,7 @@ final class OverviewAlerts {
         // 一台设备都没登记时不报"全部离线"：没有设备不是故障。
         if (enabled > 0 && onlineEnabled < ONLINE_MIN)
             alerts.add(new Alert("devices_online","warn",onlineEnabled,ONLINE_MIN,"lt","count",
-                new AlertTarget("devices","")));
+                new AlertTarget("devices","offline")));
         if (pending >= BACKLOG_PENDING)
             alerts.add(new Alert("delivery_backlog","warn",pending,BACKLOG_PENDING,"gte","count",
                 new AlertTarget("deliveries","pending")));

@@ -3,7 +3,7 @@ import ConsoleState from './ConsoleState.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
-import { NButton, NInput, NSwitch, NTag } from 'naive-ui';
+import { NButton, NInput, NSelect, NSwitch, NTag } from 'naive-ui';
 import { Plus, Settings2, Upload } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin } = useAccess();
@@ -11,7 +11,8 @@ import { computed, nextTick, ref } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
-const props = defineProps<{ items: Device[]; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const props = defineProps<{ items: Device[]; state: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const emit = defineEmits<{ filterState: [value: string] }>();
 const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
@@ -21,6 +22,14 @@ const editingDevice = computed(() => props.items.find(item => item.deviceId === 
 const nameConflict = computed(() => !nameSaving.value && !!editingDevice.value && editingDevice.value.name !== originalName.value);
 // 在线数放在页头副标题里：列表卡片的在线标记只说明单台，用户还要知道"整体几台在线"。
 const onlineCount = computed(() => props.items.filter(device => device.online).length);
+// 与概览 devices_online 同一口径：离线只看启用设备，停用的单独一类。
+const stateNames: Record<string, string> = { online: '在线', offline: '离线', disabled: '已停用' };
+const filtered = computed(() => {
+  if (props.state === 'online') return props.items.filter(device => device.online);
+  if (props.state === 'offline') return props.items.filter(device => device.enabled && !device.online);
+  if (props.state === 'disabled') return props.items.filter(device => !device.enabled);
+  return props.items;
+});
 function loadName() { if (editingDevice.value) nameDraft.value = originalName.value = editingDevice.value.name; }
 async function editName(device: Device) {
   renameId.value = device.deviceId; loadName(); await nextTick();
@@ -56,12 +65,28 @@ async function submit() {
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">设备</h1>
-        <p>{{ items.length }} 台设备 · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
+        <p>{{ state ? `显示 ${filtered.length} / 共 ${items.length} 台` : `${items.length} 台设备` }} · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
       </div>
-      <NButton type="primary" attr-type="button" v-if="admin" class="primary" @click="adding = !adding" :aria-expanded="adding">
-        <template #icon><Plus :size="16" /></template>
-        {{ adding ? '收起' : '登记设备' }}
-      </NButton>
+      <div class="management-actions">
+        <NSelect
+          class="device-state-filter"
+          aria-label="设备状态"
+          :disabled="loading || failed"
+          :value="state"
+          :options="[
+            { label: '全部', value: '' },
+            { label: '在线', value: 'online' },
+            { label: '离线', value: 'offline' },
+            { label: '已停用', value: 'disabled' },
+          ]"
+          :input-props="{ id: 'devicespanel-state', 'aria-label': '设备状态' }"
+          @update:value="emit('filterState', $event)"
+        />
+        <NButton type="primary" attr-type="button" v-if="admin" class="primary" @click="adding = !adding" :aria-expanded="adding">
+          <template #icon><Plus :size="16" /></template>
+          {{ adding ? '收起' : '登记设备' }}
+        </NButton>
+      </div>
     </div>
     <ConsoleForm v-if="adding" class="inline-form" @submit.prevent="submit">
       <div class="form-columns">
@@ -102,9 +127,14 @@ async function submit() {
     </ConsoleForm>
     <ConsoleState v-if="loading && !items.length && !failed" kind="loading">正在读取设备…</ConsoleState>
     <ConsoleState v-else-if="!failed && !items.length" title="还没有设备">登记设备并完成本机配网后，即可接收提醒。</ConsoleState>
+    <ConsoleState v-else-if="!failed && !filtered.length" :title="`没有${stateNames[state] || '符合条件的'}设备`">
+      <template #actions>
+        <NButton attr-type="button" class="text-button" @click="emit('filterState', '')">查看全部设备</NButton>
+      </template>
+    </ConsoleState>
     <div v-else-if="!failed" class="device-grid" :aria-busy="loading">
       <article
-        v-for="device in items"
+        v-for="device in filtered"
         :key="device.deviceId"
         class="device-card"
         :data-state="device.online ? 'online' : 'offline'"

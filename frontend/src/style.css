@@ -246,6 +246,7 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .n-tag .status-dot { flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .n-tag .n-tag__content { display: inline-flex; align-items: center; gap: 5px; }
 .device-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap: var(--space-3); }
+.device-state-filter { width: 120px; }
 .device-card { transition: border-color var(--motion-fast) var(--ease); }
 .device-card:hover { border-color: var(--border-hover); }
 /* 展开的设置/升级面板属于这张卡片：卡片撑满整行，面板去外框、用分隔线衔接，触发点与结果同屏。 */
