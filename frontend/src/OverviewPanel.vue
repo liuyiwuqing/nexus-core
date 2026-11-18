@@ -4,7 +4,7 @@ import OverviewTrend from './OverviewTrend.vue';
 import { NButton } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
-import { formatTime, type Api, type Overview } from './types';
+import { formatTime, type Api, type Overview, type OverviewAlert } from './types';
 
 import { readFailure } from './failure';
 const props = defineProps<{ api: Api }>();
@@ -27,6 +27,24 @@ const timer = setInterval(() => { if (document.visibilityState === 'visible') vo
 onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); });
 // 失败率只在有投递时画条形；null 表示"今日还没有投递"，不是 0%。
 const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? null);
+// 阈值来自服务端：页面不再自己写 10%，否则改阈值要两处一起改。
+const thresholds = computed(() => snapshot.value?.thresholds ?? null);
+const percent = (value: number) => (value * 100).toFixed(1) + '%';
+// 样本太少时条形不染色：和"不报失败率告警"保持同一个判定。
+const rateWarn = computed(() => {
+  const today = snapshot.value?.today, limits = snapshot.value?.thresholds;
+  return !!today && !!limits && today.deliveryFailureRate !== null
+    && today.deliveries >= limits.failureRateMinSample && today.deliveryFailureRate >= limits.failureRate;
+});
+// code 是服务端契约；未知 code 原样显示，新告警不会因为前端没改版而消失。
+function alertText(alert: OverviewAlert): string {
+  if (alert.code === 'mqtt_connection') return 'MQTT 连接不可用，投递可能延迟。';
+  if (alert.code === 'devices_online') return `没有在线设备：启用设备中在线 ${alert.value} 台，低于告警阈值 ${alert.threshold} 台。`;
+  if (alert.code === 'delivery_backlog') return `投递积压 ${alert.value} 条，达到告警阈值 ${alert.threshold} 条。`;
+  if (alert.code === 'delivery_failure_rate') return `今日投递失败率 ${percent(alert.value)}，达到告警阈值 ${percent(alert.threshold)}。`;
+  return alert.code;
+}
+const levelText = (level: OverviewAlert['level']) => (level === 'error' ? '错误' : '告警');
 </script>
 
 <template>
@@ -35,7 +53,13 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
     <ConsoleState v-if="loading" kind="loading" :compact="false">正在读取概览…</ConsoleState>
     <ConsoleState v-else-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <template v-else-if="snapshot">
-      <ConsoleState v-if="snapshot.mqtt !== 'ready'" kind="warn" compact>MQTT 连接不可用，投递可能延迟。</ConsoleState>
+      <!-- 一次读取里命中的告警；顺序由服务端固定，页面不再排序或改写级别。 -->
+      <ul v-if="snapshot.alerts.length" class="overview-alerts" role="status" aria-atomic="true">
+        <li v-for="alert in snapshot.alerts" :key="alert.code" class="overview-alert"
+            :class="'overview-alert--' + alert.level" :data-alert="alert.code">
+          <span class="sr-only">{{ levelText(alert.level) }}：</span>{{ alertText(alert) }}
+        </li>
+      </ul>
       <dl class="pet-stats overview-stats">
         <div data-metric="online"><dt>设备在线</dt><dd>{{ snapshot.devices.online }}<small> 台</small></dd></div>
         <div data-metric="offline"><dt>设备离线</dt><dd>{{ snapshot.devices.offline }}<small> 台</small></dd></div>
@@ -50,14 +74,15 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
           <dl class="management-metrics">
             <div><dt>等待投递</dt><dd>{{ snapshot.backlog.pending }}</dd></div>
             <div><dt>等待设备确认</dt><dd>{{ snapshot.backlog.sent }}</dd></div>
-            <div data-metric="failure-rate"><dt>今日投递失败率</dt><dd>{{ failureRate === null ? '—' : (failureRate * 100).toFixed(1) + '%' }}</dd></div>
+            <div data-metric="failure-rate"><dt>今日投递失败率</dt><dd>{{ failureRate === null ? '—' : percent(failureRate) }}</dd></div>
           </dl>
           <!-- 失败率是比例而不是计数：条形只表达这一比例，空值时不画成 0%。 -->
-          <div v-if="failureRate !== null" class="health-bar" :class="{ 'health-bar--warn': failureRate >= 0.1 }">
+          <div v-if="failureRate !== null" class="health-bar" :class="{ 'health-bar--warn': rateWarn }">
             <span class="health-bar-fill" :style="{ width: Math.min(100, failureRate * 100) + '%' }" aria-hidden="true"></span>
             <span class="sr-only">今日投递失败率 {{ (failureRate * 100).toFixed(1) }}%</span>
           </div>
           <p class="overview-caption">今日收件产生 {{ snapshot.today.deliveries }} 条投递，失败 {{ snapshot.today.failedDeliveries }} 条；积压与失败统计保留全部记录。</p>
+          <p v-if="thresholds" class="overview-caption">告警阈值：今日失败率 ≥ {{ percent(thresholds.failureRate) }}（投递 ≥ {{ thresholds.failureRateMinSample }} 条才判定）、积压 ≥ {{ thresholds.backlogPending }} 条、启用设备在线 &lt; {{ thresholds.onlineMin }} 台。</p>
 
         </article>
       </div>
@@ -70,6 +95,9 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
 
 <style scoped>
 .overview-stats { margin-bottom: var(--space-3); }
+.overview-alerts { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
+.overview-alert { padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
+.overview-alert--error { border-color: var(--danger-border); background: var(--danger-soft); }
 .overview-caption { font-size: var(--text-sm); color: var(--muted); }
 .overview-grid { margin-top: var(--space-4); }
 .overview-grid h2 { font-size: var(--text-md); }

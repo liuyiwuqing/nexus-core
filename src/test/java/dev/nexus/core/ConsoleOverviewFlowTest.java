@@ -9,6 +9,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,10 +63,19 @@ class ConsoleOverviewFlowTest {
         var response=request(TOKEN);assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);
         return json.readTree(response.body());
     }
+    /** 传输连接是异步建立的：等它就绪再做告警断言，不把启动竞争写成告警逻辑的问题。 */
+    void awaitReady()throws Exception {
+        for (int i=0;i<100;i++) {
+            if (overview().path("mqtt").asText().equals("ready")) return;
+            Thread.sleep(50);
+        }
+        throw new AssertionError("MQTT transport never reported ready");
+    }
     @BeforeEach void prepare() { fixtures.execute("TRUNCATE inbox_messages,devices CASCADE"); }
 
     @Test void emptyOverviewPreservesUnknownRateAndRequiresAdmin()throws Exception {
         assertThat(request(null).statusCode()).isEqualTo(401);
+        awaitReady();
         var result=overview();
         assertThat(result.path("timezone").asText()).isEqualTo("UTC");
         assertThat(result.path("devices").path("total").asInt()).isZero();
@@ -72,6 +83,67 @@ class ConsoleOverviewFlowTest {
         assertThat(result.path("today").path("deliveryFailureRate").isNull()).isTrue();
         assertThat(result.path("backlog").path("pending").asInt()).isZero();
         assertThat(result.path("backlog").path("sent").asInt()).isZero();
+        // 没有数据就是没有告警，不返回"健康"占位；阈值始终随快照返回。
+        assertThat(codes(result)).isEmpty();
+        assertThat(result.path("thresholds").path("failureRate").asDouble()).isEqualTo(0.1);
+        assertThat(result.path("thresholds").path("failureRateMinSample").asInt()).isEqualTo(20);
+        assertThat(result.path("thresholds").path("backlogPending").asInt()).isEqualTo(100);
+        assertThat(result.path("thresholds").path("onlineMin").asInt()).isEqualTo(1);
+    }
+
+    @Test void alertsStayQuietWithoutEnabledDevicesAndReportAnOfflineFleetPlusBacklog()throws Exception {
+        awaitReady();
+        // 只有停用设备：没有启用设备不是"全部离线"。
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('disabled','停用',false,true,now())");
+        assertThat(codes(overview())).isEmpty();
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('idle','离线',true,false,now())");
+        var device=overview().path("alerts").get(0);
+        assertThat(codes(overview())).containsExactly("devices_online");
+        assertThat(device.path("level").asText()).isEqualTo("warn");
+        // 比较方向随告警一起返回：消费方不需要再猜"value 与 threshold 谁大算命中"。
+        assertThat(device.path("comparison").asText()).isEqualTo("lt");
+        assertThat(device.path("value").asDouble()).isZero();
+        assertThat(device.path("threshold").asDouble()).isEqualTo(1.0);
+        assertThat(device.path("unit").asText()).isEqualTo("count");
+
+        // 积压低于阈值不报，等于阈值就报（含等于，不是严格大于）。
+        seedMessages(99); seedDeliveries("idle","pending",99);
+        assertThat(overview().path("backlog").path("pending").asInt()).isEqualTo(99);
+        assertThat(codes(overview())).containsExactly("devices_online");
+        seedMessages(1); seedDeliveries("idle","pending",1);
+        var backlog=overview();
+        assertThat(backlog.path("backlog").path("pending").asInt()).isEqualTo(100);
+        assertThat(codes(backlog)).containsExactly("devices_online","delivery_backlog");
+        assertThat(backlog.path("alerts").get(1).path("value").asDouble()).isEqualTo(100.0);
+        assertThat(backlog.path("alerts").get(1).path("comparison").asText()).isEqualTo("gte");
+    }
+
+    @Test void failureRateAlertWaitsForTwentyDeliveriesAndTreatsTheThresholdAsInclusive()throws Exception {
+        awaitReady();
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('live','在线',true,true,now())");
+        // 19 条投递全失败：比例 100%，但样本不足 20，不判定。
+        seedMessages(19); seedDeliveries("live","failed",19);
+        var thin=overview();
+        assertThat(thin.path("today").path("deliveryFailureRate").asDouble()).isEqualTo(1.0);
+        assertThat(codes(thin)).isEmpty();
+
+        seedMessages(1); seedDeliveries("live","failed",1);
+        fixtures.update("UPDATE deliveries SET status='sent' WHERE event_id IN (SELECT event_id FROM deliveries ORDER BY event_id LIMIT 19)");
+        var low=overview();
+        assertThat(low.path("today").path("deliveries").asInt()).isEqualTo(20);
+        assertThat(low.path("today").path("failedDeliveries").asInt()).isEqualTo(1);
+        assertThat(low.path("today").path("deliveryFailureRate").asDouble()).isEqualTo(0.05);
+        assertThat(codes(low)).isEmpty();
+
+        // 再失败一条正好 2/20=10%：等于阈值也播。
+        fixtures.update("UPDATE deliveries SET status='failed' WHERE event_id IN (SELECT event_id FROM deliveries WHERE status='sent' LIMIT 1)");
+        var boundary=overview();
+        assertThat(boundary.path("today").path("deliveryFailureRate").asDouble()).isEqualTo(0.1);
+        assertThat(codes(boundary)).containsExactly("delivery_failure_rate");
+        assertThat(boundary.path("alerts").get(0).path("value").asDouble()).isEqualTo(0.1);
+        assertThat(boundary.path("alerts").get(0).path("threshold").asDouble()).isEqualTo(0.1);
+        assertThat(boundary.path("alerts").get(0).path("unit").asText()).isEqualTo("ratio");
+        assertThat(boundary.path("alerts").get(0).path("level").asText()).isEqualTo("warn");
     }
 
     @Test void snapshotCountsUseReceiptDayAndTheExistingOnlineThreshold()throws Exception {
@@ -164,6 +236,37 @@ class ConsoleOverviewFlowTest {
     JsonNode trend(String query)throws Exception {
         var response=trendRequest(query);assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);
         return json.readTree(response.body());
+    }
+
+    /** 告警 code 的顺序由服务端固定，测试直接比对顺序而不只是集合。 */
+    static List<String> codes(JsonNode overview) {
+        List<String> codes=new ArrayList<>();
+        overview.path("alerts").forEach(alert->codes.add(alert.path("code").asText()));
+        return codes;
+    }
+
+    /** 绕过 HTTP 直接造今日收件：凑 100 条积压不值得建 100 台设备。 */
+    void seedMessages(int count) {
+        fixtures.update("""
+            INSERT INTO inbox_messages(message_id,connector_id,source,upstream_event_id,event_type,title,content,
+                summary,sender,original_url,priority,created_at,expires_at)
+            SELECT gen_random_uuid(),'overview','manual','bulk-'||gen_random_uuid(),'manual.test','bulk','bulk',
+                'bulk','fixture','', 'normal',now(),now()+interval '1 day'
+            FROM generate_series(1,?)
+            """,count);
+    }
+
+    /** 给还没有投递的收件补一条指定状态的投递；重复调用只补新增的那些。 */
+    void seedDeliveries(String deviceId,String status,int count) {
+        fixtures.update("""
+            INSERT INTO deliveries(event_id,message_id,device_id,status)
+            SELECT gen_random_uuid(),pending.message_id,?,? FROM (
+                SELECT m.message_id FROM inbox_messages m
+                WHERE m.connector_id='overview'
+                    AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.message_id=m.message_id)
+                LIMIT ?
+            ) pending
+            """,deviceId,status,count);
     }
 
     String createMessage(String title)throws Exception {

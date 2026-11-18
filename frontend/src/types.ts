@@ -90,11 +90,17 @@ export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateD
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
+export interface OverviewAlert {
+  code: string; level: 'warn' | 'error';
+  value: number; threshold: number; comparison: 'gte' | 'lt'; unit: 'ratio' | 'count' | 'state';
+}
+export interface OverviewThresholds { failureRate: number; failureRateMinSample: number; backlogPending: number; onlineMin: number }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
   devices: { total: number; online: number; offline: number; disabled: number };
   today: { messages: number; deliveries: number; failedDeliveries: number; deliveryFailureRate: number | null };
   backlog: { pending: number; sent: number }; failedDeliveries: number;
+  thresholds: OverviewThresholds; alerts: OverviewAlert[];
 }
 export interface OverviewTrendPoint { at: string; messages: number; deliveries: number; failures: number; partial: boolean }
 export interface OverviewTrend {

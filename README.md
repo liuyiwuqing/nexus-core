@@ -60,9 +60,11 @@ python3 tools/run_local.py run
 
 消息可组合已读/未读、来源和收件时间，投递可组合八种状态、设备 ID 和消息收件时间；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。两页可导出当前筛选的元数据 CSV，最多 5000 条，不含标题、正文或原始 payload。HTTP 参数、时间口径与导出边界见[筛选与导出](docs/console-list-filters.md)。
 
-“概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`，MQTT 健康与设备在线分别呈现。口径及验证入口见[运行概览](docs/console-overview.md)。
+“概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`。越线的指标以告警条列在计数上方，MQTT 健康与设备在线各成一条。口径及验证入口见[运行概览](docs/console-overview.md)。
 
 概览的“运行趋势”按 6 小时/24 小时/7 天读取固定桶历史（`15m`/`1h`/`6h`/`1d`），收件、投递与失败事件各一条序列；最后一桶尚未结束会标出来，空窗口仍返回完整网格。失败按投递历史里“进入失败”的事件计数，不是当前失败记录的回看。
+
+概览的告警（`alerts`）与计数来自同一份快照：传输未就绪、无启用设备在线、`pending` 积压 ≥ 100、今日失败率 ≥ 10%（投递 ≥ 20 条才判定）各自成条，并带上 `threshold`/`comparison`；阈值随响应一起返回（`thresholds`），前端不保存常量。告警是读时派生状态，不落库、不推送、不写审计，每 5 秒重算，读取失败时随快照一起消失。
 
 投递详情提供事务状态时间线，仅允许取消能确认尚未开始发送的记录；旧行从迁移时基线开始留存，重试不会重新获得取消资格，未知结果核对同一投递。API、V13 和保留边界见[时间线与取消](docs/console-delivery-history.md)。
 
@@ -194,7 +196,7 @@ python3 tools/upgrade_broker_policy.py --apply
 
 | 路径 | 用途 |
 | --- | --- |
-| `GET /overview` | 只读运行统计，固定 UTC 今日窗口 |
+| `GET /overview` | 只读运行统计，固定 UTC 今日窗口，附派生告警 `alerts` 与阈值 `thresholds` |
 | `GET /overview/trend?hours&bucket` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial` |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
