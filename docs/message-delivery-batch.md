@@ -1,6 +1,6 @@
-# 单条消息的投递批量撤销与重试 · MSG-BATCH-01
+# 投递批量撤销与重试 · MSG-BATCH-01/02
 
-状态：CORE 侧软件已实现（2026-11-18），隔离 HTTP/PostgreSQL 与真实 Vue 页面验证通过。
+状态：CORE 侧软件已实现（2026-11-18），隔离 HTTP/PostgreSQL 与真实 Vue 页面验证通过；单条消息与跨消息两种范围共用同一套判定。
 
 一条消息会为每台启用设备各建一条投递。此前撤销和重试只能进单条投递的时间线操作，设备一多就要重复点 N 次，而且每次都要看一条时间线。本项提供按消息的批量入口，**不新增批量范围**：能批量的条件与单条接口完全一致。
 
@@ -92,3 +92,65 @@ bash tools/ci/test_message_batch_ui.sh
 - 回归：04 `test_list_filters_ui.sh` 44 项、`test_message_compose_ui.sh` 33 项仍全部通过。
 
 未验收：真实 Broker 上的批量撤销/设备侧表现、真实设备回执竞态、大数据量（接近 500 条）下的耗时，以及生产库。
+
+## 7. 跨消息批量 · MSG-BATCH-02
+
+状态：软件已实现（2026-11-18）。管理台当前页最多选 20 条消息，一次核对整单的可撤销/可重试条数，确认后在同一事务内逐消息应用。
+
+### 7.1 接口与请求
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `POST /api/v1/deliveries/batch-cancel?dryRun=true` | 整单只读预演撤销 |
+| `POST /api/v1/deliveries/batch-cancel?confirm=CANCEL_MESSAGE_DELIVERIES_BATCH` | 执行跨消息撤销 |
+| `POST /api/v1/deliveries/batch-retry?dryRun=true` | 整单只读预演重试 |
+| `POST /api/v1/deliveries/batch-retry?confirm=RETRY_MESSAGE_DELIVERIES_BATCH` | 执行跨消息重试 |
+
+请求体只有 `messageIds`，重复 ID 在服务端去重：
+
+```json
+{ "messageIds": ["…", "…"] }
+```
+
+响应保留每条消息的明细，并额外给出整单合计：
+
+```json
+{
+  "action": "cancel", "dryRun": false, "applied": 4,
+  "counts": { "messages": 2, "deliveries": 6, "candidates": 4, "skipped": 2, "remaining": 0 },
+  "messages": [ { "messageId": "…", "action": "cancel", "dryRun": false, "applied": 2, "counts": { "deliveries": 3, "candidates": 2, "skipped": 1, "remaining": 0 }, "candidates": [], "skipped": [], "asOf": "…" } ],
+  "asOf": "2026-11-18T02:00:00Z"
+}
+```
+
+### 7.2 整单原子与上限
+
+- 一次最多 20 条消息、合计 500 条投递；超出返回 `409 batch_too_large`，不截断。
+- 空 `messageIds` 或全为 `null` 返回 `400 invalid_request`。
+- 任一消息不存在（包括已被保留策略清除）返回 `404 message_not_found`，**整单不写入**。写入前的存在性检查与后续更新在同一个 `@Transactional` 内。
+- 逐消息复用单条 `run(...)`：同样的判定谓词、同样的跳过原因、同样的 `delivery_history` 记录，不维护第二套规则。消息之间若有重复投递不可能发生——每台设备的 `(message_id, device_id)` 唯一。
+- 非预演请求缺少对应批确认令牌返回 `400 delivery_batch_confirmation_required`。
+
+### 7.3 权限与审计
+
+与单条批量相同：管理员与 operator 可写，viewer 只读；`RoleTokens` 的 operator 白名单已覆盖 `POST /api/v1/deliveries/`。每条实际改动仍由 `delivery_history` 触发器写 `state_changed` 或 `retry_requested`，HTTP 层不新增批量审计。
+
+### 7.4 管理台
+
+消息列表当前页每行左侧新增勾选框（仅 operator/管理员可见），选中后出现「已选 N 条」操作条；达到 20 条时显示上限并禁用其余勾选框。打开「批量投递操作…」即并发读取撤销与重试两个预演，显示整单消息数、投递总数、可撤销/可重试条数，以及按原因合并的跳过摘要（例如「跳过 4 条：已经尝试过发送 2、已经开始投递 2」）。确认写入后保留面板并重新预演，显示「已撤销 4 条未开始的投递，涉及 2 条消息」。
+
+换页会立即清空选择；筛选或刷新导致消息离开当前页时，选择收敛到仍可见的消息。整单被拒绝时清空旧计划，只显示错误，不展示「还能撤销 N 条」的过期数字；错误文案明确说明整单未做修改。
+
+### 7.5 验证
+
+```sh
+JAVA_HOME="$(/usr/libexec/java_home -v 21)" mvn -s .mvn/settings.xml -B -ntp -Dtest=MessageDeliveryMultiBatchFlowTest test
+# 同级 04 项目
+bash tools/ci/test_message_batch_ui.sh
+```
+
+- `MessageDeliveryMultiBatchFlowTest`（真实 HTTP + 隔离 PostgreSQL/MQTT，4 项）：两次预演不写库且合计正确；一次写入跨越两条消息并逐条写 `delivery_history`；未知消息整单 404 且不写入；20 条消息上限与合计 500 条投递上限。
+- 04 `test_message_batch_ui.sh`：30 项浏览器检查，新增当前页多选计数、20 条上限、两个预演请求形状、批确认令牌、整单拒绝文案、清空选择、390 px 适配。
+- 完整 CORE 构建：168 项，0 失败/0 错误，5 项条件跳过。
+
+未验收：真实 Broker/设备上的跨消息批量表现、接近上限时的耗时、多管理员并发操作同一批消息，以及生产库。

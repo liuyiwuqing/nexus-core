@@ -211,6 +211,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |
 | `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
 | `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
+| `POST /deliveries/batch-{cancel,retry}` | 跨消息批量，请求体 `messageIds`；最多 20 条消息且合计 500 条投递，整单一个事务，任一消息不可读返回 404 且不写入；写入令牌 `CANCEL_MESSAGE_DELIVERIES_BATCH` / `RETRY_MESSAGE_DELIVERIES_BATCH` |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |
 | `GET /ai`，`GET/POST /messages/{id}/analysis`，`POST .../analysis/retry` | 模型状态和分析 |

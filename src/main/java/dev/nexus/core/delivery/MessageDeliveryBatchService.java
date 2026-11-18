@@ -26,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class MessageDeliveryBatchService {
     /** A message fans out to a bounded device set; a larger batch would hide a runaway fan-out. */
     public static final int MAX_BATCH = 500;
+    /** The console selects at most one page of messages; a larger span is accidental, not a plan. */
+    public static final int MAX_MESSAGES = 20;
     private static final String CANCEL_REASON = """
         CASE WHEN d.status<>'pending' THEN 'not_pending'
              WHEN d.attempts<>0 THEN 'attempted'
@@ -81,6 +83,53 @@ public class MessageDeliveryBatchService {
             "skipped", skipped.size(), "remaining", remaining));
         result.put("candidates", candidates);
         result.put("skipped", skipped);
+        result.put("asOf", Instant.now());
+        return result;
+    }
+
+    /**
+     * Applies the same per-message batch to a small set of messages in one transaction.
+     *
+     * <p>Every selected message must exist: a selection that lost a message is refused as a whole
+     * instead of applying a partial plan that no longer matches what the operator reviewed. The
+     * aggregate fan-out limit is checked before the first write, so the per-message limit can never
+     * abort midway.
+     */
+    @Transactional
+    public Map<String,Object> runMany(List<UUID> messageIds, boolean cancel, boolean dryRun) {
+        if (messageIds == null || messageIds.isEmpty())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_request");
+        var ids = new ArrayList<UUID>();
+        for (var id : messageIds) if (id != null && !ids.contains(id)) ids.add(id);
+        if (ids.size() > MAX_MESSAGES) throw new ResponseStatusException(HttpStatus.CONFLICT, "batch_too_large");
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Object[] keys = ids.toArray();
+        int found = db.queryForObject("SELECT count(*) FROM inbox_messages WHERE message_id IN (" + placeholders + ")",
+            Integer.class, keys);
+        if (found != ids.size()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "message_not_found");
+        int deliveries = db.queryForObject("SELECT count(*) FROM deliveries WHERE message_id IN (" + placeholders + ")",
+            Integer.class, keys);
+        if (deliveries > MAX_BATCH) throw new ResponseStatusException(HttpStatus.CONFLICT, "batch_too_large");
+        var messages = new ArrayList<Map<String,Object>>();
+        int applied = 0, candidates = 0, skipped = 0, remaining = 0;
+        for (var id : ids) {
+            // Self-invocation joins the transaction started here, so any later failure rolls the
+            // earlier messages back as well.
+            var one = run(id, cancel, dryRun);
+            messages.add(one);
+            applied += (Integer) one.get("applied");
+            var counts = (Map<?,?>) one.get("counts");
+            candidates += (Integer) counts.get("candidates");
+            skipped += (Integer) counts.get("skipped");
+            remaining += (Integer) counts.get("remaining");
+        }
+        var result = new LinkedHashMap<String,Object>();
+        result.put("action", cancel ? "cancel" : "retry");
+        result.put("dryRun", dryRun);
+        result.put("applied", applied);
+        result.put("counts", Map.of("messages", ids.size(), "deliveries", deliveries,
+            "candidates", candidates, "skipped", skipped, "remaining", remaining));
+        result.put("messages", messages);
         result.put("asOf", Instant.now());
         return result;
     }

@@ -75,6 +75,12 @@ export interface DeliveryBatch {
   counts: { deliveries: number; candidates: number; skipped: number; remaining: number };
   candidates: DeliveryBatchRow[]; skipped: DeliveryBatchRow[]; asOf: string;
 }
+/** 跨消息批量：整单一次事务，任一消息不可读即整单拒绝；messages 保留逐消息明细。 */
+export interface DeliveryMultiBatch {
+  action: 'cancel' | 'retry'; dryRun: boolean; applied: number;
+  counts: { messages: number; deliveries: number; candidates: number; skipped: number; remaining: number };
+  messages: DeliveryBatch[]; asOf: string;
+}
 export interface ToolSubmission { requestKey: string; toolId: string; arguments: Record<string,string> }
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
@@ -212,7 +218,7 @@ export const errorNames: Record<string, string> = {
   delivery_not_retryable: '这条投递已处理、已过期或设备已停用，不能重试。',
   delivery_not_cancellable: '这条投递已开始、已结束或无法确认从未发送，不能取消。',
   delivery_not_found: '投递记录不存在或已按保留策略删除。', cancelled_by_admin: '管理员取消投递',
-  delivery_batch_confirmation_required: '批量操作需要再次确认后才执行。', batch_too_large: '这条消息的投递超过 500 条，请在投递页逐条核对。', message_not_found: '消息不存在或已按保留策略清除。',
+  delivery_batch_confirmation_required: '批量操作需要再次确认后才执行。', batch_too_large: '一次最多处理 20 条消息或 500 条投递，请缩小范围后重试。', message_not_found: '消息不存在或已按保留策略清除；整单未做任何修改。',
   ack_timeout: '设备未在重试期限内确认', broker_unavailable: '消息连接暂不可用', busy: '设备队列已满',
   storage_error: '设备存储失败', time_unavailable: '设备尚未校时', read_elsewhere: '已在消息中心标记已读',
   expired: '消息已过期', device_disabled: '设备已停用', invalid: '设备拒绝了消息格式',

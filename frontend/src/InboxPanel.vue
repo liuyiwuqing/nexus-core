@@ -12,6 +12,7 @@ import { formatTime, type Api, type Message, type MessageSubmission, type Page, 
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
+import MessageMultiBatch from './MessageMultiBatch.vue';
 
 import StatusNote from './StatusNote.vue';
 const props = defineProps<{
@@ -26,6 +27,31 @@ const emit = defineEmits<{ page: [page: number]; filter: [value: Message['readSt
 function filterChanged(value: string) { emit('filter', value as Message['readStatus'] | ''); }
 const selectedId = ref('');
 const selected = computed(() => props.data.items.find(message => message.messageId === selectedId.value));
+// 跨消息批量只覆盖当前页：换页、筛选或消息消失后，旧选择不能悄悄作用到别的消息上。
+const MAX_SELECTION = 20;
+const selectedIds = ref<string[]>([]);
+const batchOpen = ref(false);
+const selectionFull = computed(() => selectedIds.value.length >= MAX_SELECTION);
+watch(() => props.data.page, () => {
+  selectedIds.value = [];
+  batchOpen.value = false;
+});
+watch(() => props.data.items, items => {
+  const visible = new Set(items.map(message => message.messageId));
+  const kept = selectedIds.value.filter(id => visible.has(id));
+  if (kept.length !== selectedIds.value.length) selectedIds.value = kept;
+  if (!kept.length) batchOpen.value = false;
+});
+function toggleSelect(id: string, checked: boolean) {
+  if (checked) {
+    if (selectionFull.value || selectedIds.value.includes(id)) return;
+    selectedIds.value = [...selectedIds.value, id];
+  } else selectedIds.value = selectedIds.value.filter(selected => selected !== id);
+}
+function clearSelection() {
+  selectedIds.value = [];
+  batchOpen.value = false;
+}
 const compose = ref(false);
 const bodyExport=ref(false),bodyConfirm=ref(false);
 const title = ref('');
@@ -167,29 +193,59 @@ async function send() {
       接入来源后，新消息会显示在这里。
       <template #actions><NButton attr-type="button" @click="emit('connectors')">查看接入</NButton></template>
     </ConsoleState>
-    <div v-else-if="!failed" class="inbox-layout" :class="{ 'has-selection': !!selected, 'short-list': data.items.length <= 4 }" :aria-busy="loading">
-      <div class="message-list" aria-label="消息列表">
+    <div v-if="operate && selectedIds.length" class="message-select-bar" role="group" aria-label="跨消息批量投递操作">
+      <span>{{ selectionFull ? `已选 ${MAX_SELECTION} 条（上限）` : `已选 ${selectedIds.length} 条` }}</span>
+      <div class="message-select-actions">
+        <NButton attr-type="button" class="text-button" :disabled="busy || loading" @click="clearSelection">清空选择</NButton>
         <NButton
-          v-for="message in data.items"
-          :key="message.messageId"
-          class="message-row"
-          attr-type="button" block
-          :type="selectedId === message.messageId ? 'primary' : 'default'"
-          :secondary="selectedId === message.messageId" :quaternary="selectedId !== message.messageId"
-          :class="{ active: selectedId === message.messageId, unread: message.readStatus === 'unread' }"
-          :aria-pressed="selectedId === message.messageId"
-          @click="selectedId = message.messageId"
+          attr-type="button"
+          class="secondary compact"
+          :disabled="busy"
+          :aria-expanded="batchOpen"
+          @click="batchOpen = !batchOpen"
         >
-          <span class="message-meta">
-            <span>{{ message.source === 'halo' ? 'Halo' : message.source === 'manual' ? '本机' : message.source }}</span>
-            <time :datetime="message.receivedAt">{{ formatTime(message.receivedAt) }}</time>
-          </span>
-          <span class="message-title">
-            <i v-if="message.readStatus === 'unread'" class="unread-dot" aria-label="未读"></i>
-            {{ message.contentPurgedAt ? '内容已按保留期限清除' : message.title }}
-          </span>
-          <span class="message-preview">{{ message.summary }}</span>
+          {{ batchOpen ? '收起批量投递操作' : '批量投递操作…' }}
         </NButton>
+      </div>
+    </div>
+    <MessageMultiBatch
+      v-if="operate && batchOpen && selectedIds.length"
+      :message-ids="selectedIds"
+      :api="api"
+      :busy="busy"
+      :mutate="mutate"
+    />
+    <div v-if="!failed && data.items.length" class="inbox-layout" :class="{ 'has-selection': !!selected, 'short-list': data.items.length <= 4 }" :aria-busy="loading">
+      <div class="message-list" aria-label="消息列表">
+        <div v-for="message in data.items" :key="message.messageId" class="message-select-row">
+          <NCheckbox
+            v-if="operate"
+            class="message-select"
+            :checked="selectedIds.includes(message.messageId)"
+            :disabled="busy || loading || (!selectedIds.includes(message.messageId) && selectionFull)"
+            :aria-label="`选择消息：${message.contentPurgedAt ? '内容已清除' : message.title}`"
+            @update:checked="toggleSelect(message.messageId, $event)"
+          />
+          <NButton
+            class="message-row"
+            attr-type="button" block
+            :type="selectedId === message.messageId ? 'primary' : 'default'"
+            :secondary="selectedId === message.messageId" :quaternary="selectedId !== message.messageId"
+            :class="{ active: selectedId === message.messageId, unread: message.readStatus === 'unread' }"
+            :aria-pressed="selectedId === message.messageId"
+            @click="selectedId = message.messageId"
+          >
+            <span class="message-meta">
+              <span>{{ message.source === 'halo' ? 'Halo' : message.source === 'manual' ? '本机' : message.source }}</span>
+              <time :datetime="message.receivedAt">{{ formatTime(message.receivedAt) }}</time>
+            </span>
+            <span class="message-title">
+              <i v-if="message.readStatus === 'unread'" class="unread-dot" aria-label="未读"></i>
+              {{ message.contentPurgedAt ? '内容已按保留期限清除' : message.title }}
+            </span>
+            <span class="message-preview">{{ message.summary }}</span>
+          </NButton>
+        </div>
         <div class="pagination">
           <NButton attr-type="button" :disabled="data.page <= 1 || loading || busy" @click="emit('page', data.page - 1)">
             上一页
