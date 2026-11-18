@@ -62,7 +62,11 @@ python3 tools/run_local.py run
 
 “概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`，MQTT 健康与设备在线分别呈现。口径及验证入口见[运行概览](docs/console-overview.md)。
 
+概览的“运行趋势”按 6 小时/24 小时/7 天读取固定桶历史（`15m`/`1h`/`6h`/`1d`），收件、投递与失败事件各一条序列；最后一桶尚未结束会标出来，空窗口仍返回完整网格。失败按投递历史里“进入失败”的事件计数，不是当前失败记录的回看。
+
 投递详情提供事务状态时间线，仅允许取消能确认尚未开始发送的记录；旧行从迁移时基线开始留存，重试不会重新获得取消资格，未知结果核对同一投递。API、V13 和保留边界见[时间线与取消](docs/console-delivery-history.md)。
+
+消息详情另有[投递批量操作](docs/message-delivery-batch.md)：对当前消息一次性撤销「从未开始发送」的投递或重试「已失败」的投递。批量条件与单条接口共用同一判定，跳过原因按条列出；`dryRun` 只读预演，写入需确认令牌，超过 500 条拒绝而不是截断。
 
 工具与规则创建在断线后保持同一提交编号和参数；规则 API 提供可选 `requestKey`，旧调用仍兼容。独立读取/审计失败会隐藏旧操作，详情见[工具与自动化故障处理](docs/console-operations.md)。
 
@@ -122,7 +126,7 @@ NEXUS_MEMORY_PEER=nexus-pet
 
 ## 设备接入
 
-`data/device.json` 是设备私有配置；不要上传或在终端打印。默认设备 ID 为 `dodo-1`。在管理台登记同名设备并不能创建 Broker 凭据；初始凭据及 ACL 由初始化脚本生成。
+`data/device.json` 是设备私有配置；不要上传或在终端打印。默认设备 ID 为 `dodo-1`。在管理台登记同名设备并不能创建 Broker 凭据；初始凭据及 ACL 由初始化脚本生成。设备详情另有[凭据台账](docs/device-credentials.md)：签发/轮换（带宽限期）/撤销只产生一次性密钥与 ACL 片段，Broker 的 `passwd`/`acl` 仍由管理员在主机执行，CORE 不写该配置。
 
 ESP32 访问不了 Mac 的 `localhost`。确认 Mac 私网地址后：
 
@@ -191,11 +195,14 @@ python3 tools/upgrade_broker_policy.py --apply
 | 路径 | 用途 |
 | --- | --- |
 | `GET /overview` | 只读运行统计，固定 UTC 今日窗口 |
+| `GET /overview/trend?hours&bucket` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial` |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
 | `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
+| `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |
 | `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史、失败重试与受限取消 |
+| `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |
 | `GET /ai`，`GET/POST /messages/{id}/analysis`，`POST .../analysis/retry` | 模型状态和分析 |
