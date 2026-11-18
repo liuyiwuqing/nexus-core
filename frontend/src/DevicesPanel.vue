@@ -11,8 +11,8 @@ import { computed, nextTick, ref } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
-const props = defineProps<{ items: Device[]; state: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
-const emit = defineEmits<{ filterState: [value: string] }>();
+const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const emit = defineEmits<{ filterState: [value: string]; page: [page: number] }>();
 const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
@@ -20,16 +20,9 @@ const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
 const editingDevice = computed(() => props.items.find(item => item.deviceId === renameId.value));
 const nameConflict = computed(() => !nameSaving.value && !!editingDevice.value && editingDevice.value.name !== originalName.value);
-// 在线数放在页头副标题里：列表卡片的在线标记只说明单台，用户还要知道"整体几台在线"。
-const onlineCount = computed(() => props.items.filter(device => device.online).length);
-// 与概览 devices_online 同一口径：离线只看启用设备，停用的单独一类。
+// 状态、总数与在线数都由服务端按整张设备表统计；筛选与翻页后端完成，这里不再二次过滤。
 const stateNames: Record<string, string> = { online: '在线', offline: '离线', disabled: '已停用' };
-const filtered = computed(() => {
-  if (props.state === 'online') return props.items.filter(device => device.online);
-  if (props.state === 'offline') return props.items.filter(device => device.enabled && !device.online);
-  if (props.state === 'disabled') return props.items.filter(device => !device.enabled);
-  return props.items;
-});
+const lastPage = computed(() => Math.max(1, Math.ceil(props.matched / props.size)));
 function loadName() { if (editingDevice.value) nameDraft.value = originalName.value = editingDevice.value.name; }
 async function editName(device: Device) {
   renameId.value = device.deviceId; loadName(); await nextTick();
@@ -65,7 +58,7 @@ async function submit() {
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">设备</h1>
-        <p>{{ state ? `显示 ${filtered.length} / 共 ${items.length} 台` : `${items.length} 台设备` }} · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
+        <p>{{ state ? `显示 ${matched} / 共 ${total} 台` : `${total} 台设备` }} · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
       </div>
       <div class="management-actions">
         <NSelect
@@ -126,15 +119,16 @@ async function submit() {
       </div>
     </ConsoleForm>
     <ConsoleState v-if="loading && !items.length && !failed" kind="loading">正在读取设备…</ConsoleState>
-    <ConsoleState v-else-if="!failed && !items.length" title="还没有设备">登记设备并完成本机配网后，即可接收提醒。</ConsoleState>
-    <ConsoleState v-else-if="!failed && !filtered.length" :title="`没有${stateNames[state] || '符合条件的'}设备`">
+    <ConsoleState v-else-if="!failed && !items.length && state" :title="`没有${stateNames[state] || '符合条件的'}设备`">
       <template #actions>
         <NButton attr-type="button" class="text-button" @click="emit('filterState', '')">查看全部设备</NButton>
       </template>
     </ConsoleState>
+    <ConsoleState v-else-if="!failed && !items.length && total > 0" title="本页没有设备">刷新后会回到最近的可用页。</ConsoleState>
+    <ConsoleState v-else-if="!failed && !items.length" title="还没有设备">登记设备并完成本机配网后，即可接收提醒。</ConsoleState>
     <div v-else-if="!failed" class="device-grid" :aria-busy="loading">
       <article
-        v-for="device in filtered"
+        v-for="device in items"
         :key="device.deviceId"
         class="device-card"
         :data-state="device.online ? 'online' : 'offline'"
@@ -259,6 +253,11 @@ async function submit() {
           @close="closeOta"
         />
       </article>
+    </div>
+    <div v-if="!failed && items.length && matched > size" class="pagination device-pagination">
+      <NButton attr-type="button" class="text-button" :disabled="loading || busy || page <= 1" @click="emit('page', page - 1)">上一页</NButton>
+      <span>{{ page }} / {{ lastPage }}</span>
+      <NButton attr-type="button" class="text-button" :disabled="loading || busy || page >= lastPage" @click="emit('page', page + 1)">下一页</NButton>
     </div>
   </section>
 </template>

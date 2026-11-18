@@ -205,7 +205,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /overview` | 只读运行统计，今日窗口按配置时区（默认 UTC）起算，附派生告警 `alerts` 与阈值 `thresholds` |
 | `GET /overview/trend?hours&bucket&reason` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial`；失败可按 `reason` 收窄，响应含窗口原因折行 `failureReasons` |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
-| `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
+| `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS；列表支持 `state=all\|online\|offline\|disabled` 与 `page/size`（默认 100 保持旧形状），`total/matched/counts` 按全表统计 |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
 | `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
 | `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |

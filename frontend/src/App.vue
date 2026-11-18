@@ -6,7 +6,7 @@ import { fieldRule } from './formRules';
 import { NButton, NCheckbox, NInput } from 'naive-ui';
 import { provide } from 'vue';
 import ConsoleShell from './ConsoleShell.vue';
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch, computed } from 'vue';
 import InboxPanel from './InboxPanel.vue';
 import { asyncPanel, prefetch, prefetchTab } from './panels';
 import type { RoutingSession, SourceSession, AccessSession, TemplateSession } from './types';
@@ -14,7 +14,7 @@ import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
 import { ApiFailure, readFailure } from './failure';
 import type { Role,ConsoleSession as SessionInfo } from './access';
-import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
+import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type DevicePage, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
 const ConnectorsPanel = asyncPanel('connectors');
@@ -51,6 +51,8 @@ const error = ref(''), notice = ref(''), tab = ref<Tab>('inbox');
 const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
+// 设备页单独分页：外壳下拉仍用上面的完整清单，筛选和翻页只影响设备页本身。
+const devicePage = ref<DevicePage>({ items: [], total: 0, matched: 0, page: 1, size: 24, state: 'all', counts: { online: 0, offline: 0, disabled: 0 } });
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
@@ -107,6 +109,7 @@ function logout() {
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
+  devicePage.value = { items: [], total: 0, matched: 0, page: 1, size: 24, state: 'all', counts: { online: 0, offline: 0, disabled: 0 } };
   messageSubmission.value = null; messageUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   ruleEdit.value = null;
@@ -155,14 +158,14 @@ function querySuffix(kind: 'messages' | 'deliveries'): string {
   return query.size ? '&' + query.toString() : '';
 }
 
-type Resource = 'messages' | 'deliveries' | 'devices' | 'connectors' | 'status';
-const allResources: readonly Resource[] = ['messages', 'devices', 'connectors', 'deliveries', 'status'];
+type Resource = 'messages' | 'deliveries' | 'devices' | 'devicePage' | 'connectors' | 'status';
+const allResources: readonly Resource[] = ['messages', 'devices', 'devicePage', 'connectors', 'deliveries', 'status'];
 // 每个标签页实际渲染的集合。轮询只取当前页需要的接口，其余集合沿用上一次的值；
-// 设备清单只在设备 / 路由 / 接入页会被改写，登录时已建立快照，故不放进消息页的轮询里（失效事件会补）。
+// 设备页轮询读分页结果，完整清单只在登录、主动刷新与失效事件时补齐，供外壳下拉使用。
 const tabResources: Record<Tab, readonly Resource[]> = {
   inbox: ['messages', 'status'],
   deliveries: ['deliveries', 'status'],
-  devices: ['devices', 'status'],
+  devices: ['devicePage', 'status'],
   routing: ['devices', 'status'],
   connectors: ['connectors', 'devices', 'status'],
   tools: ['status'],
@@ -188,11 +191,12 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
   const track = need.some(resource => resource !== 'status');
   if (track) loading.value = true;
   try {
-    const [messagePage, deviceList, connectorList, deliveryPage, liveStatus] = await Promise.all([
+    const [messagePage, deviceList, connectorList, deliveryPage, devicePageResult, liveStatus] = await Promise.all([
       need.includes('messages') ? api<Page<Message>>(`messages?page=${messages.value.page}${querySuffix('messages')}`, 'GET', undefined, signal) : undefined,
       need.includes('devices') ? api<{ items: Device[] }>('devices', 'GET', undefined, signal) : undefined,
       need.includes('connectors') ? api<{ items: Connector[] }>('connectors', 'GET', undefined, signal) : undefined,
       need.includes('deliveries') ? api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${querySuffix('deliveries')}`, 'GET', undefined, signal) : undefined,
+      need.includes('devicePage') ? api<DevicePage>(`devices?page=${devicePage.value.page}&size=${devicePage.value.size}${deviceState.value ? `&state=${deviceState.value}` : ''}`, 'GET', undefined, signal) : undefined,
       need.includes('status') ? api<Status>('status', 'GET', undefined, signal) : undefined,
     ]);
     if (requestId !== readGeneration || currentEpoch !== epoch) return false;
@@ -207,6 +211,23 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
       const deliveryLast = Math.max(1, Math.ceil(deliveryPage.total / deliveryPage.size));
       if (deliveryPage.page > deliveryLast) { deliveries.value.page = deliveryLast; repaged = true; }
       else deliveries.value = deliveryPage;
+    }
+    if (devicePageResult) {
+      const size = devicePageResult.size || devicePage.value.size;
+      const matched = devicePageResult.matched ?? devicePageResult.items.length;
+      const page = devicePageResult.page ?? devicePage.value.page;
+      const deviceLast = Math.max(1, Math.ceil(matched / size));
+      if (page > deviceLast) { devicePage.value.page = deviceLast; repaged = true; }
+      else devicePage.value = {
+        ...devicePage.value, ...devicePageResult, page, size, matched,
+        total: devicePageResult.total ?? devicePageResult.items.length,
+        state: devicePageResult.state ?? (deviceState.value || 'all'),
+        counts: devicePageResult.counts ?? {
+          online: devicePageResult.items.filter(device => device.online).length,
+          offline: devicePageResult.items.filter(device => device.enabled && !device.online).length,
+          disabled: devicePageResult.items.filter(device => !device.enabled).length,
+        },
+      };
     }
     if (repaged) return await refresh(clearFeedback, resources);
     if (deviceList) {
@@ -411,10 +432,17 @@ async function checkRuleEdit(reload = false): Promise<boolean> {
   }, reload ? '已载入当前版本。' : session.pending ? '已核对当前规则，请以当前定义和启停状态为准。' : '已读取当前规则。');
 }
 const markRead = (id: string) => mutate(() => api(`messages/${id}/read`, 'POST'), '已标记已读。');
-const register = (deviceId: string, name: string) => mutate(() => api('devices', 'POST', { deviceId, name }), '设备已登记。');
+const register = async (deviceId: string, name: string) => {
+  const ok = await mutate(() => api('devices', 'POST', { deviceId, name }), '设备已登记。');
+  // 当前页只保留筛选后的分页结果，外壳下拉要立刻能选到新设备。
+  if (ok) await refresh(false, ['devices']);
+  return ok;
+};
 const rename = (id: string, name: string, expectedName: string) => mutate(async () => {
   const updated = await api<{ deviceId: string; name: string }>(`devices/${encodeURIComponent(id)}/name`, 'PATCH', { name, expectedName });
   devices.value = devices.value.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device);
+  // 设备页读的是分页结果，改名后立刻回写，冲突提示才不会把刚保存的名字当成他人修改。
+  devicePage.value = { ...devicePage.value, items: devicePage.value.items.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device) };
 }, '设备名称已更新。');
 const enable = (id: string, enabled: boolean) => mutate(() => api(`devices/${id}/enabled`, 'PUT', { enabled }), enabled ? '已启用提醒。' : '已停用提醒。');
 function pullMessages(source:string){tab.value='inbox';void searchMessages({...emptySearch(),identity:source});}
@@ -425,7 +453,8 @@ function pullMessages(source:string){tab.value='inbox';void searchMessages({...e
 function drillAlert(target: OverviewAlertTarget) {
   if (target.tab === 'devices') {
     // 壳层的单设备筛选与状态筛选叠加只会得到空列表；钻取要看到的是这一类，不是某台。
-    selectedDevice.value = ''; deviceState.value = target.status; tab.value = 'devices'; return;
+    selectedDevice.value = ''; deviceState.value = target.status;
+    devicePage.value = { ...devicePage.value, items: [], page: 1 }; tab.value = 'devices'; return;
   }
   deliverySearch.value = emptySearch();
   deliveryStatus.value = target.status;
@@ -434,7 +463,37 @@ function drillAlert(target: OverviewAlertTarget) {
   if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
 }
 // 从壳层选具体设备时回到"全部"状态：单设备与状态筛选叠加只会得到空列表。
-function pickDevice(id: string) { selectedDevice.value = id; deviceState.value = ''; }
+function pickDevice(id: string) {
+  selectedDevice.value = id; deviceState.value = '';
+  if (devicePage.value.page !== 1) { devicePage.value.page = 1; void refresh(); }
+}
+// 单设备视图直接取完整清单里的一项，避免它不在当前页时卡片消失。
+const visibleDevices = computed(() => selectedDevice.value
+  ? devices.value.filter(device => device.deviceId === selectedDevice.value)
+  : devicePage.value.items);
+const deviceStats = computed(() => {
+  if (selectedDevice.value) {
+    const online = visibleDevices.value.filter(device => device.online).length;
+    return { total: visibleDevices.value.length, matched: visibleDevices.value.length, online };
+  }
+  const items = devicePage.value.items;
+  return {
+    total: devicePage.value.total ?? items.length,
+    matched: devicePage.value.matched ?? items.length,
+    online: devicePage.value.counts?.online ?? items.filter(device => device.online).length,
+  };
+});
+function filterDevices(value: string) {
+  if (busy.value || exporting.value) return;
+  deviceState.value = value;
+  devicePage.value = { ...devicePage.value, items: [], page: 1 };
+  void refresh();
+}
+function devicePageChange(page: number) {
+  if (busy.value || exporting.value) return;
+  devicePage.value.page = page;
+  void refresh();
+}
 const poll = () => mutate(() => api('connectors/halo/poll', 'POST'), 'Halo 同步完成。');
 const importComment = (name: string) => mutate(() => api(`connectors/halo/comments/${encodeURIComponent(name)}/import`, 'POST'), '公开评论已导入；重复导入会合并到原消息。');
 const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST'), '已重新加入投递队列。');
@@ -612,7 +671,12 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
       />
       <DevicesPanel
         v-else-if="tab === 'devices'"
-        :items="selectedDevice ? devices.filter((d) => d.deviceId === selectedDevice) : devices"
+        :items="visibleDevices"
+        :total="deviceStats.total"
+        :matched="deviceStats.matched"
+        :online-count="deviceStats.online"
+        :page="devicePage.page"
+        :size="devicePage.size"
         :state="deviceState"
         :busy="busy"
         :loading="loading"
@@ -621,7 +685,8 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :register="register"
         :enable="enable"
         :rename="rename"
-        @filter-state="deviceState = $event"
+        @filter-state="filterDevices"
+        @page="devicePageChange"
       />
       <section v-else-if="tab === 'connectors'">
         <ConnectorsPanel :items="connectors" :busy="busy" :loading="loading" :failed="readFailed" :poll="poll" :import-comment="importComment" />
