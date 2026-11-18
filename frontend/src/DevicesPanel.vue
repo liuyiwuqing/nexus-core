@@ -11,7 +11,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
-const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean>; remove: (id: string) => Promise<boolean> }>();
 const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number] }>();
 // 搜索输入本地防抖 300ms 后才请求；排序与页大小立即生效并回到第一页。
 const searchDraft = ref(props.q);
@@ -46,13 +46,16 @@ const selectedId = ref('');
 const otaId = ref('');
 const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
+const deleteId = ref(''), deleteDraft = ref(''), deleteSaving = ref(false);
 const editingDevice = computed(() => props.items.find(item => item.deviceId === renameId.value));
+const deletingDevice = computed(() => props.items.find(item => item.deviceId === deleteId.value));
 const nameConflict = computed(() => !nameSaving.value && !!editingDevice.value && editingDevice.value.name !== originalName.value);
 // 状态、总数与在线数都由服务端按整张设备表统计；筛选与翻页后端完成，这里不再二次过滤。
 const stateNames: Record<string, string> = { online: '在线', offline: '离线', disabled: '已停用' };
 const lastPage = computed(() => Math.max(1, Math.ceil(props.matched / props.size)));
 function loadName() { if (editingDevice.value) nameDraft.value = originalName.value = editingDevice.value.name; }
 async function editName(device: Device) {
+  deleteId.value = '';
   renameId.value = device.deviceId; loadName(); await nextTick();
   document.getElementById('device-name-' + device.deviceId)?.focus();
 }
@@ -68,15 +71,34 @@ async function saveName() {
 }
 // 设置与升级互斥：同开会让 Tab 从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起按钮。
 async function manage(id: string) {
+  deleteId.value = '';
   if (selectedId.value === id) { await closeManagement(id); return; }
   otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
 }
 async function upgrade(id: string) {
+  deleteId.value = '';
   if (otaId.value === id) { await closeOta(); return; }
   selectedId.value = ''; otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus();
 }
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
 async function closeManagement(id: string) { selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
+// 删除是不可逆操作：必须输入完整设备名称，且只对从未使用、未被引用的设备开放。
+async function askDelete(device: Device) {
+  selectedId.value = ''; otaId.value = '';
+  deleteId.value = device.deviceId; deleteDraft.value = ''; await nextTick();
+  document.getElementById('devicespanel-field-4')?.focus();
+}
+async function closeDelete() {
+  const id = deleteId.value; deleteId.value = ''; deleteDraft.value = ''; await nextTick();
+  document.getElementById('device-delete-' + id)?.focus();
+}
+async function confirmDelete() {
+  const device = deletingDevice.value;
+  if (!device || props.busy || deleteSaving.value || deleteDraft.value !== device.name) return;
+  deleteSaving.value = true;
+  try { if (await props.remove(device.deviceId)) await closeDelete(); }
+  finally { deleteSaving.value = false; }
+}
 async function submit() {
   if (await props.register(deviceId.value, name.value)) { adding.value = false; deviceId.value = ''; name.value = ''; }
 }
@@ -195,7 +217,7 @@ async function submit() {
         :key="device.deviceId"
         class="device-card"
         :data-state="device.online ? 'online' : 'offline'"
-        :class="{ expanded: selectedId === device.deviceId || otaId === device.deviceId }"
+        :class="{ expanded: selectedId === device.deviceId || otaId === device.deviceId || deleteId === device.deviceId }"
       >
         <div class="device-top">
           <span class="pet-symbol" aria-hidden="true">
@@ -298,7 +320,47 @@ async function submit() {
           >
             修改名称
           </NButton>
+          <NButton
+            attr-type="button"
+            v-if="admin && renameId !== device.deviceId"
+            :id="'device-delete-' + device.deviceId"
+            class="text-button"
+            :disabled="busy"
+            :aria-expanded="deleteId === device.deviceId"
+            aria-controls="device-delete-form"
+            @click="askDelete(device)"
+          >
+            删除设备
+          </NButton>
         </div>
+        <ConsoleForm v-if="deleteId === device.deviceId" id="device-delete-form" class="device-name-form" @submit.prevent="confirmDelete">
+          <p class="device-delete-hint">仅可删除从未产生消息、遥测、配置、升级、成长或凭据历史，且未被路由/来源引用的设备；有历史请停用。</p>
+          <ConsoleField
+            path="field-4"
+            :rule="fieldRule(() => deleteDraft, { required: true, maxlength: 80, disabled: () => busy || deleteSaving })"
+            :label-props="{ id: 'devicespanel-field-4' + '-label', for: 'devicespanel-field-4' }"
+          >
+            <template #label>输入设备名称确认</template>
+            <NInput
+              :disabled="busy || deleteSaving"
+              v-model:value="deleteDraft"
+              :maxlength="80"
+              :placeholder="device.name"
+              :input-props="{ required: true, id: 'devicespanel-field-4', 'aria-label': '输入设备名称确认', spellcheck: 'false' }"
+            />
+          </ConsoleField>
+          <div class="management-actions">
+            <NButton
+              type="error"
+              attr-type="submit"
+              class="primary"
+              :disabled="busy || deleteSaving || deleteDraft !== device.name"
+            >
+              {{ deleteSaving ? '正在删除…' : '确认删除' }}
+            </NButton>
+            <NButton attr-type="button" class="text-button" :disabled="busy || deleteSaving" @click="closeDelete">取消</NButton>
+          </div>
+        </ConsoleForm>
         <DeviceManagementPanel
           v-if="selectedId === device.deviceId"
           :key="'manage-' + device.deviceId"

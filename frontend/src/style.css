@@ -292,6 +292,7 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .device-seen strong { color: var(--ink-2); font-weight: 550; }
 .device-card > p { margin-top: var(--space-1); color: var(--muted); }
 .device-name-form { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
+.device-delete-hint { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.6; }
 .device-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--divider); }
 .device-actions .spaced { margin-top: 0; }
 dl { margin: var(--space-3) 0; font-size: var(--text-sm); }

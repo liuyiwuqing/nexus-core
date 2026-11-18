@@ -461,6 +461,19 @@ const rename = (id: string, name: string, expectedName: string) => mutate(async 
   devicePage.value = { ...devicePage.value, items: devicePage.value.items.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device) };
 }, '设备名称已更新。');
 const enable = (id: string, enabled: boolean) => mutate(() => api(`devices/${id}/enabled`, 'PUT', { enabled }), enabled ? '已启用提醒。' : '已停用提醒。');
+const removeDevice = async (id: string) => {
+  const ok = await mutate(async () => {
+    await api(`devices/${encodeURIComponent(id)}`, 'DELETE');
+    // 删除后先清掉本地视图与壳层选择，避免随后整表刷新把已删除设备重新当成当前选择。
+    devices.value = devices.value.filter(device => device.deviceId !== id);
+    deviceMatches.value = deviceMatches.value.filter(device => device.deviceId !== id);
+    devicePage.value = { ...devicePage.value, items: devicePage.value.items.filter(device => device.deviceId !== id) };
+    if (selectedDevice.value === id) {
+      selectedDevice.value = ''; selectedDeviceRecord.value = null; clearDeviceSearch();
+    } else if (selectedDeviceRecord.value?.deviceId === id) selectedDeviceRecord.value = null;
+  }, '设备已删除。');
+  return ok;
+};
 function pullMessages(source:string){tab.value='inbox';void searchMessages({...emptySearch(),identity:source});}
 /**
  * 告警钻取：先备好筛选再切页签，切页条的 watch 会带着新条件读一次，不会先读一遍全量。
@@ -757,6 +770,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :register="register"
         :enable="enable"
         :rename="rename"
+        :remove="removeDevice"
         @filter-state="filterDevices"
         @search="searchDevices"
         @sort="sortDevices"

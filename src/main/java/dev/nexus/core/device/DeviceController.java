@@ -138,4 +138,37 @@ public class DeviceController {
         if (!input.enabled()) db.update("UPDATE deliveries SET status='expired',last_error='device_disabled' WHERE device_id=? AND status IN ('pending','sent')", id);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * 删除只用于清理登记错误且从未使用的设备。任何消息、遥测、配置、升级、成长或凭据历史，
+     * 以及路由/来源引用，都意味着这台设备已经产生了不可回退的事实，只能用停用保留历史。
+     * 不存在的设备返回 204，响应丢失后的重试因此是幂等的。
+     */
+    @Transactional
+    @DeleteMapping("/{id}")
+    ResponseEntity<Void> delete(@PathVariable String id) {
+        var rows = db.queryForList("SELECT device_id FROM devices WHERE device_id=? FOR UPDATE", id);
+        if (rows.isEmpty()) return ResponseEntity.noContent().build();
+        boolean hasHistory = Boolean.TRUE.equals(db.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM deliveries WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_telemetry WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_telemetry_samples WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_config_requests WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_ota_observations WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_ota_deployments WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_ota_boots WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_growth_observations WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_growth_boots WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_credentials WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_credential_events WHERE device_id=?)
+            """, Boolean.class, id, id, id, id, id, id, id, id, id, id, id));
+        if (hasHistory) throw new ResponseStatusException(HttpStatus.CONFLICT, "device_has_history");
+        boolean referenced = Boolean.TRUE.equals(db.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM routing_rules WHERE NOT deleted AND definition->'deviceIds' @> to_jsonb(?::text))
+                OR EXISTS(SELECT 1 FROM webhook_sources WHERE device_ids @> to_jsonb(?::text))
+            """, Boolean.class, id, id));
+        if (referenced) throw new ResponseStatusException(HttpStatus.CONFLICT, "device_referenced");
+        db.update("DELETE FROM devices WHERE device_id=?", id);
+        return ResponseEntity.noContent().build();
+    }
 }
