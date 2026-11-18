@@ -8,8 +8,8 @@ import { navigationTitle } from './navigation';
 import type { Role } from './access';
 import type { Device, Tab } from './types';
 
-const props = defineProps<{ tab: Tab; selectedDevice: string; devices: Device[]; role: Role; loading: boolean; connected: boolean }>();
-const emit = defineEmits<{ 'update:tab': [tab: Tab]; 'update:selectedDevice': [id: string]; logout: []; guide: []; refresh: [] }>();
+const props = defineProps<{ tab: Tab; selectedDevice: string; devices: Device[]; role: Role; loading: boolean; connected: boolean; deviceMatches: Device[]; deviceSearchLoading: boolean; deviceSearchFailed: boolean; selectedDeviceName: string }>();
+const emit = defineEmits<{ 'update:tab': [tab: Tab]; 'update:selectedDevice': [id: string]; searchDevices: [query: string]; logout: []; guide: []; refresh: [] }>();
 const title = computed(() => navigationTitle(props.tab));
 const roleName = computed(() => props.role === 'admin' ? '管理员' : props.role === 'operator' ? '操作员 · 消息与规则' : '只读访问');
 const menuOpen = ref(false), menuButton = ref<InstanceType<typeof NButton> | null>(null);
@@ -49,7 +49,38 @@ async function afterLeave() {
   if (navigating) { navigating = false; focusContent(); }
   else menuButton.value?.$el.focus();
 }
-function selectDevice(value: string) { emit('update:selectedDevice', value); void navigate('devices'); }
+// 顶栏选择器默认用完整清单（前 100 台）；输入后按名称/ID 走服务端搜索，
+// 设备更多时也能选到不在默认清单里的设备。搜索结果始终保留"全部设备"和当前选中项。
+const SEARCH_STATUS = '__device-search-status__';
+const filterText = ref('');
+type DeviceOption = { label: string; value: string; disabled?: boolean };
+const deviceOptions = computed<DeviceOption[]>(() => {
+  const query = filterText.value.trim();
+  const matches = query ? props.deviceMatches : props.devices;
+  const options: DeviceOption[] = [{ label: '全部设备', value: '' }];
+  if (props.selectedDevice && !matches.some(device => device.deviceId === props.selectedDevice))
+    options.push({ label: props.selectedDeviceName || props.selectedDevice, value: props.selectedDevice });
+  options.push(...matches.map(device => ({ label: device.name, value: device.deviceId })));
+  if (query) {
+    const status = props.deviceSearchFailed ? '搜索失败，请重试' : props.deviceSearchLoading ? '正在搜索…' : matches.length ? '' : '没有匹配的设备';
+    if (status) options.push({ label: status, value: SEARCH_STATUS, disabled: true });
+  }
+  return options;
+});
+function searchDeviceOptions(value: string) {
+  filterText.value = value;
+  emit('searchDevices', value.trim());
+}
+function resetDeviceSearch() {
+  if (!filterText.value) return;
+  filterText.value = '';
+  emit('searchDevices', '');
+}
+function selectDevice(value: string) {
+  resetDeviceSearch();
+  emit('update:selectedDevice', value);
+  void navigate('devices');
+}
 </script>
 
 <template>
@@ -93,10 +124,17 @@ function selectDevice(value: string) { emit('update:selectedDevice', value); voi
             <NSelect
               @keydown.esc.stop
               size="small"
+              filterable
+              remote
+              placeholder="搜索设备"
               aria-label="设备视图"
+              :loading="deviceSearchLoading"
               :value="selectedDevice"
+              :options="deviceOptions"
+              :input-props="{ 'aria-label': '搜索设备视图', spellcheck: 'false' }"
               @update:value="selectDevice"
-              :options="[{ label: '全部设备', value: '' }, ...devices.map((device) => ({ label: device.name, value: device.deviceId }))]"
+              @search="searchDeviceOptions"
+              @update:show="show => { if (!show) resetDeviceSearch(); }"
             />
           </div>
           <span class="topbar-divider" aria-hidden="true"></span>

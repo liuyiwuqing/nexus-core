@@ -33,6 +33,9 @@ const OverviewPanel = asyncPanel('overview');
 
 const role=ref<Role>('viewer');provide('role',role);
 const showGuide=ref(false),selectedDevice=ref(''),eventsConnected=ref(false);
+// 顶栏设备选择器：默认清单可能不含搜索选中的设备，单独保留记录，避免整表刷新把选择清空。
+const selectedDeviceRecord=ref<Device|null>(null),deviceMatches=ref<Device[]>([]),deviceSearching=ref(false),deviceSearchFailed=ref(false);
+let deviceSearchTimer:ReturnType<typeof setTimeout>|undefined,deviceSearchController:AbortController|undefined,deviceSearchGeneration=0;
 let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|undefined,streamGeneration=0;
 function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
 function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh(false,invalidateScope());}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
@@ -104,7 +107,7 @@ async function api<T>(path: string, method = 'GET', body?: unknown, signal?: Abo
 
 function logout() {
   rememberSignOut(true);csrfToken.value='';cookieSession.value=false;restoring.value=false;restoreFailed.value=false;busy.value=false;
-  stopEvents();showGuide.value=false;selectedDevice.value='';
+  stopEvents();showGuide.value=false;selectedDevice.value='';selectedDeviceRecord.value=null;clearDeviceSearch();
   cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
@@ -241,7 +244,10 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
     if (repaged) return await refresh(clearFeedback, resources);
     if (deviceList) {
       devices.value = deviceList.items;
-      if (selectedDevice.value && !devices.value.some(d => d.deviceId === selectedDevice.value)) selectedDevice.value = '';
+      const current = devices.value.find(d => d.deviceId === selectedDevice.value);
+      if (current) selectedDeviceRecord.value = current;
+      // 搜索选中的设备可能不在默认前 100 台；有记录就保留，只有既不在清单也没有记录时才清空。
+      else if (selectedDevice.value && selectedDeviceRecord.value?.deviceId !== selectedDevice.value) selectedDevice.value = '';
     }
     if (connectorList) connectors.value = connectorList.items;
     if (liveStatus) status.value = liveStatus;
@@ -450,6 +456,7 @@ const register = async (deviceId: string, name: string) => {
 const rename = (id: string, name: string, expectedName: string) => mutate(async () => {
   const updated = await api<{ deviceId: string; name: string }>(`devices/${encodeURIComponent(id)}/name`, 'PATCH', { name, expectedName });
   devices.value = devices.value.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device);
+  if (selectedDeviceRecord.value?.deviceId === updated.deviceId) selectedDeviceRecord.value = { ...selectedDeviceRecord.value, name: updated.name };
   // 设备页读的是分页结果，改名后立刻回写，冲突提示才不会把刚保存的名字当成他人修改。
   devicePage.value = { ...devicePage.value, items: devicePage.value.items.map(device => device.deviceId === updated.deviceId ? { ...device, name: updated.name } : device) };
 }, '设备名称已更新。');
@@ -462,7 +469,7 @@ function pullMessages(source:string){tab.value='inbox';void searchMessages({...e
 function drillAlert(target: OverviewAlertTarget) {
   if (target.tab === 'devices') {
     // 壳层的单设备筛选与旧搜索会和状态筛选叠加出空列表；钻取要看到的是这一类，不是某台或某个名字。
-    selectedDevice.value = '';
+    selectedDevice.value = ''; selectedDeviceRecord.value = null; clearDeviceSearch();
     devicePage.value = { ...devicePage.value, state: target.status || '', q: '', items: [], page: 1 };
     tab.value = 'devices'; return;
   }
@@ -472,17 +479,58 @@ function drillAlert(target: OverviewAlertTarget) {
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
 }
+function cancelDeviceSearch() {
+  deviceSearchGeneration++;
+  clearTimeout(deviceSearchTimer);
+  deviceSearchController?.abort(); deviceSearchController = undefined;
+  deviceSearching.value = false; deviceSearchFailed.value = false;
+}
+function clearDeviceSearch() { cancelDeviceSearch(); deviceMatches.value = []; }
+// 顶栏输入按服务端搜索：300ms 防抖，旧查询的响应由代数丢弃；空查询恢复默认清单。
+// 清空查询只取消请求、保留上一批结果，选中时才能从结果里取到设备记录。
+function searchDeviceMatches(query: string) {
+  cancelDeviceSearch();
+  const q = query.trim();
+  if (!q) return;
+  const generation = deviceSearchGeneration;
+  deviceMatches.value = []; deviceSearching.value = true;
+  deviceSearchTimer = setTimeout(() => {
+    const current = new AbortController(); deviceSearchController = current;
+    void api<{ items: Device[] }>(`devices?size=50&sort=name&order=asc&q=${encodeURIComponent(q)}`, 'GET', undefined, current.signal)
+      .then(result => {
+        if (generation !== deviceSearchGeneration) return;
+        deviceMatches.value = result.items; deviceSearching.value = false;
+      })
+      .catch(failure => {
+        if (generation !== deviceSearchGeneration) return;
+        if (failure instanceof DOMException && failure.name === 'AbortError') return;
+        deviceMatches.value = []; deviceSearching.value = false; deviceSearchFailed.value = true;
+      });
+  }, 300);
+}
 // 从壳层选具体设备时回到"全部"状态：单设备与状态筛选叠加只会得到空列表。
 function pickDevice(id: string) {
   selectedDevice.value = id;
+  selectedDeviceRecord.value = id
+    ? devices.value.find(device => device.deviceId === id) ?? deviceMatches.value.find(device => device.deviceId === id) ?? null
+    : null;
+  clearDeviceSearch();
   const reset = devicePage.value.state !== '' || devicePage.value.q !== '' || devicePage.value.page !== 1;
   devicePage.value = { ...devicePage.value, state: '', q: '', page: 1 };
   if (reset) void refresh();
 }
-// 单设备视图直接取完整清单里的一项，避免它不在当前页时卡片消失。
-const visibleDevices = computed(() => selectedDevice.value
-  ? devices.value.filter(device => device.deviceId === selectedDevice.value)
-  : devicePage.value.items);
+// 单设备视图直接取完整清单或选择时的记录，避免它不在默认清单/当前页时卡片消失。
+const visibleDevices = computed(() => {
+  if (!selectedDevice.value) return devicePage.value.items;
+  const current = devices.value.find(device => device.deviceId === selectedDevice.value);
+  if (current) return [current];
+  return selectedDeviceRecord.value?.deviceId === selectedDevice.value ? [selectedDeviceRecord.value] : [];
+});
+const selectedDeviceName = computed(() => {
+  if (!selectedDevice.value) return '';
+  const current = devices.value.find(device => device.deviceId === selectedDevice.value) ?? selectedDeviceRecord.value;
+  return current?.deviceId === selectedDevice.value ? current.name : '';
+});
 const deviceStats = computed(() => {
   if (selectedDevice.value) {
     const online = visibleDevices.value.filter(device => device.online).length;
@@ -643,8 +691,13 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
     v-else
     v-model:tab="tab"
     :selected-device="selectedDevice"
+    :selected-device-name="selectedDeviceName"
     @update:selected-device="pickDevice"
     :devices="devices"
+    :device-matches="deviceMatches"
+    :device-search-loading="deviceSearching"
+    :device-search-failed="deviceSearchFailed"
+    @search-devices="searchDeviceMatches"
     :role="role"
     :loading="loading"
     :connected="status?.mqtt === 'ready'"

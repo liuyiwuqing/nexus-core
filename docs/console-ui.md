@@ -22,7 +22,7 @@
 
 ## 取数与加载（CONSOLE-16）
 
-- 轮询只取当前标签页渲染的接口（`App.vue` 的 `tabResources`）；SSE 失效额外补 `devices`，因为顶栏"设备视图"是外壳级依赖；顶栏刷新、错误重试、登录走 `allResources`。新增页面必须同时登记 `tabResources`，否则该页数据不会轮询。
+- 轮询只取当前标签页渲染的接口（`App.vue` 的 `tabResources`）；SSE 失效额外补 `devices`，因为顶栏"设备视图"是外壳级依赖；顶栏刷新、错误重试、登录走 `allResources`。顶栏选择器默认只用这份 `devices`（服务端最多 100 台），输入时另走 `GET /devices?size=50&sort=name&order=asc&q=…` 的防抖搜索，不把搜索塞进轮询集合。新增页面必须同时登记 `tabResources`，否则该页数据不会轮询。
 - `refresh()` 的第二个参数是集合而不是布尔；`loading` 只在实际取数据时置位，纯 `status` 探测不占用它。筛选/搜索的守卫用 `busy || exporting`，竞态统一由 `readGeneration` 负责。
 - 面板一律通过 `src/panels.ts` 的 `asyncPanel(name)` 引入，不直接写 `defineAsyncComponent(() => import(...))`；新增面板要同时登记 `loaders` 与 `tabPanels`，否则意图预取拿不到。
 - `focusContent()` 按有限次轮询等 `.content h1`：面板是异步挂载的，一次 `nextTick` 不足以拿到标题。
