@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 public class OverviewController {
@@ -20,13 +21,17 @@ public class OverviewController {
     private static final int MAX_POINTS = 400;
     private final JdbcTemplate db;
     private final MqttTransport mqtt;
-    public OverviewController(JdbcTemplate db,MqttTransport mqtt) { this.db=db;this.mqtt=mqtt; }
+    private final ObjectMapper json;
+    public OverviewController(JdbcTemplate db,MqttTransport mqtt,ObjectMapper json) { this.db=db;this.mqtt=mqtt;this.json=json; }
     public record Devices(long total,long online,long offline,long disabled) {}
     public record Today(long messages,long deliveries,long failedDeliveries,Double deliveryFailureRate) {}
     public record Backlog(long pending,long sent) {}
+    /** 今日失败投递按 last_error 归并后的一行；`code` 取自代码里的固定字符串集合。 */
+    public record FailureReason(String code,long count) {}
     public record Overview(Instant asOf,Instant dayStart,String timezone,Devices devices,Today today,
                            Backlog backlog,long failedDeliveries,String mqtt,
-                           OverviewAlerts.Thresholds thresholds,List<OverviewAlerts.Alert> alerts) {}
+                           OverviewAlerts.Thresholds thresholds,List<OverviewAlerts.Alert> alerts,
+                           List<FailureReason> failureReasons) {}
 
     /** 告警与计数来自同一条查询的同一快照；阈值由服务端给出，页面不再自带一份。 */
     @GetMapping("/api/v1/overview")
@@ -48,27 +53,40 @@ public class OverviewController {
             ), message_counts AS (
                 SELECT count(*) AS messages FROM inbox_messages m CROSS JOIN bounds b
                 WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of AND m.metadata->>'test' IS DISTINCT FROM 'true'
+            ), failed_today AS (
+                -- 今日失败投递按 last_error 归并；today_failed 由这里求和，两个数字不可能对不上。
+                SELECT coalesce(d.last_error,'unknown') AS code,count(*) AS n
+                FROM deliveries d JOIN inbox_messages m ON m.message_id=d.message_id CROSS JOIN bounds b
+                WHERE m.metadata->>'test' IS DISTINCT FROM 'true'
+                    AND m.received_at >= b.day_start AND m.received_at <= b.as_of AND d.status='failed'
+                GROUP BY 1
             ), delivery_counts AS (
                 SELECT count(*) FILTER (WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of) AS today_total,
-                    count(*) FILTER (WHERE m.received_at >= b.day_start AND m.received_at <= b.as_of AND d.status='failed') AS today_failed,
+                    (SELECT coalesce(sum(n),0) FROM failed_today) AS today_failed,
                     count(*) FILTER (WHERE d.status='pending') AS pending,
                     count(*) FILTER (WHERE d.status='sent') AS sent,
                     count(*) FILTER (WHERE d.status='failed') AS failed
                 FROM deliveries d JOIN inbox_messages m ON m.message_id=d.message_id CROSS JOIN bounds b
                 WHERE m.metadata->>'test' IS DISTINCT FROM 'true'
             )
-            SELECT b.*,dc.total,dc.online,dc.disabled,dc.enabled_total,dc.online_enabled,mc.messages,dd.*
+            SELECT b.*,dc.total,dc.online,dc.disabled,dc.enabled_total,dc.online_enabled,mc.messages,dd.*,
+                (SELECT coalesce(json_agg(json_build_object('code',code,'count',n) ORDER BY n DESC,code),'[]'::json)
+                 FROM failed_today)::text AS failure_reasons
             FROM bounds b CROSS JOIN device_counts dc CROSS JOIN message_counts mc CROSS JOIN delivery_counts dd
             """,(r,n)-> {
                 long total=r.getLong("total"),online=r.getLong("online"),todayTotal=r.getLong("today_total"),failed=r.getLong("today_failed");
                 boolean ready=mqtt.ready();
+                List<FailureReason> reasons=new ArrayList<>();
+                for (var node : json.readTree(r.getString("failure_reasons")))
+                    reasons.add(new FailureReason(node.path("code").asText(),node.path("count").asLong()));
                 return new Overview(r.getTimestamp("as_of").toInstant(),r.getTimestamp("day_start").toInstant(),"UTC",
                     new Devices(total,online,total-online,r.getLong("disabled")),
                     new Today(r.getLong("messages"),todayTotal,failed,todayTotal==0?null:(double)failed/todayTotal),
                     new Backlog(r.getLong("pending"),r.getLong("sent")),r.getLong("failed"),ready?"ready":"unavailable",
                     OverviewAlerts.THRESHOLDS,
                     OverviewAlerts.evaluate(r.getLong("enabled_total"),r.getLong("online_enabled"),
-                        r.getLong("pending"),todayTotal,failed,ready));
+                        r.getLong("pending"),todayTotal,failed,ready),
+                    reasons);
             });
     }
 

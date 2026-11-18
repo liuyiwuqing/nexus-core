@@ -20,9 +20,10 @@ public class DeliveryController {
                                        @RequestParam(defaultValue="30") @Min(1) @Max(100) int size,
                                        @RequestParam(required=false) @Pattern(regexp="pending|sent|received|displayed|read|failed|expired|cancelled") String status,
                                        @RequestParam(required=false) String deviceId,
+                                       @RequestParam(required=false) String lastError,
                                        @RequestParam(required=false) String receivedFrom,
                                        @RequestParam(required=false) String receivedBefore) {
-        return delivery.list(page, size, status, deviceId, receivedFrom, receivedBefore);
+        return delivery.list(page, size, status, deviceId, lastError, receivedFrom, receivedBefore);
     }
     @GetMapping("/{id}/history") Map<String,Object> history(@PathVariable UUID id,
             @RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
@@ -30,9 +31,9 @@ public class DeliveryController {
         return delivery.history(id,page,size);
     }
     @GetMapping("/export") ResponseEntity<String> export(@RequestParam(required=false) String status,
-            @RequestParam(required=false) String deviceId, @RequestParam(required=false) String receivedFrom,
-            @RequestParam(required=false) String receivedBefore) {
-        return MetadataCsv.response("deliveries-metadata.csv", delivery.export(status, deviceId, receivedFrom, receivedBefore),
+            @RequestParam(required=false) String deviceId, @RequestParam(required=false) String lastError,
+            @RequestParam(required=false) String receivedFrom, @RequestParam(required=false) String receivedBefore) {
+        return MetadataCsv.response("deliveries-metadata.csv", delivery.export(status, deviceId, lastError, receivedFrom, receivedBefore),
             "eventId", "messageId", "deviceId", "status", "attempts", "messageReceivedAt", "receivedAt", "displayedAt", "readAt", "nextAttemptAt");
     }
     @PostMapping("/{id}/cancel") ResponseEntity<Void> cancel(@PathVariable UUID id) {

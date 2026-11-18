@@ -90,19 +90,21 @@ export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateD
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
-export interface OverviewAlertTarget { tab: 'deliveries' | 'devices'; status: string }
+export interface OverviewAlertTarget { tab: 'deliveries' | 'devices'; status: string; error?: string }
 export interface OverviewAlert {
   code: string; level: 'warn' | 'error';
   value: number; threshold: number; comparison: 'gte' | 'lt'; unit: 'ratio' | 'count' | 'state';
   target: OverviewAlertTarget | null;
 }
+/** 今日失败投递按 last_error 归并的一行；`unknown` 表示历史行没记录原因（NULL）。 */
+export interface OverviewFailureReason { code: string; count: number }
 export interface OverviewThresholds { failureRate: number; failureRateMinSample: number; backlogPending: number; onlineMin: number }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
   devices: { total: number; online: number; offline: number; disabled: number };
   today: { messages: number; deliveries: number; failedDeliveries: number; deliveryFailureRate: number | null };
   backlog: { pending: number; sent: number }; failedDeliveries: number;
-  thresholds: OverviewThresholds; alerts: OverviewAlert[];
+  thresholds: OverviewThresholds; alerts: OverviewAlert[]; failureReasons: OverviewFailureReason[];
 }
 export interface OverviewTrendPoint { at: string; messages: number; deliveries: number; failures: number; partial: boolean }
 export interface OverviewTrend {
@@ -157,6 +159,12 @@ export const batchReasonNames: Record<string, string> = {
   not_pending: '已经开始投递', attempted: '已经尝试过发送', cancel_blocked: '历史记录不允许撤销',
   not_failed: '不在失败状态', message_expired: '消息已过期', message_read: '消息已读',
   device_disabled: '设备已停用',
+};
+/** 投递记录上的 last_error：CORE 写入的固定字符串集合，未知值原样显示。 */
+export const deliveryErrorNames: Record<string, string> = {
+  ack_timeout: '设备确认超时', broker_unavailable: 'Broker 连接不可用', busy: '设备忙',
+  storage_error: '设备存储失败', time_unavailable: '设备时间未就绪', expired: '已过期',
+  invalid: '设备拒收', cancelled_by_admin: '管理员已取消', unknown: '未记录原因',
 };
 export const errorNames: Record<string, string> = {
   pull_configuration_changed:'来源配置已变化，请读取当前配置后再操作。',pull_version_conflict:'来源版本已变化，请核对当前状态。',pull_disabled:'来源已停用，请先启用。',pull_in_progress:'来源正在同步，请稍后核对结果。',pull_rate_limited:'拉取或测试过于频繁，请至少间隔一分钟。',pull_devices_missing:'请先登记该来源绑定的全部设备。',pull_provider_failed:'拉取失败，请检查网络、来源地址和供应商响应格式。',pull_interrupted:'拉取已中断，请核对最近同步。',pull_history_limit:'来源去重记录达到上限，请由管理员检查保留配置。',pull_failed:'同步未完成，请核对最近状态。',

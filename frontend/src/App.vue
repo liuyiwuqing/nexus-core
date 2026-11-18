@@ -62,7 +62,7 @@ const sourceSession=ref<SourceSession>({pending:null,credentials:null});
 const pullSession=ref<PullSession>({pending:null,uncertainPoll:null});
 const accessSession=ref<AccessSession>({issued:'',pendingIssue:false});
 const templateSession=ref<TemplateSession>({id:'',version:0,draft:null,pending:null,uncertain:false});
-const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), readFailed = ref(false);
+const messageReadStatus = ref<Message['readStatus'] | ''>(''), deliveryStatus = ref(''), deliveryReason = ref(''), readFailed = ref(false);
 const emptySearch = (): ListSearch => ({ identity: '', receivedFrom: '', receivedBefore: '' });
 const messageSearch = ref<ListSearch>(emptySearch()), deliverySearch = ref<ListSearch>(emptySearch());
 const exporting = ref<'messages' | 'deliveries' | null>(null);
@@ -113,7 +113,7 @@ function logout() {
   ruleDeletion.value = null;
   routingSession.value=newRoutingSession();
   sourceSession.value={pending:null,credentials:null};pullSession.value={pending:null,uncertainPoll:null};accessSession.value={issued:'',pendingIssue:false};templateSession.value={id:'',version:0,draft:null,pending:null,uncertain:false};role.value='viewer';
-  messageReadStatus.value = ''; deliveryStatus.value = ''; readFailed.value = false;
+  messageReadStatus.value = ''; deliveryStatus.value = ''; deliveryReason.value = ''; readFailed.value = false;
   messageSearch.value = emptySearch(); deliverySearch.value = emptySearch();
 }
 
@@ -148,6 +148,8 @@ function querySuffix(kind: 'messages' | 'deliveries'): string {
   const query = new URLSearchParams();
   if (state) query.set(kind === 'messages' ? 'readStatus' : 'status', state);
   if (search.identity) query.set(kind === 'messages' ? 'source' : 'deviceId', search.identity);
+  // 失败原因只在投递页存在：做成同一条 querySuffix，列表与元数据导出才会筛到同一批。
+  if (kind === 'deliveries' && deliveryReason.value) query.set('lastError', deliveryReason.value);
   if (search.receivedFrom) query.set('receivedFrom', new Date(search.receivedFrom).toISOString());
   if (search.receivedBefore) query.set('receivedBefore', new Date(search.receivedBefore).toISOString());
   return query.size ? '&' + query.toString() : '';
@@ -424,6 +426,7 @@ function drillAlert(target: OverviewAlertTarget) {
   if (target.tab === 'devices') { tab.value = 'devices'; return; }
   deliverySearch.value = emptySearch();
   deliveryStatus.value = target.status;
+  deliveryReason.value = target.error ?? '';
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
 }
@@ -439,7 +442,16 @@ function filterMessages(value: Message['readStatus'] | '') {
 }
 function filterDeliveries(value: string) {
   if (busy.value || exporting.value) return;
-  deliveryStatus.value = value; deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
+  deliveryStatus.value = value;
+  // 原因筛选只在失败状态有意义；换了状态还留着它就成了看不见的筛选。
+  if (value !== 'failed') deliveryReason.value = '';
+  deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
+  void refresh();
+}
+function filterReason(value: string) {
+  if (busy.value || exporting.value) return;
+  deliveryReason.value = value;
+  deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   void refresh();
 }
 function searchMessages(value: ListSearch, clear = false) {
@@ -451,7 +463,7 @@ function searchMessages(value: ListSearch, clear = false) {
 function searchDeliveries(value: ListSearch, clear = false) {
   if (busy.value || exporting.value) return;
   deliverySearch.value = value;
-  if (clear) deliveryStatus.value = '';
+  if (clear) { deliveryStatus.value = ''; deliveryReason.value = ''; }
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 }; void refresh();
 }
 function cancelExport() { exportGeneration++; exportController?.abort(); exporting.value = null; }
@@ -616,11 +628,13 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :loading="loading"
         :failed="readFailed"
         :status="deliveryStatus"
+        :reason="deliveryReason"
         :search="deliverySearch"
         :exporting="exporting === 'deliveries'"
         :retry="retry"
         @page="deliveryPage"
         @filter="filterDeliveries"
+        @reason="filterReason"
         @search="searchDeliveries"
         @clear="searchDeliveries(emptySearch(), true)"
         @export="exportMetadata('deliveries')"

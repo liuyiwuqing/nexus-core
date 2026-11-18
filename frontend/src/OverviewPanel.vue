@@ -4,7 +4,7 @@ import OverviewTrend from './OverviewTrend.vue';
 import { NButton } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
-import { formatTime, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
+import { deliveryErrorNames, formatTime, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
 
 import { readFailure } from './failure';
 const props = defineProps<{ api: Api }>();
@@ -92,6 +92,18 @@ function alertAction(alert: OverviewAlert): string {
           </div>
           <p class="overview-caption">今日收件产生 {{ snapshot.today.deliveries }} 条投递，失败 {{ snapshot.today.failedDeliveries }} 条；积压与失败统计保留全部记录。</p>
           <p v-if="thresholds" class="overview-caption">告警阈值：今日失败率 ≥ {{ percent(thresholds.failureRate) }}（投递 ≥ {{ thresholds.failureRateMinSample }} 条才判定）、积压 ≥ {{ thresholds.backlogPending }} 条、启用设备在线 &lt; {{ thresholds.onlineMin }} 台。</p>
+          <!-- 失败原因的计数之和等于今日失败数：它是同一个派生数字，不是另算一遍。 -->
+          <div v-if="snapshot.failureReasons.length" class="overview-reasons">
+            <p class="overview-caption">今日失败原因（合计 {{ snapshot.today.failedDeliveries }} 条）</p>
+            <ul class="overview-reason-list">
+              <li v-for="reason in snapshot.failureReasons" :key="reason.code" :data-reason="reason.code">
+                <span class="overview-reason-name">{{ deliveryErrorNames[reason.code] || reason.code }}</span>
+                <strong class="overview-reason-count">{{ reason.count }} 条</strong>
+                <NButton attr-type="button" :disabled="loading"
+                         @click="emit('drill', { tab: 'deliveries', status: 'failed', error: reason.code })">只看这类</NButton>
+              </li>
+            </ul>
+          </div>
 
         </article>
       </div>
@@ -108,6 +120,11 @@ function alertAction(alert: OverviewAlert): string {
 .overview-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
 .overview-alert--error { border-color: var(--danger-border); background: var(--danger-soft); }
 .overview-alert-action { flex: none; }
+.overview-reasons { margin-top: var(--space-3); }
+.overview-reason-list { display: grid; gap: var(--space-1); margin: var(--space-2) 0 0; padding: 0; list-style: none; }
+.overview-reason-list li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; border-bottom: 1px solid var(--divider); font-size: var(--text-sm); }
+.overview-reason-name { flex: 1; }
+.overview-reason-count { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .overview-caption { font-size: var(--text-sm); color: var(--muted); }
 .overview-grid { margin-top: var(--space-4); }
 .overview-grid h2 { font-size: var(--text-md); }

@@ -23,7 +23,7 @@ public record ConsoleListQuery(String where, List<Object> values) {
         return window(sql, values, from, before);
     }
 
-    public static ConsoleListQuery deliveries(String status, String device, String from, String before) {
+    public static ConsoleListQuery deliveries(String status, String device, String reason, String from, String before) {
         var sql = new StringBuilder(" WHERE 1=1");
         var values = new ArrayList<Object>();
         if (status != null) {
@@ -33,6 +33,13 @@ public record ConsoleListQuery(String where, List<Object> values) {
         if (device != null) {
             require(device.matches("[a-zA-Z0-9_-]{1,40}"));
             sql.append(" AND d.device_id=?"); values.add(device);
+        }
+        // 失败原因取自代码里写死的字符串集合；未知但格式合法的值返回空列表，不当作错误。
+        // `unknown` 是概览对 NULL 的归并名，必须落回 IS NULL，否则"1 条未记录原因"点进去会是空的。
+        if (reason != null) {
+            require(reason.matches("[a-z_]{1,32}"));
+            if ("unknown".equals(reason)) sql.append(" AND d.last_error IS NULL");
+            else { sql.append(" AND d.last_error=?"); values.add(reason); }
         }
         return window(sql, values, from, before);
     }

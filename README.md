@@ -68,6 +68,8 @@ python3 tools/run_local.py run
 
 能落到现存筛选的告警还带 `target`（积压 → 投递页 `status=pending`、失败率 → `status=failed`、无在线设备 → 设备页），管理台据此跳到已筛选的列表；传输不可用没有对应筛选，`target` 为 `null`，不给按钮。
 
+概览还列出今日失败投递的原因折行（`failureReasons`，按 `deliveries.last_error` 归并）；它的合计就是 `today.failedDeliveries`，由同一个 CTE 求和得出，两个数字不会各说各话。每条可「只看这类」跳到投递页并带上 `status=failed` + `lastError=<code>`；列表与元数据导出都支持这个筛选，历史行没记录原因时归为 `unknown` 并落回 `last_error IS NULL`。
+
 投递详情提供事务状态时间线，仅允许取消能确认尚未开始发送的记录；旧行从迁移时基线开始留存，重试不会重新获得取消资格，未知结果核对同一投递。API、V13 和保留边界见[时间线与取消](docs/console-delivery-history.md)。
 
 消息详情另有[投递批量操作](docs/message-delivery-batch.md)：对当前消息一次性撤销「从未开始发送」的投递或重试「已失败」的投递。批量条件与单条接口共用同一判定，跳过原因按条列出；`dryRun` 只读预演，写入需确认令牌，超过 500 条拒绝而不是截断。
@@ -205,7 +207,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
 | `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
 | `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |
-| `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史、失败重试与受限取消 |
+| `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
 | `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |

@@ -89,6 +89,33 @@ class ConsoleOverviewFlowTest {
         assertThat(result.path("thresholds").path("failureRateMinSample").asInt()).isEqualTo(20);
         assertThat(result.path("thresholds").path("backlogPending").asInt()).isEqualTo(100);
         assertThat(result.path("thresholds").path("onlineMin").asInt()).isEqualTo(1);
+        assertThat(result.path("failureReasons").isEmpty()).isTrue();
+    }
+
+    @Test void failureReasonsSumToTodaysFailedDeliveriesAndExcludeTestMessages()throws Exception {
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('live','在线',true,true,now())");
+        String one=createMessage("超时一"),two=createMessage("超时二"),broker=createMessage("Broker 不可用"),
+            hidden=createMessage("测试消息"),yesterday=createMessage("昨日失败");
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id IN (?,?)",
+            UUID.fromString(one),UUID.fromString(two));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='broker_unavailable' WHERE message_id=?",UUID.fromString(broker));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(hidden));
+        fixtures.update("UPDATE inbox_messages SET metadata=metadata||'{\"test\":\"true\"}'::jsonb WHERE message_id=?",UUID.fromString(hidden));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(yesterday));
+        fixtures.update("UPDATE inbox_messages SET received_at=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'-interval '1 second' WHERE message_id=?",
+            UUID.fromString(yesterday));
+        var result=overview();
+        assertThat(result.path("today").path("failedDeliveries").asInt()).isEqualTo(3);
+        var reasons=result.path("failureReasons");
+        assertThat(reasons.size()).isEqualTo(2);
+        // 计数多的在前，同数量按 code 升序，顺序稳定不随查询计划变化。
+        assertThat(reasons.get(0).path("code").asText()).isEqualTo("ack_timeout");
+        assertThat(reasons.get(0).path("count").asInt()).isEqualTo(2);
+        assertThat(reasons.get(1).path("code").asText()).isEqualTo("broker_unavailable");
+        // 折行合计必须等于今日失败数：两个数字由同一个 CTE 派生，不可能对不上。
+        int sum=0;
+        for (var row : reasons) sum+=row.path("count").asInt();
+        assertThat(sum).isEqualTo(result.path("today").path("failedDeliveries").asInt());
     }
 
     @Test void alertsStayQuietWithoutEnabledDevicesAndReportAnOfflineFleetPlusBacklog()throws Exception {

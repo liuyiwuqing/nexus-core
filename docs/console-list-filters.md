@@ -12,9 +12,12 @@
 | 同上 | `source` | 精确匹配，`[a-zA-Z0-9_.-]{1,32}`，如 `halo`、`manual` |
 | `GET /api/v1/deliveries`、`/deliveries/export` | `status` | `pending`、`sent`、`received`、`displayed`、`read`、`failed`、`expired`、`cancelled` |
 | 同上 | `deviceId` | 精确匹配，`[a-zA-Z0-9_-]{1,40}` |
+| 同上 | `lastError` | 成功/失败原因码，`[a-z_]{1,32}`：`ack_timeout`、`broker_unavailable`、`busy`、`storage_error`、`time_unavailable`、`expired`、`invalid`、`cancelled_by_admin`，以及 `unknown`（等于"该行没有记录原因"，落回 `last_error IS NULL`） |
 | 以上四个接口 | `receivedFrom`、`receivedBefore` | 带显式时区的 ISO 日期时间，年份 1–9999；开始包含、截止不包含 |
 
-表中接口均以 `/api/v1` 为前缀。省略参数表示不限制该维度，保持既有调用。空字符串、非法身份字符、未知状态、无时区或非法时间、开始不早于截止均返回 400；合法但不存在的来源/设备返回空结果。未鉴权或其他作用域令牌返回 401。
+表中接口均以 `/api/v1` 为前缀。省略参数表示不限制该维度，保持既有调用。空字符串、非法身份字符、未知状态、无时区或非法时间、开始不早于截止均返回 400；合法但不存在的来源/设备/原因码返回空结果。未鉴权或其他作用域令牌返回 401。
+
+`lastError` 不要求同时给 `status`：原因码也出现在 `sent`（`broker_unavailable`）和 `cancelled`（`cancelled_by_admin`）上，硬绑状态会漏掉这些行。管理台只在状态选为「投递失败」时显示原因下拉，是因为那时它最有用，不是因为接口有限制。
 
 所有时间条件均作用于 `inbox_messages.received_at`，即 CORE 收到消息的时间；不是来源创建时间、设备收到时间或 ACK 时间。只有一个边界也有效。URL 中 `+08:00` 的加号须编码为 `%2B`；页面按浏览器本地时间输入，再转换为带 `Z` 的 UTC 参数。
 

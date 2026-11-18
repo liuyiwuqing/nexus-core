@@ -106,9 +106,31 @@ class ConsoleListFilterFlowTest {
         assertThat(page("deliveries?status=displayed").path("total").asInt()).isEqualTo(1);
     }
 
+    @Test void deliveryReasonFilterNarrowsToThatLastError()throws Exception {
+        String timeout=message("确认超时"), broker=message("Broker 不可用"), bare=message("没记录原因");
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(timeout));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='broker_unavailable' WHERE message_id=?",UUID.fromString(broker));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error=NULL WHERE message_id=?",UUID.fromString(bare));
+        assertThat(page("deliveries?status=failed&size=100").path("total").asInt()).isEqualTo(3);
+        var timeouts=page("deliveries?status=failed&lastError=ack_timeout");
+        assertThat(timeouts.path("total").asInt()).isEqualTo(1);
+        assertThat(timeouts.path("items").get(0).path("messageId").asText()).isEqualTo(timeout);
+        // 格式合法但不存在的原因不是错误，只是没有匹配。
+        assertThat(page("deliveries?lastError=no_such_reason").path("total").asInt()).isZero();
+        // 没记录原因的失败行在概览里归为 unknown，这里也必须能筛出来，否则计数与钻取对不上。
+        var unknown=page("deliveries?status=failed&lastError=unknown");
+        assertThat(unknown.path("total").asInt()).isEqualTo(1);
+        assertThat(unknown.path("items").get(0).path("messageId").asText()).isEqualTo(bare);
+        // 导出与列表共用同一条筛选，不能导出比列表更多的东西。
+        var csv=request("GET","deliveries/export?status=failed&lastError=ack_timeout","",TOKEN);
+        assertThat(csv.statusCode()).withFailMessage(csv.body()).isEqualTo(200);
+        assertThat(csv.body()).contains(timeout).doesNotContain(broker);
+    }
+
     @Test void unknownFiltersAreRejectedAndAuthenticationIsPreserved()throws Exception {
         for(String path:new String[]{"messages?readStatus=all","messages?readStatus=","messages?readStatus=read%27%20OR%201%3D1",
-                "deliveries?status=unknown","deliveries?status=","deliveries?status=failed%27%20OR%201%3D1"})
+                "deliveries?status=unknown","deliveries?status=","deliveries?status=failed%27%20OR%201%3D1",
+                "deliveries?lastError=ACK_TIMEOUT","deliveries?lastError=","deliveries?lastError=ack%27%20OR%201%3D1"})
             assertThat(request("GET",path,"",TOKEN).statusCode()).withFailMessage(path).isEqualTo(400);
         for(String path:new String[]{"messages?readStatus=unread","deliveries?status=failed"})
             assertThat(request("GET",path,"",null).statusCode()).isEqualTo(401);

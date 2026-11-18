@@ -120,8 +120,8 @@ public class DeliveryService {
         }
     }
 
-    public Map<String,Object> list(int page, int size, String status, String deviceId, String from, String before) {
-        var filter = ConsoleListQuery.deliveries(status, deviceId, from, before);
+    public Map<String,Object> list(int page, int size, String status, String deviceId, String reason, String from, String before) {
+        var filter = ConsoleListQuery.deliveries(status, deviceId, reason, from, before);
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
                    d.last_error AS "lastError",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",d.read_at AS "readAt",
@@ -131,8 +131,8 @@ public class DeliveryService {
             "total", db.queryForObject("SELECT count(*) FROM deliveries d JOIN inbox_messages m USING(message_id)"+filter.where(), Long.class, filter.parameters()), "page", page, "size", size);
     }
 
-    public List<Map<String,Object>> export(String status, String deviceId, String from, String before) {
-        var filter = ConsoleListQuery.deliveries(status, deviceId, from, before);
+    public List<Map<String,Object>> export(String status, String deviceId, String reason, String from, String before) {
+        var filter = ConsoleListQuery.deliveries(status, deviceId, reason, from, before);
         return db.queryForList("""
             SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
                 m.received_at AS "messageReceivedAt",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",
