@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConsoleState from './ConsoleState.vue';
+import OverviewTrend from './OverviewTrend.vue';
 import { NButton } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
@@ -62,6 +63,8 @@ const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? 
       </div>
       <p class="overview-caption overview-stamp">数据库快照 {{ formatTime(snapshot.asOf) }}（本地时间）· 页面每 5 秒重新读取</p>
     </template>
+    <!-- 趋势独立于快照轮询：放在快照分支外，避免每 5 秒因 snapshot 置空而重挂重读。 -->
+    <OverviewTrend v-if="!error" :api="api" />
   </section>
 </template>
 

@@ -89,6 +89,11 @@ export interface Overview {
   today: { messages: number; deliveries: number; failedDeliveries: number; deliveryFailureRate: number | null };
   backlog: { pending: number; sent: number }; failedDeliveries: number;
 }
+export interface OverviewTrendPoint { at: string; messages: number; deliveries: number; failures: number; partial: boolean }
+export interface OverviewTrend {
+  asOf: string; from: string; to: string; hours: number; bucket: string; bucketSeconds: number;
+  points: OverviewTrendPoint[]; totals: { messages: number; deliveries: number; failures: number };
+}
 export type Api = <T>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export interface Analysis {
   status: 'not_requested' | 'pending' | 'processing' | 'succeeded' | 'failed' | 'blocked';

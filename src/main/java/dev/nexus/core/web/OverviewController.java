@@ -2,12 +2,22 @@ package dev.nexus.core.web;
 
 import dev.nexus.core.delivery.MqttTransport;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class OverviewController {
+    // 桶只开放这几个粒度：更细的窗口没有足够保留数据，更粗的桶在 7 天窗口里没有意义。
+    private static final Map<String,Integer> BUCKETS = Map.of("15m",900,"1h",3600,"6h",21600,"1d",86400);
+    private static final int MAX_POINTS = 400;
     private final JdbcTemplate db;
     private final MqttTransport mqtt;
     public OverviewController(JdbcTemplate db,MqttTransport mqtt) { this.db=db;this.mqtt=mqtt; }
@@ -49,5 +59,90 @@ public class OverviewController {
                     new Today(r.getLong("messages"),todayTotal,failed,todayTotal==0?null:(double)failed/todayTotal),
                     new Backlog(r.getLong("pending"),r.getLong("sent")),r.getLong("failed"),mqtt.ready()?"ready":"unavailable");
             });
+    }
+
+    /**
+     * 概览趋势：固定 N 个桶，最后一桶包含当前时刻，因此是部分桶。
+     * 收件与投递按消息 received_at 归桶（与今日口径一致，来源时间不移动归日）；
+     * 失败按 delivery_history 记录的进入 failed 事件计数，不是"当前失败按收件桶回看"。
+     * 三者都只覆盖仍保留的记录，旧 baseline 不算失败事件。
+     */
+    @GetMapping("/api/v1/overview/trend")
+    Map<String,Object> trend(@RequestParam(defaultValue="24") int hours,
+                             @RequestParam(defaultValue="1h") String bucket) {
+        Integer seconds = BUCKETS.get(bucket);
+        long span = (long) hours * 3600;
+        if (seconds == null || hours < 1 || hours > 168 || span % seconds != 0 || span / seconds > MAX_POINTS)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_request");
+        int points = (int) (span / seconds);
+        String step = seconds + " seconds";
+        List<Map<String,Object>> rows = db.queryForList("""
+            WITH bounds AS (
+                SELECT now() AS as_of
+            ), grid AS (
+                -- date_bin 支持任意间隔；固定 origin 让 15m/6h 这类桶在所有窗口里对齐。
+                SELECT b.as_of,
+                    date_bin(?::interval,b.as_of,'2000-01-01T00:00:00Z'::timestamptz)-(? - 1)*?::interval AS first_at
+                FROM bounds b
+            ), points AS (
+                SELECT g.as_of,generate_series(g.first_at,
+                    date_bin(?::interval,g.as_of,'2000-01-01T00:00:00Z'::timestamptz),?::interval) AS at
+                FROM grid g
+            ), messages AS (
+                SELECT date_bin(?::interval,m.received_at,'2000-01-01T00:00:00Z'::timestamptz) AS at,count(*) AS n
+                FROM inbox_messages m,grid g
+                WHERE m.received_at >= g.first_at AND m.received_at <= g.as_of
+                    AND m.metadata->>'test' IS DISTINCT FROM 'true'
+                GROUP BY 1
+            ), deliveries AS (
+                SELECT date_bin(?::interval,m.received_at,'2000-01-01T00:00:00Z'::timestamptz) AS at,count(*) AS n
+                FROM deliveries d JOIN inbox_messages m ON m.message_id=d.message_id,grid g
+                WHERE m.received_at >= g.first_at AND m.received_at <= g.as_of
+                    AND m.metadata->>'test' IS DISTINCT FROM 'true'
+                GROUP BY 1
+            ), failures AS (
+                SELECT date_bin(?::interval,h.recorded_at,'2000-01-01T00:00:00Z'::timestamptz) AS at,count(*) AS n
+                FROM delivery_history h,grid g
+                WHERE h.recorded_at >= g.first_at AND h.recorded_at <= g.as_of
+                    AND h.status='failed' AND h.kind<>'baseline'
+                GROUP BY 1
+            )
+            SELECT to_char(p.at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at,
+                coalesce(msg.n,0) AS messages,coalesce(del.n,0) AS deliveries,coalesce(fail.n,0) AS failures,
+                (p.at=max(p.at) OVER ()) AS partial,
+                to_char(p.as_of AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS as_of
+            FROM points p
+            LEFT JOIN messages msg ON msg.at=p.at
+            LEFT JOIN deliveries del ON del.at=p.at
+            LEFT JOIN failures fail ON fail.at=p.at
+            ORDER BY p.at
+            """,step,points,step,step,step,step,step,step);
+        List<Map<String,Object>> series = new ArrayList<>(rows.size());
+        long messages = 0, deliveries = 0, failures = 0;
+        for (var row : rows) {
+            long received = ((Number) row.get("messages")).longValue();
+            long delivered = ((Number) row.get("deliveries")).longValue();
+            long failed = ((Number) row.get("failures")).longValue();
+            messages += received; deliveries += delivered; failures += failed;
+            Map<String,Object> point = new LinkedHashMap<>();
+            point.put("at", row.get("at"));
+            point.put("messages", received);
+            point.put("deliveries", delivered);
+            point.put("failures", failed);
+            point.put("partial", row.get("partial"));
+            series.add(point);
+        }
+        // 空表也返回完整网格：前端画的是"没有数据"，不是"没有窗口"。
+        String asOf = rows.isEmpty() ? Instant.now().toString() : rows.getLast().get("as_of").toString();
+        Map<String,Object> value = new LinkedHashMap<>();
+        value.put("asOf", asOf);
+        value.put("from", rows.isEmpty() ? asOf : rows.getFirst().get("at"));
+        value.put("to", asOf);
+        value.put("hours", hours);
+        value.put("bucket", bucket);
+        value.put("bucketSeconds", seconds);
+        value.put("points", series);
+        value.put("totals", Map.of("messages", messages, "deliveries", deliveries, "failures", failures));
+        return value;
     }
 }

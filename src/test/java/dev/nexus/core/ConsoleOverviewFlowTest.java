@@ -112,6 +112,60 @@ class ConsoleOverviewFlowTest {
         assertThat(json.readTree(deliveries.body()).path("total").asInt()).isEqualTo(1);
     }
 
+    @Test void trendBuildsFixedBucketsAndCountsFailureEvents()throws Exception {
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('live','在线',true,true,now())");
+        String recent=createMessage("近 30 分钟"),ninety=createMessage("90 分钟前"),three=createMessage("三小时前"),
+            hidden=createMessage("测试消息"),future=createMessage("未来收件");
+        fixtures.update("UPDATE inbox_messages SET received_at=now()-interval '30 minutes' WHERE message_id=?",UUID.fromString(recent));
+        fixtures.update("UPDATE inbox_messages SET received_at=now()-interval '90 minutes' WHERE message_id=?",UUID.fromString(ninety));
+        fixtures.update("UPDATE inbox_messages SET received_at=now()-interval '3 hours' WHERE message_id=?",UUID.fromString(three));
+        fixtures.update("UPDATE inbox_messages SET metadata=metadata||'{\"test\":\"true\"}'::jsonb WHERE message_id=?",UUID.fromString(hidden));
+        fixtures.update("UPDATE inbox_messages SET received_at=now()+interval '1 hour' WHERE message_id=?",UUID.fromString(future));
+        // 失败由投递历史触发器记录，所以归入事件发生的桶，而不是消息收件的桶。
+        fixtures.update("UPDATE deliveries SET status='failed' WHERE message_id IN (?,?)",UUID.fromString(recent),UUID.fromString(ninety));
+
+        var trend=trend("hours=6&bucket=1h");
+        assertThat(trend.path("points").size()).isEqualTo(6);
+        assertThat(trend.path("bucketSeconds").asInt()).isEqualTo(3600);
+        assertThat(trend.path("totals").path("messages").asInt()).isEqualTo(3);
+        assertThat(trend.path("totals").path("deliveries").asInt()).isEqualTo(3);
+        assertThat(trend.path("totals").path("failures").asInt()).isEqualTo(2);
+        // 三小时前的收件固定落在倒数第 3 个桶，不受执行分钟的边界影响。
+        assertThat(trend.path("points").get(2).path("messages").asInt()).isEqualTo(1);
+        assertThat(trend.path("points").get(5).path("partial").asBoolean()).isTrue();
+        assertThat(trend.path("points").get(0).path("partial").asBoolean()).isFalse();
+        // 两次失败都发生在当前桶；跨小时边界的极小概率由相邻桶合计覆盖。
+        assertThat(trend.path("points").get(5).path("failures").asInt()
+            +trend.path("points").get(4).path("failures").asInt()).isEqualTo(2);
+        assertThat(Instant.parse(trend.path("from").asText())).isBefore(Instant.parse(trend.path("to").asText()));
+        assertThat(trend.path("to").asText()).isEqualTo(trend.path("asOf").asText());
+    }
+
+    @Test void trendRejectsUnboundedWindowsAndKeepsAGridWhenEmpty()throws Exception {
+        assertThat(trendRequest("hours=0&bucket=1h").statusCode()).isEqualTo(400);
+        assertThat(trendRequest("hours=24&bucket=7m").statusCode()).isEqualTo(400);
+        // 168 小时 / 15 分钟 = 672 桶，超过单次读取上限。
+        assertThat(trendRequest("hours=168&bucket=15m").statusCode()).isEqualTo(400);
+        assertThat(trendRequest("hours=24&bucket=1h", null).statusCode()).isEqualTo(401);
+        var empty=trend("hours=24&bucket=1h");
+        assertThat(empty.path("points").size()).isEqualTo(24);
+        assertThat(empty.path("totals").path("messages").asInt()).isZero();
+        assertThat(empty.path("totals").path("deliveries").asInt()).isZero();
+        assertThat(empty.path("totals").path("failures").asInt()).isZero();
+        assertThat(empty.path("points").get(23).path("partial").asBoolean()).isTrue();
+    }
+
+    HttpResponse<String> trendRequest(String query)throws Exception { return trendRequest(query,TOKEN); }
+    HttpResponse<String> trendRequest(String query,String token)throws Exception {
+        var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/overview/trend?"+query)).timeout(Duration.ofSeconds(5));
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        return http.send(builder.GET().build(),HttpResponse.BodyHandlers.ofString());
+    }
+    JsonNode trend(String query)throws Exception {
+        var response=trendRequest(query);assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);
+        return json.readTree(response.body());
+    }
+
     String createMessage(String title)throws Exception {
         var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/messages"))
             .header("Authorization","Bearer "+TOKEN).header("Content-Type","application/json")
