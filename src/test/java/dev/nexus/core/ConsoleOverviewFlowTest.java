@@ -116,6 +116,10 @@ class ConsoleOverviewFlowTest {
         assertThat(codes(backlog)).containsExactly("devices_online","delivery_backlog");
         assertThat(backlog.path("alerts").get(1).path("value").asDouble()).isEqualTo(100.0);
         assertThat(backlog.path("alerts").get(1).path("comparison").asText()).isEqualTo("gte");
+        // 钻取目标随告警下发：页面不需要自己维护"积压该跳到哪个筛选"的映射。
+        assertThat(backlog.path("alerts").get(0).path("target").path("tab").asText()).isEqualTo("devices");
+        assertThat(backlog.path("alerts").get(1).path("target").path("tab").asText()).isEqualTo("deliveries");
+        assertThat(backlog.path("alerts").get(1).path("target").path("status").asText()).isEqualTo("pending");
     }
 
     @Test void failureRateAlertWaitsForTwentyDeliveriesAndTreatsTheThresholdAsInclusive()throws Exception {
@@ -144,6 +148,7 @@ class ConsoleOverviewFlowTest {
         assertThat(boundary.path("alerts").get(0).path("threshold").asDouble()).isEqualTo(0.1);
         assertThat(boundary.path("alerts").get(0).path("unit").asText()).isEqualTo("ratio");
         assertThat(boundary.path("alerts").get(0).path("level").asText()).isEqualTo("warn");
+        assertThat(boundary.path("alerts").get(0).path("target").path("status").asText()).isEqualTo("failed");
     }
 
     @Test void snapshotCountsUseReceiptDayAndTheExistingOnlineThreshold()throws Exception {

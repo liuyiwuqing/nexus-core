@@ -14,7 +14,7 @@ import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
 import { ApiFailure, readFailure } from './failure';
 import type { Role,ConsoleSession as SessionInfo } from './access';
-import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch } from './types';
+import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
 const ConnectorsPanel = asyncPanel('connectors');
@@ -416,6 +416,17 @@ const rename = (id: string, name: string, expectedName: string) => mutate(async 
 }, '设备名称已更新。');
 const enable = (id: string, enabled: boolean) => mutate(() => api(`devices/${id}/enabled`, 'PUT', { enabled }), enabled ? '已启用提醒。' : '已停用提醒。');
 function pullMessages(source:string){tab.value='inbox';void searchMessages({...emptySearch(),identity:source});}
+/**
+ * 告警钻取：先备好筛选再切页签，切页条的 watch 会带着新条件读一次，不会先读一遍全量。
+ * 上一次的搜索条件必须清掉，否则"查看等待投递"会被旧筛选悄悄收窄成别的结果集。
+ */
+function drillAlert(target: OverviewAlertTarget) {
+  if (target.tab === 'devices') { tab.value = 'devices'; return; }
+  deliverySearch.value = emptySearch();
+  deliveryStatus.value = target.status;
+  deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
+  if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
+}
 const poll = () => mutate(() => api('connectors/halo/poll', 'POST'), 'Halo 同步完成。');
 const importComment = (name: string) => mutate(() => api(`connectors/halo/comments/${encodeURIComponent(name)}/import`, 'POST'), '公开评论已导入；重复导入会合并到原消息。');
 const retry = (id: string) => mutate(() => api(`deliveries/${id}/retry`, 'POST'), '已重新加入投递队列。');
@@ -626,7 +637,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
       />
       <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
       <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
-      <OverviewPanel v-else-if="tab === 'overview'" :api="api" />
+      <OverviewPanel v-else-if="tab === 'overview'" :api="api" @drill="drillAlert" />
       <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" :replace-session="replaceSession" />
       <TemplatesPanel v-else-if="tab === 'templates'" :api="api" :busy="busy" :mutate="mutate" :session="templateSession" />
       <RoutingPanel v-else-if="tab === 'routing'" :api="api" :devices="devices" :busy="busy" :mutate="mutate" :session="routingSession" />

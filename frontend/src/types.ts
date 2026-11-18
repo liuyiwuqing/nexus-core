@@ -90,9 +90,11 @@ export interface RulePreview { dryRun: boolean; rule: AutomationRule; candidateD
 export interface RuleEditInput { expectedVersion: number; name: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface RuleEditSession { rule: AutomationRule; draft: RuleEditInput; pending: RuleEditInput | null; uncertain: boolean; observed: AutomationRule | null }
 export interface Status { database: string; mqtt: string; mqttError: string; schemaVersion: number }
+export interface OverviewAlertTarget { tab: 'deliveries' | 'devices'; status: string }
 export interface OverviewAlert {
   code: string; level: 'warn' | 'error';
   value: number; threshold: number; comparison: 'gte' | 'lt'; unit: 'ratio' | 'count' | 'state';
+  target: OverviewAlertTarget | null;
 }
 export interface OverviewThresholds { failureRate: number; failureRateMinSample: number; backlogPending: number; onlineMin: number }
 export interface Overview {

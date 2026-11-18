@@ -15,7 +15,14 @@ final class OverviewAlerts {
     static final long BACKLOG_PENDING = 100;
     static final long ONLINE_MIN = 1;
 
-    record Alert(String code,String level,double value,double threshold,String comparison,String unit) {}
+    /**
+     * 告警指向哪里：{@code tab} 是管理台的页签名，{@code status} 是该页可以真正过滤的状态。
+     * 只有"能落到一个现存筛选里"的告警才带目标——传输不可用没有对应的列表筛选，
+     * 硬给一个跳转等于假装能查。
+     */
+    record AlertTarget(String tab,String status) {}
+    record Alert(String code,String level,double value,double threshold,String comparison,String unit,
+                 AlertTarget target) {}
     record Thresholds(double failureRate,long failureRateMinSample,long backlogPending,long onlineMin) {}
     static final Thresholds THRESHOLDS = new Thresholds(FAILURE_RATE,FAILURE_RATE_MIN_SAMPLE,BACKLOG_PENDING,ONLINE_MIN);
 
@@ -25,16 +32,19 @@ final class OverviewAlerts {
     static List<Alert> evaluate(long enabled,long onlineEnabled,long pending,
                                 long todayDeliveries,long todayFailed,boolean mqttReady) {
         List<Alert> alerts = new ArrayList<>(4);
-        if (!mqttReady) alerts.add(new Alert("mqtt_connection","error",0,1,"lt","state"));
+        if (!mqttReady) alerts.add(new Alert("mqtt_connection","error",0,1,"lt","state",null));
         // 一台设备都没登记时不报"全部离线"：没有设备不是故障。
         if (enabled > 0 && onlineEnabled < ONLINE_MIN)
-            alerts.add(new Alert("devices_online","warn",onlineEnabled,ONLINE_MIN,"lt","count"));
+            alerts.add(new Alert("devices_online","warn",onlineEnabled,ONLINE_MIN,"lt","count",
+                new AlertTarget("devices","")));
         if (pending >= BACKLOG_PENDING)
-            alerts.add(new Alert("delivery_backlog","warn",pending,BACKLOG_PENDING,"gte","count"));
+            alerts.add(new Alert("delivery_backlog","warn",pending,BACKLOG_PENDING,"gte","count",
+                new AlertTarget("deliveries","pending")));
         if (todayDeliveries >= FAILURE_RATE_MIN_SAMPLE) {
             double rate = (double) todayFailed / todayDeliveries;
             if (rate >= FAILURE_RATE)
-                alerts.add(new Alert("delivery_failure_rate","warn",rate,FAILURE_RATE,"gte","ratio"));
+                alerts.add(new Alert("delivery_failure_rate","warn",rate,FAILURE_RATE,"gte","ratio",
+                    new AlertTarget("deliveries","failed")));
         }
         return alerts;
     }

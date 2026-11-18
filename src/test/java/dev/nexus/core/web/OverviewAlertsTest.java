@@ -59,4 +59,21 @@ class OverviewAlertsTest {
         assertThat(OverviewAlerts.THRESHOLDS.backlogPending()).isEqualTo(100);
         assertThat(OverviewAlerts.THRESHOLDS.onlineMin()).isEqualTo(1);
     }
+
+    @Test void drillTargetsPointAtFiltersThatActuallyExist() {
+        // 积压看等待投递、失败率看失败投递——这两个状态投递页真的能筛。
+        assertThat(target(OverviewAlerts.evaluate(1,1,100,0,0,true))).isEqualTo("deliveries:pending");
+        assertThat(target(OverviewAlerts.evaluate(1,1,0,20,2,true))).isEqualTo("deliveries:failed");
+        assertThat(target(OverviewAlerts.evaluate(2,0,0,0,0,true))).isEqualTo("devices:");
+        // 传输不可用没有对应的列表筛选：不给目标，而不是给一个假装能查的跳转。
+        var transport=OverviewAlerts.evaluate(1,1,0,0,0,false).getFirst();
+        assertThat(transport.code()).isEqualTo("mqtt_connection");
+        assertThat(transport.target()).isNull();
+    }
+
+    static String target(List<OverviewAlerts.Alert> alerts) {
+        var target=alerts.getFirst().target();
+        assertThat(target).as("every non-transport alert must be actionable").isNotNull();
+        return target.tab()+":"+target.status();
+    }
 }

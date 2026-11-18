@@ -4,10 +4,11 @@ import OverviewTrend from './OverviewTrend.vue';
 import { NButton } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
-import { formatTime, type Api, type Overview, type OverviewAlert } from './types';
+import { formatTime, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
 
 import { readFailure } from './failure';
 const props = defineProps<{ api: Api }>();
+const emit = defineEmits<{ drill: [target: OverviewAlertTarget] }>();
 const snapshot = ref<Overview | null>(null), loading = ref(false), error = ref('');
 let generation = 0, controller: AbortController | undefined;
 async function load() {
@@ -45,6 +46,12 @@ function alertText(alert: OverviewAlert): string {
   return alert.code;
 }
 const levelText = (level: OverviewAlert['level']) => (level === 'error' ? '错误' : '告警');
+// 目标由服务端给出：页面不猜"积压该跳到哪个筛选"，也就不可能跳到一个不存在的筛选。
+function alertAction(alert: OverviewAlert): string {
+  if (!alert.target) return '';
+  if (alert.target.tab === 'devices') return '查看设备';
+  return alert.target.status === 'failed' ? '查看失败投递' : '查看等待投递';
+}
 </script>
 
 <template>
@@ -57,7 +64,9 @@ const levelText = (level: OverviewAlert['level']) => (level === 'error' ? '错�
       <ul v-if="snapshot.alerts.length" class="overview-alerts" role="status" aria-atomic="true">
         <li v-for="alert in snapshot.alerts" :key="alert.code" class="overview-alert"
             :class="'overview-alert--' + alert.level" :data-alert="alert.code">
-          <span class="sr-only">{{ levelText(alert.level) }}：</span>{{ alertText(alert) }}
+          <span><span class="sr-only">{{ levelText(alert.level) }}：</span>{{ alertText(alert) }}</span>
+          <NButton v-if="alert.target" attr-type="button" class="overview-alert-action"
+                   :data-alert-action="alert.code" @click="emit('drill', alert.target)">{{ alertAction(alert) }}</NButton>
         </li>
       </ul>
       <dl class="pet-stats overview-stats">
@@ -96,8 +105,9 @@ const levelText = (level: OverviewAlert['level']) => (level === 'error' ? '错�
 <style scoped>
 .overview-stats { margin-bottom: var(--space-3); }
 .overview-alerts { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
-.overview-alert { padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
+.overview-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
 .overview-alert--error { border-color: var(--danger-border); background: var(--danger-soft); }
+.overview-alert-action { flex: none; }
 .overview-caption { font-size: var(--text-sm); color: var(--muted); }
 .overview-grid { margin-top: var(--space-4); }
 .overview-grid h2 { font-size: var(--text-md); }
