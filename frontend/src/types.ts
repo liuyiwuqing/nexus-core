@@ -11,7 +11,7 @@ export interface Message {
 export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null;
   wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null }
 export interface DeviceCounts { online: number; offline: number; disabled: number }
-export interface DevicePage extends Page<Device> { matched: number; state: string; counts: DeviceCounts }
+export interface DevicePage extends Page<Device> { matched: number; state: string; q: string; sort: string; order: string; counts: DeviceCounts }
 export interface DeviceConfig {
   schemaVersion: 1; timezone: string; language: 'zh-CN'; volume: number; brightness: number; muted: boolean;
   dnd: { enabled: boolean; manual: boolean; startMinute: number; endMinute: number; allowCritical: boolean };

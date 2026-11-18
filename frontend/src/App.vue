@@ -32,7 +32,7 @@ const MemoryPanel = asyncPanel('memory');
 const OverviewPanel = asyncPanel('overview');
 
 const role=ref<Role>('viewer');provide('role',role);
-const showGuide=ref(false),selectedDevice=ref(''),deviceState=ref(''),eventsConnected=ref(false);
+const showGuide=ref(false),selectedDevice=ref(''),eventsConnected=ref(false);
 let stream:AbortController|undefined,reconnect:ReturnType<typeof setTimeout>|undefined,streamGeneration=0;
 function stopEvents(){streamGeneration++;stream?.abort();clearTimeout(reconnect);eventsConnected.value=false;}
 function startEvents(){stopEvents();const generation=streamGeneration;let attempts=0;const connect=()=>{if(!authenticated.value||generation!==streamGeneration)return;const control=new AbortController();stream=control;void watchConsoleEvents(token.value,control.signal,event=>{if(generation!==streamGeneration)return;if(event==='unauthorized'){logout();return;}if(event==='connected'){eventsConnected.value=true;attempts=0;}if(event==='invalidate'&&document.visibilityState==='visible'&&!loading.value&&!busy.value&&!exporting.value)void refresh(false,invalidateScope());}).catch(()=>{}).finally(()=>{if(generation!==streamGeneration||control.signal.aborted)return;eventsConnected.value=false;reconnect=setTimeout(connect,Math.min(30000,1000*2**Math.min(attempts++,5)));});};connect();}
@@ -52,7 +52,7 @@ const messages = ref<Page<Message>>({ items: [], total: 0, page: 1, size: 30 });
 const deliveries = ref<Page<Delivery>>({ items: [], total: 0, page: 1, size: 30 });
 const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = ref<Status | null>(null);
 // 设备页单独分页：外壳下拉仍用上面的完整清单，筛选和翻页只影响设备页本身。
-const devicePage = ref<DevicePage>({ items: [], total: 0, matched: 0, page: 1, size: 24, state: 'all', counts: { online: 0, offline: 0, disabled: 0 } });
+const devicePage = ref<DevicePage>({ items: [], total: 0, matched: 0, page: 1, size: 24, state: '', q: '', sort: 'created', order: 'asc', counts: { online: 0, offline: 0, disabled: 0 } });
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
@@ -104,12 +104,12 @@ async function api<T>(path: string, method = 'GET', body?: unknown, signal?: Abo
 
 function logout() {
   rememberSignOut(true);csrfToken.value='';cookieSession.value=false;restoring.value=false;restoreFailed.value=false;busy.value=false;
-  stopEvents();showGuide.value=false;selectedDevice.value='';deviceState.value='';
+  stopEvents();showGuide.value=false;selectedDevice.value='';
   cancelExport();
   epoch++; readGeneration++; controller?.abort(); authenticated.value = false; token.value = '';
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
-  devicePage.value = { items: [], total: 0, matched: 0, page: 1, size: 24, state: 'all', counts: { online: 0, offline: 0, disabled: 0 } };
+  devicePage.value = { items: [], total: 0, matched: 0, page: 1, size: 24, state: '', q: '', sort: 'created', order: 'asc', counts: { online: 0, offline: 0, disabled: 0 } };
   messageSubmission.value = null; messageUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   ruleEdit.value = null;
@@ -183,6 +183,16 @@ function invalidateScope(): readonly Resource[] {
   return polled.includes('devices') ? polled : [...polled, 'devices'];
 }
 
+// 设备页的筛选条件由这里统一编码；外壳下拉仍读不带参数的完整清单。
+function deviceQuery(page: number) {
+  const params = new URLSearchParams({ page: String(page), size: String(devicePage.value.size) });
+  if (devicePage.value.state) params.set('state', devicePage.value.state);
+  if (devicePage.value.q) params.set('q', devicePage.value.q);
+  params.set('sort', devicePage.value.sort);
+  params.set('order', devicePage.value.order);
+  return params.toString();
+}
+
 async function refresh(clearFeedback = false, resources?: readonly Resource[]): Promise<boolean> {
   controller?.abort(); controller = new AbortController();
   const requestId = ++readGeneration, currentEpoch = epoch, previousError = error.value;
@@ -196,7 +206,7 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
       need.includes('devices') ? api<{ items: Device[] }>('devices', 'GET', undefined, signal) : undefined,
       need.includes('connectors') ? api<{ items: Connector[] }>('connectors', 'GET', undefined, signal) : undefined,
       need.includes('deliveries') ? api<Page<Delivery>>(`deliveries?page=${deliveries.value.page}${querySuffix('deliveries')}`, 'GET', undefined, signal) : undefined,
-      need.includes('devicePage') ? api<DevicePage>(`devices?page=${devicePage.value.page}&size=${devicePage.value.size}${deviceState.value ? `&state=${deviceState.value}` : ''}`, 'GET', undefined, signal) : undefined,
+      need.includes('devicePage') ? api<DevicePage>(`devices?${deviceQuery(devicePage.value.page)}`, 'GET', undefined, signal) : undefined,
       need.includes('status') ? api<Status>('status', 'GET', undefined, signal) : undefined,
     ]);
     if (requestId !== readGeneration || currentEpoch !== epoch) return false;
@@ -219,9 +229,8 @@ async function refresh(clearFeedback = false, resources?: readonly Resource[]): 
       const deviceLast = Math.max(1, Math.ceil(matched / size));
       if (page > deviceLast) { devicePage.value.page = deviceLast; repaged = true; }
       else devicePage.value = {
-        ...devicePage.value, ...devicePageResult, page, size, matched,
+        ...devicePage.value, items: devicePageResult.items, page, size, matched,
         total: devicePageResult.total ?? devicePageResult.items.length,
-        state: devicePageResult.state ?? (deviceState.value || 'all'),
         counts: devicePageResult.counts ?? {
           online: devicePageResult.items.filter(device => device.online).length,
           offline: devicePageResult.items.filter(device => device.enabled && !device.online).length,
@@ -452,9 +461,10 @@ function pullMessages(source:string){tab.value='inbox';void searchMessages({...e
  */
 function drillAlert(target: OverviewAlertTarget) {
   if (target.tab === 'devices') {
-    // 壳层的单设备筛选与状态筛选叠加只会得到空列表；钻取要看到的是这一类，不是某台。
-    selectedDevice.value = ''; deviceState.value = target.status;
-    devicePage.value = { ...devicePage.value, items: [], page: 1 }; tab.value = 'devices'; return;
+    // 壳层的单设备筛选与旧搜索会和状态筛选叠加出空列表；钻取要看到的是这一类，不是某台或某个名字。
+    selectedDevice.value = '';
+    devicePage.value = { ...devicePage.value, state: target.status || '', q: '', items: [], page: 1 };
+    tab.value = 'devices'; return;
   }
   deliverySearch.value = emptySearch();
   deliveryStatus.value = target.status;
@@ -464,8 +474,10 @@ function drillAlert(target: OverviewAlertTarget) {
 }
 // 从壳层选具体设备时回到"全部"状态：单设备与状态筛选叠加只会得到空列表。
 function pickDevice(id: string) {
-  selectedDevice.value = id; deviceState.value = '';
-  if (devicePage.value.page !== 1) { devicePage.value.page = 1; void refresh(); }
+  selectedDevice.value = id;
+  const reset = devicePage.value.state !== '' || devicePage.value.q !== '' || devicePage.value.page !== 1;
+  devicePage.value = { ...devicePage.value, state: '', q: '', page: 1 };
+  if (reset) void refresh();
 }
 // 单设备视图直接取完整清单里的一项，避免它不在当前页时卡片消失。
 const visibleDevices = computed(() => selectedDevice.value
@@ -483,12 +495,16 @@ const deviceStats = computed(() => {
     online: devicePage.value.counts?.online ?? items.filter(device => device.online).length,
   };
 });
-function filterDevices(value: string) {
+// 搜索、筛选、排序或页大小变化都回到第一页，避免停在一个已不属于当前条件的深页。
+function refilterDevices(change: Partial<DevicePage>) {
   if (busy.value || exporting.value) return;
-  deviceState.value = value;
-  devicePage.value = { ...devicePage.value, items: [], page: 1 };
+  devicePage.value = { ...devicePage.value, ...change, items: [], page: 1 };
   void refresh();
 }
+function filterDevices(value: string) { refilterDevices({ state: value }); }
+function searchDevices(value: string) { refilterDevices({ q: value }); }
+function sortDevices(sort: string, order: string) { refilterDevices({ sort, order }); }
+function deviceSizeChange(size: number) { refilterDevices({ size }); }
 function devicePageChange(page: number) {
   if (busy.value || exporting.value) return;
   devicePage.value.page = page;
@@ -677,7 +693,10 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :online-count="deviceStats.online"
         :page="devicePage.page"
         :size="devicePage.size"
-        :state="deviceState"
+        :state="devicePage.state"
+        :q="devicePage.q"
+        :sort="devicePage.sort"
+        :order="devicePage.order"
         :busy="busy"
         :loading="loading"
         :failed="readFailed"
@@ -686,6 +705,9 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :enable="enable"
         :rename="rename"
         @filter-state="filterDevices"
+        @search="searchDevices"
+        @sort="sortDevices"
+        @size="deviceSizeChange"
         @page="devicePageChange"
       />
       <section v-else-if="tab === 'connectors'">

@@ -3,9 +3,11 @@ package dev.nexus.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -99,6 +101,9 @@ class DeviceListFlowTest {
         assertThat(value.path("page").asInt()).isEqualTo(1);
         assertThat(value.path("size").asInt()).isEqualTo(100);
         assertThat(value.path("state").asText()).isEqualTo("all");
+        assertThat(value.path("q").asText()).isEmpty();
+        assertThat(value.path("sort").asText()).isEqualTo("created");
+        assertThat(value.path("order").asText()).isEqualTo("asc");
         assertThat(counts(value)).containsExactly(Map.entry("online",2),Map.entry("offline",1),Map.entry("disabled",1));
     }
 
@@ -142,5 +147,55 @@ class DeviceListFlowTest {
         assertThat(disabled.path("total").asLong()).isEqualTo(5);
         assertThat(request("GET","devices?state=unknown","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?size=0","").statusCode()).isEqualTo(400);
+    }
+
+    @Test void searchMatchesNameAndIdLiterallyAndCombinesWithState()throws Exception {
+        fixtures.update("UPDATE devices SET name='客厅在线' WHERE device_id='dev-a'");
+        fixtures.update("UPDATE devices SET name='客厅离线' WHERE device_id='dev-b'");
+        fixtures.update("UPDATE devices SET name='厨房停用' WHERE device_id='dev-c'");
+        var living=list("?q="+URLEncoder.encode("客厅",StandardCharsets.UTF_8));
+        assertThat(ids(living)).containsExactly("dev-a","dev-b");
+        assertThat(living.path("matched").asLong()).isEqualTo(2);
+        assertThat(living.path("total").asLong()).isEqualTo(3);
+        // 三类计数按搜索结果统计，不是整表；这样页头与状态筛选不会各说各话。
+        assertThat(counts(living)).containsExactly(Map.entry("online",1),Map.entry("offline",1),Map.entry("disabled",0));
+        var online=list("?q="+URLEncoder.encode("客厅",StandardCharsets.UTF_8)+"&state=online");
+        assertThat(ids(online)).containsExactly("dev-a");
+        assertThat(online.path("matched").asLong()).isEqualTo(1);
+        assertThat(counts(online)).containsExactly(Map.entry("online",1),Map.entry("offline",1),Map.entry("disabled",0));
+        // 设备 ID 也参与搜索，大小写不敏感。
+        assertThat(ids(list("?q=DEV-B"))).containsExactly("dev-b");
+        // % 与 _ 按字面量匹配，不是 SQL 通配符。
+        fixtures.update("UPDATE devices SET name='50%_off' WHERE device_id='dev-a'");
+        fixtures.update("UPDATE devices SET name='50Xoff' WHERE device_id='dev-b'");
+        assertThat(ids(list("?q=%25"))).containsExactly("dev-a");
+        assertThat(ids(list("?q=_o"))).containsExactly("dev-a");
+        // 纯空白搜索等同于不搜索。
+        assertThat(ids(list("?q=%20%20"))).containsExactly("dev-a","dev-b","dev-c");
+    }
+
+    @Test void sortAndSizeChoicesAreAppliedServerSideAndUnknownValuesRejected()throws Exception {
+        fixtures.update("UPDATE devices SET name='Beta' WHERE device_id='dev-a'");
+        fixtures.update("UPDATE devices SET name='alpha' WHERE device_id='dev-b'");
+        fixtures.update("UPDATE devices SET name='Gamma' WHERE device_id='dev-c'");
+        fixtures.update("UPDATE devices SET created_at=now()+interval '1 second' WHERE device_id='dev-a'");
+        fixtures.update("UPDATE devices SET created_at=now()+interval '2 seconds' WHERE device_id='dev-b'");
+        fixtures.update("UPDATE devices SET created_at=now()+interval '3 seconds' WHERE device_id='dev-c'");
+        assertThat(ids(list("?sort=name&order=asc"))).containsExactly("dev-b","dev-a","dev-c");
+        assertThat(ids(list("?sort=name&order=desc"))).containsExactly("dev-c","dev-a","dev-b");
+        assertThat(ids(list("?sort=created&order=desc"))).containsExactly("dev-c","dev-b","dev-a");
+        // 最近连接：按时间排序，从未连接过的设备在升序和降序里都排最后。
+        fixtures.update("UPDATE devices SET last_seen=now()-interval '1 hour' WHERE device_id='dev-c'");
+        assertThat(ids(list("?sort=last_seen&order=desc"))).containsExactly("dev-a","dev-c","dev-b");
+        assertThat(ids(list("?sort=last_seen&order=asc"))).containsExactly("dev-c","dev-a","dev-b");
+        var second=list("?page=2&size=1&sort=created&order=desc");
+        assertThat(ids(second)).containsExactly("dev-b");
+        assertThat(second.path("size").asInt()).isEqualTo(1);
+        assertThat(second.path("sort").asText()).isEqualTo("created");
+        assertThat(second.path("order").asText()).isEqualTo("desc");
+        assertThat(request("GET","devices?sort=signal","").statusCode()).isEqualTo(400);
+        assertThat(request("GET","devices?order=sideways","").statusCode()).isEqualTo(400);
+        assertThat(request("GET","devices?size=101","").statusCode()).isEqualTo(400);
+        assertThat(request("GET","devices?q="+"x".repeat(81),"").statusCode()).isEqualTo(400);
     }
 }

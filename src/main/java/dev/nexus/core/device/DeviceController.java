@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,35 +41,57 @@ public class DeviceController {
     }
 
     /**
-     * Device list with the same server-side filtering and paging as the other console lists.
-     * Defaults ({@code state=all}, {@code page=1}, {@code size=100}) keep the pre-paging shape:
-     * callers that send no parameters still receive up to 100 devices ordered by creation.
+     * Device list with the same server-side filtering, paging, search and sorting as the console.
+     * Defaults ({@code state=all}, {@code page=1}, {@code size=100}, {@code sort=created},
+     * {@code order=asc}) keep the pre-paging shape: callers that send no parameters still receive
+     * up to 100 devices ordered by creation.
      */
     @GetMapping
     Map<String,Object> list(@RequestParam(defaultValue="all") @Pattern(regexp="all|online|offline|disabled") String state,
                             @RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
-                            @RequestParam(defaultValue="100") @Min(1) @Max(100) int size) {
-        String filter = switch (state) {
-            case "online" -> " WHERE " + ONLINE;
+                            @RequestParam(defaultValue="100") @Min(1) @Max(100) int size,
+                            @RequestParam(defaultValue="") @Size(max=80) String q,
+                            @RequestParam(defaultValue="created") @Pattern(regexp="created|name|last_seen") String sort,
+                            @RequestParam(defaultValue="asc") @Pattern(regexp="asc|desc") String order) {
+        String query = q.strip();
+        // 搜索按字面量匹配名称或设备 ID：% 和 _ 不是通配符，两侧空白忽略。
+        String search = query.isEmpty() ? "" : " WHERE (strpos(lower(d.name),lower(?))>0 OR strpos(lower(d.device_id),lower(?))>0)";
+        var conditions = new ArrayList<String>();
+        if (!query.isEmpty()) conditions.add("(strpos(lower(d.name),lower(?))>0 OR strpos(lower(d.device_id),lower(?))>0)");
+        switch (state) {
+            case "online" -> conditions.add(ONLINE);
             // Disabled devices are their own state even when the stored flag still says online.
-            case "offline" -> " WHERE d.enabled AND NOT COALESCE(" + ONLINE + ",false)";
-            case "disabled" -> " WHERE NOT d.enabled";
-            default -> "";
-        };
+            case "offline" -> conditions.add("d.enabled AND NOT COALESCE(" + ONLINE + ",false)");
+            case "disabled" -> conditions.add("NOT d.enabled");
+            default -> { }
+        }
+        String filter = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
+        // total 始终是整表；matched 和三类计数只受搜索影响，state 只收窄当前页。
+        List<String> searchArgs = query.isEmpty() ? List.of() : List.of(query, query);
         var counts = db.queryForMap("""
-            SELECT count(*) AS total,
+            SELECT (SELECT count(*) FROM devices) AS total,
+                   count(*) AS searched,
                    count(*) FILTER (WHERE %s) AS online,
                    count(*) FILTER (WHERE d.enabled AND NOT COALESCE(%s,false)) AS offline,
                    count(*) FILTER (WHERE NOT d.enabled) AS disabled
             FROM devices d
-            """.formatted(ONLINE, ONLINE));
-        long total = ((Number) counts.get("total")).longValue();
+            """.formatted(ONLINE, ONLINE) + search, searchArgs.toArray());
         long matched = switch (state) {
             case "online" -> ((Number) counts.get("online")).longValue();
             case "offline" -> ((Number) counts.get("offline")).longValue();
             case "disabled" -> ((Number) counts.get("disabled")).longValue();
-            default -> total;
+            default -> ((Number) counts.get("searched")).longValue();
         };
+        String direction = "desc".equals(order) ? "DESC" : "ASC";
+        String orderBy = switch (sort) {
+            case "name" -> "lower(d.name) " + direction + ", d.device_id " + direction;
+            // 从未连接过的设备无论升序降序都排在最后，避免空值占据首页。
+            case "last_seen" -> "d.last_seen " + direction + " NULLS LAST, d.device_id " + direction;
+            default -> "d.created_at " + direction + ", d.device_id " + direction;
+        };
+        var listArgs = new ArrayList<Object>(searchArgs);
+        listArgs.add(size);
+        listArgs.add((page - 1) * size);
         return Map.of("items", ApiRows.normalize(db.queryForList("""
             SELECT d.device_id AS "deviceId",d.name,d.enabled,d.last_seen AS "lastSeen",
                    (d.online AND d.last_seen > now()-interval '90 seconds') AS online,d.created_at AS "createdAt",
@@ -79,8 +103,9 @@ public class DeviceController {
                 WHERE s.device_id=d.device_id AND (s.wifi_ip IS NOT NULL OR s.wifi_ssid IS NOT NULL)
                 ORDER BY observed_at DESC LIMIT 1
             ) t ON true
-            """ + filter + " ORDER BY d.created_at,d.device_id LIMIT ? OFFSET ?", size, (page - 1) * size)),
-            "total", total, "matched", matched, "page", page, "size", size, "state", state,
+            """ + filter + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?", listArgs.toArray())),
+            "total", ((Number) counts.get("total")).longValue(), "matched", matched, "page", page, "size", size,
+            "state", state, "q", query, "sort", sort, "order", order,
             "counts", Map.of("online", ((Number) counts.get("online")).longValue(),
                 "offline", ((Number) counts.get("offline")).longValue(),
                 "disabled", ((Number) counts.get("disabled")).longValue()));

@@ -252,7 +252,11 @@ small { font-size: var(--text-sm); font-weight: 400; }
 .n-tag .status-dot { flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .n-tag .n-tag__content { display: inline-flex; align-items: center; gap: 5px; }
 .device-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap: var(--space-3); }
+.device-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.device-search { width: min(280px,100%); }
 .device-state-filter { width: 120px; }
+.device-sort-filter { width: 190px; }
+.device-size-filter { width: 130px; }
 .device-card { transition: border-color var(--motion-fast) var(--ease); }
 .device-card:hover { border-color: var(--border-hover); }
 /* 展开的设置/升级面板属于这张卡片：卡片撑满整行，面板去外框、用分隔线衔接，触发点与结果同屏。 */
@@ -451,6 +455,9 @@ button.mobile-menu { display: none; }
   .section-heading { align-items: flex-start; gap: var(--space-3); }
   .section-heading p { line-height: 1.7; }
   .section-heading > .management-actions { justify-content: flex-end; }
+  /* 搜索与三个下拉在窄屏各占半行，登记按钮留在页头。 */
+  .device-filters > * { flex: 1 1 140px; width: auto; }
+  .device-search { flex-basis: 100%; }
   .list-filters { gap: var(--space-3); padding: var(--pad-card); }
   .list-filters, .compact-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .compact-filters > .filter-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }

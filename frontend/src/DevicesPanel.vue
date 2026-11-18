@@ -4,15 +4,43 @@ import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
 import { NButton, NInput, NSelect, NSwitch, NTag } from 'naive-ui';
-import { Plus, Settings2, Upload } from '@lucide/vue';
+import { Plus, Search, Settings2, Upload } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin } = useAccess();
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
-const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
-const emit = defineEmits<{ filterState: [value: string]; page: [page: number] }>();
+const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean> }>();
+const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number] }>();
+// 搜索输入本地防抖 300ms 后才请求；排序与页大小立即生效并回到第一页。
+const searchDraft = ref(props.q);
+watch(() => props.q, value => { if (value !== searchDraft.value) searchDraft.value = value; });
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+function applySearch() {
+  clearTimeout(searchTimer);
+  const value = searchDraft.value.trim();
+  if (value !== props.q) emit('search', value);
+}
+function scheduleSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(applySearch, 300);
+}
+onBeforeUnmount(() => clearTimeout(searchTimer));
+const sortValue = computed(() => `${props.sort}_${props.order}`);
+const sortOptions = [
+  { label: '创建时间：早的在前', value: 'created_asc' },
+  { label: '创建时间：晚的在前', value: 'created_desc' },
+  { label: '名称：A→Z', value: 'name_asc' },
+  { label: '名称：Z→A', value: 'name_desc' },
+  { label: '最近连接：近的在前', value: 'last_seen_desc' },
+  { label: '最近连接：远的在前', value: 'last_seen_asc' },
+];
+function updateSort(value: string) {
+  const index = value.lastIndexOf('_');
+  emit('sort', value.slice(0, index), value.slice(index + 1));
+}
+const sizeOptions = [12, 24, 48, 96].map(value => ({ label: `每页 ${value} 台`, value }));
 const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
@@ -58,28 +86,62 @@ async function submit() {
     <div class="section-heading">
       <div>
         <h1 tabindex="-1">设备</h1>
-        <p>{{ state ? `显示 ${matched} / 共 ${total} 台` : `${total} 台设备` }} · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
+        <p>{{ state || q ? `显示 ${matched} / 共 ${total} 台` : `${total} 台设备` }} · {{ onlineCount }} 台在线 · 连接、提醒与固件</p>
       </div>
       <div class="management-actions">
-        <NSelect
-          class="device-state-filter"
-          aria-label="设备状态"
-          :disabled="loading || failed"
-          :value="state"
-          :options="[
-            { label: '全部', value: '' },
-            { label: '在线', value: 'online' },
-            { label: '离线', value: 'offline' },
-            { label: '已停用', value: 'disabled' },
-          ]"
-          :input-props="{ id: 'devicespanel-state', 'aria-label': '设备状态' }"
-          @update:value="emit('filterState', $event)"
-        />
         <NButton type="primary" attr-type="button" v-if="admin" class="primary" @click="adding = !adding" :aria-expanded="adding">
           <template #icon><Plus :size="16" /></template>
           {{ adding ? '收起' : '登记设备' }}
         </NButton>
       </div>
+    </div>
+    <div class="device-filters">
+      <NInput
+        class="device-search"
+        :value="searchDraft"
+        :disabled="failed"
+        :maxlength="80"
+        clearable
+        placeholder="搜索名称或设备 ID"
+        :input-props="{ type: 'search', 'aria-label': '搜索设备', spellcheck: 'false', id: 'devicespanel-search' }"
+        @update:value="searchDraft = $event; scheduleSearch()"
+        @keydown.enter.prevent="applySearch"
+        @clear="searchDraft = ''; applySearch()"
+      >
+        <template #prefix><Search :size="15" aria-hidden="true" /></template>
+      </NInput>
+      <NSelect
+        class="device-state-filter"
+        aria-label="设备状态"
+        :disabled="loading || failed"
+        :value="state"
+        :options="[
+          { label: '全部', value: '' },
+          { label: '在线', value: 'online' },
+          { label: '离线', value: 'offline' },
+          { label: '已停用', value: 'disabled' },
+        ]"
+        :input-props="{ id: 'devicespanel-state', 'aria-label': '设备状态' }"
+        @update:value="emit('filterState', $event)"
+      />
+      <NSelect
+        class="device-sort-filter"
+        aria-label="设备排序"
+        :disabled="loading || failed"
+        :value="sortValue"
+        :options="sortOptions"
+        :input-props="{ id: 'devicespanel-sort', 'aria-label': '设备排序' }"
+        @update:value="updateSort"
+      />
+      <NSelect
+        class="device-size-filter"
+        aria-label="每页设备数"
+        :disabled="loading || failed"
+        :value="size"
+        :options="sizeOptions"
+        :input-props="{ id: 'devicespanel-size', 'aria-label': '每页设备数' }"
+        @update:value="emit('size', $event)"
+      />
     </div>
     <ConsoleForm v-if="adding" class="inline-form" @submit.prevent="submit">
       <div class="form-columns">
@@ -119,9 +181,10 @@ async function submit() {
       </div>
     </ConsoleForm>
     <ConsoleState v-if="loading && !items.length && !failed" kind="loading">正在读取设备…</ConsoleState>
-    <ConsoleState v-else-if="!failed && !items.length && state" :title="`没有${stateNames[state] || '符合条件的'}设备`">
+    <ConsoleState v-else-if="!failed && !items.length && (q || state)" :title="q ? `没有匹配“${q}”的设备` : `没有${stateNames[state] || '符合条件的'}设备`">
       <template #actions>
-        <NButton attr-type="button" class="text-button" @click="emit('filterState', '')">查看全部设备</NButton>
+        <NButton v-if="q" attr-type="button" class="text-button" @click="searchDraft = ''; applySearch()">清空搜索</NButton>
+        <NButton v-if="state" attr-type="button" class="text-button" @click="emit('filterState', '')">查看全部设备</NButton>
       </template>
     </ConsoleState>
     <ConsoleState v-else-if="!failed && !items.length && total > 0" title="本页没有设备">刷新后会回到最近的可用页。</ConsoleState>
