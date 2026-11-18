@@ -1,14 +1,16 @@
 package dev.nexus.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.nexus.core.web.OverviewController;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,8 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ConsoleOverviewFlowTest {
     static final String TOKEN="overview-test-token-at-least-32-characters";
+    /** 非 UTC 时区才能证明“今日”真的跟着配置走，而不是把 UTC 写死在 SQL 里。 */
+    static final String ZONE="Asia/Shanghai";
     @Container static final PostgreSQLContainer DB=new PostgreSQLContainer("postgres:17-alpine");
     @Container static final GenericContainer<?> MQTT=new GenericContainer<>("eclipse-mosquitto:2.0.22")
         .withExposedPorts(1883)
@@ -48,6 +52,7 @@ class ConsoleOverviewFlowTest {
         p.add("nexus.admin-token",()->TOKEN);p.add("nexus.mqtt.uri",()->"tcp://"+MQTT.getHost()+":"+MQTT.getMappedPort(1883));
         p.add("nexus.mqtt.password",()->"overview-password");p.add("nexus.mqtt.allow-insecure",()->"true");p.add("nexus.mqtt.ca-cert",()->"");
         p.add("nexus.delivery.tick-ms",()->"600000");
+        p.add("nexus.overview.timezone",()->ZONE);
     }
     @LocalServerPort int port;
     @Autowired ObjectMapper json;
@@ -81,11 +86,21 @@ class ConsoleOverviewFlowTest {
         fixtures.execute("DELETE FROM alert_threshold_audit");
     }
 
+    @Test void overviewTimezoneDefaultsToUtcAndRejectsUnknownZones() {
+        // 配置非法时启动失败，而不是静默把“今日”换成别的日期。
+        assertThat(OverviewController.resolveZone(null).getId()).isEqualTo("UTC");
+        assertThat(OverviewController.resolveZone("  ").getId()).isEqualTo("UTC");
+        assertThat(OverviewController.resolveZone("Asia/Shanghai").getId()).isEqualTo(ZONE);
+        assertThatThrownBy(()->OverviewController.resolveZone("Mars/Olympus"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("nexus.overview.timezone");
+    }
+
     @Test void emptyOverviewPreservesUnknownRateAndRequiresAdmin()throws Exception {
         assertThat(request(null).statusCode()).isEqualTo(401);
         awaitReady();
         var result=overview();
-        assertThat(result.path("timezone").asText()).isEqualTo("UTC");
+        assertThat(result.path("timezone").asText()).isEqualTo(ZONE);
         assertThat(result.path("devices").path("total").asInt()).isZero();
         assertThat(result.path("today").path("messages").asInt()).isZero();
         assertThat(result.path("today").path("deliveryFailureRate").isNull()).isTrue();
@@ -110,7 +125,8 @@ class ConsoleOverviewFlowTest {
         fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(hidden));
         fixtures.update("UPDATE inbox_messages SET metadata=metadata||'{\"test\":\"true\"}'::jsonb WHERE message_id=?",UUID.fromString(hidden));
         fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(yesterday));
-        fixtures.update("UPDATE inbox_messages SET received_at=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'-interval '1 second' WHERE message_id=?",
+        fixtures.update("UPDATE inbox_messages SET received_at=date_trunc('day',now() AT TIME ZONE '" + ZONE
+                + "') AT TIME ZONE '" + ZONE + "'-interval '1 second' WHERE message_id=?",
             UUID.fromString(yesterday));
         var result=overview();
         assertThat(result.path("today").path("failedDeliveries").asInt()).isEqualTo(3);
@@ -326,7 +342,8 @@ class ConsoleOverviewFlowTest {
         assertThat(zero.path("devices").path("disabled").asInt()).isEqualTo(1);
         String today=createMessage("旧来源时间仍在今日收件"),old=createMessage("昨日收件"),future=createMessage("未来收件");
         fixtures.update("UPDATE inbox_messages SET created_at=now()-interval '3 days' WHERE message_id=?",UUID.fromString(today));
-        fixtures.update("UPDATE inbox_messages SET received_at=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'-interval '1 second' WHERE message_id=?",UUID.fromString(old));
+        fixtures.update("UPDATE inbox_messages SET received_at=date_trunc('day',now() AT TIME ZONE '" + ZONE
+            + "') AT TIME ZONE '" + ZONE + "'-interval '1 second' WHERE message_id=?",UUID.fromString(old));
         fixtures.update("UPDATE inbox_messages SET received_at=now()+interval '1 day' WHERE message_id=?",UUID.fromString(future));
         fixtures.update("UPDATE deliveries SET status='expired'");
         fixtures.update("UPDATE deliveries SET status='failed' WHERE message_id=? AND device_id='live'",UUID.fromString(today));
@@ -342,7 +359,7 @@ class ConsoleOverviewFlowTest {
         assertThat(result.path("backlog").path("pending").asInt()).isEqualTo(1);
         assertThat(result.path("backlog").path("sent").asInt()).isEqualTo(1);
         Instant asOf=Instant.parse(result.path("asOf").asText()),start=Instant.parse(result.path("dayStart").asText());
-        assertThat(start).isEqualTo(asOf.atZone(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant());
+        assertThat(start).isEqualTo(asOf.atZone(ZoneId.of(ZONE)).toLocalDate().atStartOfDay(ZoneId.of(ZONE)).toInstant());
         // A second read never changes the delivery/message state or manufactures an acknowledgment.
         overview();
         var deliveries=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/deliveries?status=pending"))

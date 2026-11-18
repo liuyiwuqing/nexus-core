@@ -33,6 +33,11 @@ const timer = setInterval(() => { if (document.visibilityState === 'visible') vo
 onUnmounted(() => { generation++; thresholdGeneration++; controller?.abort(); clearInterval(timer); });
 // 失败率只在有投递时画条形；null 表示"今日还没有投递"，不是 0%。
 const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? null);
+// 日起算点按服务端配置的时区显示；直接截 ISO 字符串会把 UTC 日期当成当地日期。
+const localDay = computed(() => snapshot.value
+  ? new Intl.DateTimeFormat('en-CA', { timeZone: snapshot.value.timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(snapshot.value.dayStart))
+  : '');
 // 阈值来自服务端：页面不再自己写 10%，否则改阈值要两处一起改。
 const thresholds = computed(() => snapshot.value?.thresholds ?? null);
 const percent = (value: number) => (value * 100).toFixed(1) + '%';
@@ -127,7 +132,7 @@ async function saveThresholds() {
 
 <template>
   <section class="overview-panel" aria-label="运行概览">
-    <div class="section-heading"><div><h1 tabindex="-1">运行概览</h1><p v-if="snapshot">{{ snapshot.dayStart.slice(0, 10) }} · UTC 当日起算</p><p v-else>设备在线、今日收件与投递健康</p></div><NButton attr-type="button" class="text-button" :disabled="loading" @click="load"><template #icon><RefreshCw :size="15" :class="{ spinning: loading }" /></template>刷新概览</NButton></div>
+    <div class="section-heading"><div><h1 tabindex="-1">运行概览</h1><p v-if="snapshot">{{ localDay }} · {{ snapshot.timezone }} 当日起算</p><p v-else>设备在线、今日收件与投递健康</p></div><NButton attr-type="button" class="text-button" :disabled="loading" @click="load"><template #icon><RefreshCw :size="15" :class="{ spinning: loading }" /></template>刷新概览</NButton></div>
     <ConsoleState v-if="loading" kind="loading" :compact="false">正在读取概览…</ConsoleState>
     <ConsoleState v-else-if="error" kind="error" compact>{{ error }}</ConsoleState>
     <template v-else-if="snapshot">

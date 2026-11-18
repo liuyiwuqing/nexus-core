@@ -113,7 +113,7 @@ export interface AlertThresholdAuditPage {
   items: AlertThresholdAudit[]; total: number; hasMore: boolean;
 }
 export interface Overview {
-  asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
+  asOf: string; dayStart: string; timezone: string; mqtt: 'ready' | 'unavailable';
   devices: { total: number; online: number; offline: number; disabled: number };
   today: { messages: number; deliveries: number; failedDeliveries: number; deliveryFailureRate: number | null };
   backlog: { pending: number; sent: number }; failedDeliveries: number;

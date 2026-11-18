@@ -1,11 +1,14 @@
 package dev.nexus.core.web;
 
 import dev.nexus.core.delivery.MqttTransport;
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +25,20 @@ public class OverviewController {
     private final JdbcTemplate db;
     private final MqttTransport mqtt;
     private final ObjectMapper json;
-    public OverviewController(JdbcTemplate db,MqttTransport mqtt,ObjectMapper json) { this.db=db;this.mqtt=mqtt;this.json=json; }
+    /** “今日”的时区；配置非法时启动失败，避免静默退回别的日期口径。 */
+    private final ZoneId zone;
+    public OverviewController(JdbcTemplate db,MqttTransport mqtt,ObjectMapper json,
+                              @Value("${nexus.overview.timezone:UTC}") String timezone) {
+        this.db=db;this.mqtt=mqtt;this.json=json;this.zone=resolveZone(timezone);
+    }
+    public static ZoneId resolveZone(String configured) {
+        String value = configured == null || configured.isBlank() ? "UTC" : configured.trim();
+        try {
+            return ZoneId.of(value);
+        } catch (DateTimeException e) {
+            throw new IllegalArgumentException("invalid nexus.overview.timezone: " + value, e);
+        }
+    }
     public record Devices(long total,long online,long offline,long disabled) {}
     public record Today(long messages,long deliveries,long failedDeliveries,Double deliveryFailureRate) {}
     public record Backlog(long pending,long sent) {}
@@ -41,7 +57,7 @@ public class OverviewController {
         return db.queryForObject("""
             WITH bounds AS (
                 SELECT now() AS as_of,now()-interval '90 seconds' AS online_cutoff,
-                    date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS day_start
+                    date_trunc('day',now() AT TIME ZONE ?) AT TIME ZONE ? AS day_start
             ), device_counts AS (
                 -- 在线阈值只写一次：概览计数和告警判定共用同一个截止时间。
                 SELECT count(*) AS total,
@@ -84,7 +100,7 @@ public class OverviewController {
                 List<FailureReason> reasons=new ArrayList<>();
                 for (var node : json.readTree(r.getString("failure_reasons")))
                     reasons.add(new FailureReason(node.path("code").asText(),node.path("count").asLong()));
-                return new Overview(r.getTimestamp("as_of").toInstant(),r.getTimestamp("day_start").toInstant(),"UTC",
+                return new Overview(r.getTimestamp("as_of").toInstant(),r.getTimestamp("day_start").toInstant(),zone.getId(),
                     new Devices(total,online,total-online,r.getLong("disabled")),
                     new Today(r.getLong("messages"),todayTotal,failed,todayTotal==0?null:(double)failed/todayTotal),
                     new Backlog(r.getLong("pending"),r.getLong("sent")),r.getLong("failed"),ready?"ready":"unavailable",
@@ -92,7 +108,7 @@ public class OverviewController {
                     OverviewAlerts.evaluate(r.getLong("enabled_total"),r.getLong("online_enabled"),
                         r.getLong("pending"),todayTotal,failed,ready,thresholds),
                     reasons);
-            });
+            },zone.getId(),zone.getId());
     }
 
     /**

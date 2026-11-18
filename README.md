@@ -60,7 +60,7 @@ python3 tools/run_local.py run
 
 消息可组合已读/未读、来源和收件时间，投递可组合八种状态、设备 ID 和消息收件时间；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。两页可导出当前筛选的元数据 CSV，最多 5000 条，不含标题、正文或原始 payload。HTTP 参数、时间口径与导出边界见[筛选与导出](docs/console-list-filters.md)。
 
-“概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`。越线的指标以告警条列在计数上方，MQTT 健康与设备在线各成一条。口径及验证入口见[运行概览](docs/console-overview.md)。
+“概览”提供同一数据库快照的设备在线/离线、今日收件、当前失败率和投递积压；无投递时失败率显示 `—`。“今日”的日起算时区由 `nexus.overview.timezone`（环境变量 `NEXUS_OVERVIEW_TIMEZONE`）配置，默认 `UTC`，配置非法时启动失败；页面按响应里的 `timezone` 显示当地日期。越线的指标以告警条列在计数上方，MQTT 健康与设备在线各成一条。口径及验证入口见[运行概览](docs/console-overview.md)。
 
 概览的“运行趋势”按 6 小时/24 小时/7 天读取固定桶历史（`15m`/`1h`/`6h`/`1d`），收件、投递与失败事件各一条序列；最后一桶尚未结束会标出来，空窗口仍返回完整网格。失败按投递历史里“进入失败”的事件计数，不是当前失败记录的回看；`failureReasons` 给出窗口内全部失败事件按原因的折行（合计等于 `totals.allFailures`），可选 `reason` 只收窄失败序列。
 
@@ -202,7 +202,7 @@ python3 tools/upgrade_broker_policy.py --apply
 
 | 路径 | 用途 |
 | --- | --- |
-| `GET /overview` | 只读运行统计，固定 UTC 今日窗口，附派生告警 `alerts` 与阈值 `thresholds` |
+| `GET /overview` | 只读运行统计，今日窗口按配置时区（默认 UTC）起算，附派生告警 `alerts` 与阈值 `thresholds` |
 | `GET /overview/trend?hours&bucket&reason` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial`；失败可按 `reason` 收窄，响应含窗口原因折行 `failureReasons` |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |

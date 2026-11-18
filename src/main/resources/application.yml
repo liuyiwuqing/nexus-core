@@ -23,6 +23,8 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
 nexus:
+  overview:
+    timezone: ${NEXUS_OVERVIEW_TIMEZONE:UTC}
   growth-sync:
     enabled: ${NEXUS_GROWTH_SYNC_ENABLED:false}
   auth:
