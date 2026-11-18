@@ -71,7 +71,15 @@ class ConsoleOverviewFlowTest {
         }
         throw new AssertionError("MQTT transport never reported ready");
     }
-    @BeforeEach void prepare() { fixtures.execute("TRUNCATE inbox_messages,devices CASCADE"); }
+    @BeforeEach void prepare() {
+        fixtures.execute("TRUNCATE inbox_messages,devices CASCADE");
+        // 阈值单行表跨用例共享：每个用例都从迁移默认值开始，避免执行顺序影响告警断言。
+        fixtures.update("""
+            UPDATE alert_thresholds SET failure_rate=0.1,failure_rate_min_sample=20,backlog_pending=100,
+                online_min=1,version=1,updated_by='system',updated_at=now()
+            """);
+        fixtures.execute("DELETE FROM alert_threshold_audit");
+    }
 
     @Test void emptyOverviewPreservesUnknownRateAndRequiresAdmin()throws Exception {
         assertThat(request(null).statusCode()).isEqualTo(401);
@@ -178,6 +186,71 @@ class ConsoleOverviewFlowTest {
         assertThat(boundary.path("alerts").get(0).path("unit").asText()).isEqualTo("ratio");
         assertThat(boundary.path("alerts").get(0).path("level").asText()).isEqualTo("warn");
         assertThat(boundary.path("alerts").get(0).path("target").path("status").asText()).isEqualTo("failed");
+    }
+
+    @Test void thresholdsAreReadableEditableAuditedAndVersioned()throws Exception {
+        awaitReady();
+        var read=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/overview/thresholds"))
+            .header("Authorization","Bearer "+TOKEN).GET().build(),HttpResponse.BodyHandlers.ofString());
+        assertThat(read.statusCode()).isEqualTo(200);
+        var current=json.readTree(read.body());
+        assertThat(current.path("version").asInt()).isEqualTo(1);
+        assertThat(current.path("thresholds").path("failureRate").asDouble()).isEqualTo(0.1);
+        assertThat(current.path("thresholds").path("onlineMin").asInt()).isEqualTo(1);
+        assertThat(current.path("history").size()).isZero();
+
+        // 版本对不上不覆盖；越界值直接拒绝，概览仍读原阈值。
+        assertThat(putThresholds(2,0.25,5,2,3,TOKEN).statusCode()).isEqualTo(409);
+        assertThat(putThresholds(1,1.5,5,2,3,TOKEN).statusCode()).isEqualTo(400);
+        assertThat(putThresholds(1,0.25,0,2,3,TOKEN).statusCode()).isEqualTo(400);
+        assertThat(overview().path("thresholds").path("failureRate").asDouble()).isEqualTo(0.1);
+
+        var updated=putThresholds(1,0.25,5,2,3,TOKEN);
+        assertThat(updated.statusCode()).withFailMessage(updated.body()).isEqualTo(200);
+        var saved=json.readTree(updated.body());
+        assertThat(saved.path("version").asInt()).isEqualTo(2);
+        assertThat(saved.path("thresholds").path("failureRate").asDouble()).isEqualTo(0.25);
+        assertThat(saved.path("history").size()).isEqualTo(1);
+        assertThat(saved.path("history").get(0).path("fromVersion").asInt()).isEqualTo(1);
+        assertThat(saved.path("history").get(0).path("toVersion").asInt()).isEqualTo(2);
+        assertThat(saved.path("history").get(0).path("onlineMin").asInt()).isEqualTo(3);
+        // 审计记录的是令牌派生身份，不是明文令牌。
+        assertThat(saved.path("updatedBy").asText()).hasSize(64);
+        assertThat(saved.path("history").get(0).path("actor").asText()).isEqualTo(saved.path("updatedBy").asText());
+
+        // 概览立即采用新阈值：1 台启用离线 < 3、2 条积压 ≥ 2、2/7 失败 ≥ 25%（样本 7 ≥ 5）。
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('idle','离线',true,false,now())");
+        seedMessages(2); seedDeliveries("idle","pending",2);
+        seedMessages(5); seedDeliveries("idle","failed",2); seedDeliveries("idle","sent",3);
+        var judged=overview();
+        assertThat(judged.path("thresholds").path("onlineMin").asInt()).isEqualTo(3);
+        assertThat(codes(judged)).containsExactly("devices_online","delivery_backlog","delivery_failure_rate");
+        assertThat(judged.path("alerts").get(1).path("threshold").asDouble()).isEqualTo(2);
+        assertThat(judged.path("alerts").get(2).path("threshold").asDouble()).isEqualTo(0.25);
+
+        // 旧版本再提交一次：仍然 409，不会把 v2 覆盖回 v1 的内容。
+        assertThat(putThresholds(1,0.4,5,2,3,TOKEN).statusCode()).isEqualTo(409);
+        assertThat(overview().path("thresholds").path("failureRate").asDouble()).isEqualTo(0.25);
+
+        // operator 能读不能写：写路径由 RoleTokens 在控制器之前拦下。
+        var issued=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/access/tokens"))
+            .header("Authorization","Bearer "+TOKEN).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("name","operator-thresholds",
+                "role","operator","expiresAt",Instant.now().plusSeconds(3600).toString()))))
+            .build(),HttpResponse.BodyHandlers.ofString());
+        assertThat(issued.statusCode()).withFailMessage(issued.body()).isEqualTo(200);
+        String operator=json.readTree(issued.body()).path("token").asText();
+        assertThat(putThresholds(2,0.3,5,2,3,operator).statusCode()).isEqualTo(403);
+        assertThat(overview().path("thresholds").path("failureRate").asDouble()).isEqualTo(0.25);
+    }
+
+    HttpResponse<String> putThresholds(int version,double rate,int minSample,int pending,int onlineMin,String token)throws Exception {
+        var body=json.writeValueAsString(Map.of("version",version,"thresholds",Map.of("failureRate",rate,
+            "failureRateMinSample",minSample,"backlogPending",pending,"onlineMin",onlineMin)));
+        var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/overview/thresholds"))
+            .header("Content-Type","application/json").timeout(Duration.ofSeconds(5));
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        return http.send(builder.PUT(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
     }
 
     @Test void snapshotCountsUseReceiptDayAndTheExistingOnlineThreshold()throws Exception {

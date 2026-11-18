@@ -4,11 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 概览告警口径：阈值是代码里的固定常量，读时按同一快照派生。
- * 不落库、不推送、不写审计——连续轮询里同一条告警重复出现是正常的。
+ * 概览告警口径：阈值存在 {@code alert_thresholds}，与计数在同一条快照里读出。
+ * 告警本身仍不落库、不推送——连续轮询里同一条告警重复出现是正常的；
+ * 只有人改动阈值时才写一行变更审计。
  * value 与 threshold 同一个单位，comparison 说明比较方向，消费方不需要再猜阈值语义。
  */
 final class OverviewAlerts {
+    // 初值与兜底：Flyway 用它插入第一行，纯函数测试用它覆盖默认口径。
     static final double FAILURE_RATE = 0.10;
     // 比例要有样本才有意义：1 条失败 1 条就是 100%，不据此告警。
     static final long FAILURE_RATE_MIN_SAMPLE = 20;
@@ -30,20 +32,20 @@ final class OverviewAlerts {
 
     /** 返回顺序固定：传输、设备、积压、失败率；没有命中就是空列表，不返回"健康"占位。 */
     static List<Alert> evaluate(long enabled,long onlineEnabled,long pending,
-                                long todayDeliveries,long todayFailed,boolean mqttReady) {
+                                long todayDeliveries,long todayFailed,boolean mqttReady,Thresholds thresholds) {
         List<Alert> alerts = new ArrayList<>(4);
         if (!mqttReady) alerts.add(new Alert("mqtt_connection","error",0,1,"lt","state",null));
         // 一台设备都没登记时不报"全部离线"：没有设备不是故障。
-        if (enabled > 0 && onlineEnabled < ONLINE_MIN)
-            alerts.add(new Alert("devices_online","warn",onlineEnabled,ONLINE_MIN,"lt","count",
+        if (enabled > 0 && onlineEnabled < thresholds.onlineMin())
+            alerts.add(new Alert("devices_online","warn",onlineEnabled,thresholds.onlineMin(),"lt","count",
                 new AlertTarget("devices","offline")));
-        if (pending >= BACKLOG_PENDING)
-            alerts.add(new Alert("delivery_backlog","warn",pending,BACKLOG_PENDING,"gte","count",
+        if (pending >= thresholds.backlogPending())
+            alerts.add(new Alert("delivery_backlog","warn",pending,thresholds.backlogPending(),"gte","count",
                 new AlertTarget("deliveries","pending")));
-        if (todayDeliveries >= FAILURE_RATE_MIN_SAMPLE) {
+        if (todayDeliveries >= thresholds.failureRateMinSample()) {
             double rate = (double) todayFailed / todayDeliveries;
-            if (rate >= FAILURE_RATE)
-                alerts.add(new Alert("delivery_failure_rate","warn",rate,FAILURE_RATE,"gte","ratio",
+            if (rate >= thresholds.failureRate())
+                alerts.add(new Alert("delivery_failure_rate","warn",rate,thresholds.failureRate(),"gte","ratio",
                     new AlertTarget("deliveries","failed")));
         }
         return alerts;

@@ -33,7 +33,7 @@ public class OverviewController {
                            OverviewAlerts.Thresholds thresholds,List<OverviewAlerts.Alert> alerts,
                            List<FailureReason> failureReasons) {}
 
-    /** 告警与计数来自同一条查询的同一快照；阈值由服务端给出，页面不再自带一份。 */
+    /** 告警与计数来自同一条查询的同一快照；阈值也从 alert_thresholds 在同一快照里读出。 */
     @GetMapping("/api/v1/overview")
     Overview overview() {
         // One statement gives all retained-row counts the same PostgreSQL snapshot.
@@ -70,12 +70,17 @@ public class OverviewController {
                 WHERE m.metadata->>'test' IS DISTINCT FROM 'true'
             )
             SELECT b.*,dc.total,dc.online,dc.disabled,dc.enabled_total,dc.online_enabled,mc.messages,dd.*,
+                t.failure_rate AS threshold_failure_rate,t.failure_rate_min_sample AS threshold_min_sample,
+                t.backlog_pending AS threshold_pending,t.online_min AS threshold_online,
                 (SELECT coalesce(json_agg(json_build_object('code',code,'count',n) ORDER BY n DESC,code),'[]'::json)
                  FROM failed_today)::text AS failure_reasons
             FROM bounds b CROSS JOIN device_counts dc CROSS JOIN message_counts mc CROSS JOIN delivery_counts dd
+                CROSS JOIN alert_thresholds t
             """,(r,n)-> {
                 long total=r.getLong("total"),online=r.getLong("online"),todayTotal=r.getLong("today_total"),failed=r.getLong("today_failed");
                 boolean ready=mqtt.ready();
+                var thresholds=new OverviewAlerts.Thresholds(r.getDouble("threshold_failure_rate"),
+                    r.getLong("threshold_min_sample"),r.getLong("threshold_pending"),r.getLong("threshold_online"));
                 List<FailureReason> reasons=new ArrayList<>();
                 for (var node : json.readTree(r.getString("failure_reasons")))
                     reasons.add(new FailureReason(node.path("code").asText(),node.path("count").asLong()));
@@ -83,9 +88,9 @@ public class OverviewController {
                     new Devices(total,online,total-online,r.getLong("disabled")),
                     new Today(r.getLong("messages"),todayTotal,failed,todayTotal==0?null:(double)failed/todayTotal),
                     new Backlog(r.getLong("pending"),r.getLong("sent")),r.getLong("failed"),ready?"ready":"unavailable",
-                    OverviewAlerts.THRESHOLDS,
+                    thresholds,
                     OverviewAlerts.evaluate(r.getLong("enabled_total"),r.getLong("online_enabled"),
-                        r.getLong("pending"),todayTotal,failed,ready),
+                        r.getLong("pending"),todayTotal,failed,ready,thresholds),
                     reasons);
             });
     }

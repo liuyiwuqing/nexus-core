@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import ConsoleState from './ConsoleState.vue';
+import ConsoleForm from './ConsoleForm.vue';
+import ConsoleField from './ConsoleField.vue';
 import OverviewTrend from './OverviewTrend.vue';
-import { NButton } from 'naive-ui';
+import StatusNote from './StatusNote.vue';
+import { NButton, NInputNumber } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
-import { deliveryErrorNames, formatTime, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
+import { deliveryErrorNames, formatTime, type AlertThresholdSettings, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
+import { useAccess } from './access';
 
 import { readFailure } from './failure';
 const props = defineProps<{ api: Api }>();
 const emit = defineEmits<{ drill: [target: OverviewAlertTarget] }>();
+const { admin } = useAccess();
 const snapshot = ref<Overview | null>(null), loading = ref(false), error = ref('');
 let generation = 0, controller: AbortController | undefined;
 async function load() {
@@ -52,6 +57,42 @@ function alertAction(alert: OverviewAlert): string {
   if (alert.target.tab === 'devices') return '查看设备';
   return alert.target.status === 'failed' ? '查看失败投递' : '查看等待投递';
 }
+// 阈值编辑放在快照分支外：快照每 5 秒重读一次，表单不能跟着被卸载。
+// 失败率在输入框里用百分比，提交时换回 0–1，和 API 契约保持一致。
+type ThresholdDraft = { failureRate: number | null; failureRateMinSample: number | null; backlogPending: number | null; onlineMin: number | null };
+const editingThresholds = ref(false), thresholdSettings = ref<AlertThresholdSettings | null>(null);
+const thresholdError = ref(''), thresholdBusy = ref(false);
+const thresholdDraft = ref<ThresholdDraft>({ failureRate: null, failureRateMinSample: null, backlogPending: null, onlineMin: null });
+function draftOf(thresholds: Overview['thresholds']): ThresholdDraft {
+  return { failureRate: Math.round(thresholds.failureRate * 1000) / 10,
+    failureRateMinSample: thresholds.failureRateMinSample, backlogPending: thresholds.backlogPending, onlineMin: thresholds.onlineMin };
+}
+async function openThresholds() {
+  editingThresholds.value = true; thresholdError.value = ''; thresholdSettings.value = null;
+  try {
+    const result = await props.api<AlertThresholdSettings>('overview/thresholds', 'GET');
+    thresholdSettings.value = result; thresholdDraft.value = draftOf(result.thresholds);
+  } catch (failure) { thresholdError.value = readFailure(failure, '阈值读取失败，请重试。'); }
+}
+function closeThresholds() { editingThresholds.value = false; thresholdError.value = ''; }
+async function saveThresholds() {
+  const settings = thresholdSettings.value, draft = thresholdDraft.value;
+  if (thresholdBusy.value || !settings) return;
+  if (draft.failureRate === null || draft.failureRateMinSample === null || draft.backlogPending === null || draft.onlineMin === null) {
+    thresholdError.value = '四项阈值都需要填写。'; return;
+  }
+  thresholdBusy.value = true; thresholdError.value = '';
+  try {
+    const result = await props.api<AlertThresholdSettings>('overview/thresholds', 'PUT', {
+      version: settings.version,
+      thresholds: { failureRate: draft.failureRate / 100, failureRateMinSample: draft.failureRateMinSample,
+        backlogPending: draft.backlogPending, onlineMin: draft.onlineMin },
+    });
+    thresholdSettings.value = result; thresholdDraft.value = draftOf(result.thresholds);
+    await load();
+  } catch (failure) { thresholdError.value = readFailure(failure, '阈值保存失败，请重试。'); }
+  finally { thresholdBusy.value = false; }
+}
 </script>
 
 <template>
@@ -91,7 +132,7 @@ function alertAction(alert: OverviewAlert): string {
             <span class="sr-only">今日投递失败率 {{ (failureRate * 100).toFixed(1) }}%</span>
           </div>
           <p class="overview-caption">今日收件产生 {{ snapshot.today.deliveries }} 条投递，失败 {{ snapshot.today.failedDeliveries }} 条；积压与失败统计保留全部记录。</p>
-          <p v-if="thresholds" class="overview-caption">告警阈值：今日失败率 ≥ {{ percent(thresholds.failureRate) }}（投递 ≥ {{ thresholds.failureRateMinSample }} 条才判定）、积压 ≥ {{ thresholds.backlogPending }} 条、启用设备在线 &lt; {{ thresholds.onlineMin }} 台。</p>
+          <p v-if="thresholds" class="overview-caption">告警阈值：今日失败率 ≥ {{ percent(thresholds.failureRate) }}（投递 ≥ {{ thresholds.failureRateMinSample }} 条才判定）、积压 ≥ {{ thresholds.backlogPending }} 条、启用设备在线 &lt; {{ thresholds.onlineMin }} 台。<NButton v-if="admin" attr-type="button" class="text-button threshold-edit" @click="openThresholds">调整阈值</NButton></p>
           <!-- 失败原因的计数之和等于今日失败数：它是同一个派生数字，不是另算一遍。 -->
           <div v-if="snapshot.failureReasons.length" class="overview-reasons">
             <p class="overview-caption">今日失败原因（合计 {{ snapshot.today.failedDeliveries }} 条）</p>
@@ -109,6 +150,38 @@ function alertAction(alert: OverviewAlert): string {
       </div>
       <p class="overview-caption overview-stamp">数据库快照 {{ formatTime(snapshot.asOf) }}（本地时间）· 页面每 5 秒重新读取</p>
     </template>
+    <!-- 阈值设置独立于快照轮询：表单放在快照分支外，保存后调用 load() 让上面的文案采用新值。 -->
+    <ConsoleForm v-if="admin && editingThresholds" class="inline-form threshold-editor" @submit="saveThresholds">
+      <h2>告警阈值</h2>
+      <p v-if="thresholdSettings" class="overview-caption">当前 v{{ thresholdSettings.version }} · 最近更新 {{ formatTime(thresholdSettings.updatedAt) }} · 已记录 {{ thresholdSettings.history.length }} 次变更</p>
+      <p v-else-if="!thresholdError" class="overview-caption">正在读取阈值…</p>
+      <div v-if="thresholdSettings" class="threshold-fields">
+        <ConsoleField label="今日失败率（%）">
+          <NInputNumber v-model:value="thresholdDraft.failureRate" :min="0" :max="100" :step="0.5" :precision="1" :show-button="false"
+                         :input-props="{ id: 'threshold-failure-rate' }" />
+        </ConsoleField>
+        <ConsoleField label="失败率最小样本（条）">
+          <NInputNumber v-model:value="thresholdDraft.failureRateMinSample" :min="1" :max="100000" :show-button="false"
+                         :input-props="{ id: 'threshold-failure-sample' }" />
+        </ConsoleField>
+        <ConsoleField label="积压告警阈值（条）">
+          <NInputNumber v-model:value="thresholdDraft.backlogPending" :min="1" :max="1000000" :show-button="false"
+                         :input-props="{ id: 'threshold-backlog' }" />
+        </ConsoleField>
+        <ConsoleField label="在线设备下限（台）">
+          <NInputNumber v-model:value="thresholdDraft.onlineMin" :min="1" :max="1000" :show-button="false"
+                         :input-props="{ id: 'threshold-online' }" />
+        </ConsoleField>
+      </div>
+      <StatusNote v-if="thresholdError" tone="danger">{{ thresholdError }}</StatusNote>
+      <div class="form-footer">
+        <span>保存后立即用于下次概览读取，并记入变更审计。</span>
+        <div class="threshold-actions">
+          <NButton attr-type="button" class="text-button" :disabled="thresholdBusy" @click="closeThresholds">取消</NButton>
+          <NButton type="primary" attr-type="submit" :disabled="thresholdBusy || !thresholdSettings">保存阈值</NButton>
+        </div>
+      </div>
+    </ConsoleForm>
     <!-- 趋势独立于快照轮询：放在快照分支外，避免每 5 秒因 snapshot 置空而重挂重读。 -->
     <OverviewTrend v-if="!error" :api="api" />
   </section>
@@ -130,6 +203,11 @@ function alertAction(alert: OverviewAlert): string {
 .overview-grid h2 { font-size: var(--text-md); }
 .overview-caption + .overview-caption { margin-top: var(--space-1); }
 .overview-stamp { margin-top: var(--space-4); }
+.threshold-edit { margin-left: var(--space-2); }
+.threshold-editor { margin-top: var(--space-4); }
+.threshold-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: var(--space-2) var(--space-3); }
+.threshold-fields :deep(.n-form-item) { margin-bottom: 0; }
+.threshold-actions { display: flex; gap: var(--space-2); }
 .health-bar { position: relative; overflow: hidden; height: 6px; margin: var(--space-3) 0; border-radius: 999px; background: var(--divider); }
 .health-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--success); transition: width var(--motion) var(--ease); }
 .health-bar--warn .health-bar-fill { background: var(--warning); }

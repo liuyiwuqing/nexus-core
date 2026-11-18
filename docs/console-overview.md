@@ -1,6 +1,6 @@
 # 管理台只读运行概览 · CONSOLE-05
 
-管理台“概览”从 `GET /api/v1/overview` 读取统计；沿用管理员 Bearer 鉴权，不接受写操作，不改变消息、投递、设备或清理策略。可见时每 5 秒读取，也可点“刷新概览”。切换页面/退出取消读取，401 结束会话；加载和失败不展示旧计数，无数据与读取失败分别呈现。
+管理台“概览”从 `GET /api/v1/overview` 读取统计，沿用 Bearer 鉴权（所有已认证角色可读）；概览本身只读，唯一的写入口是管理员的告警阈值配置（`PUT /api/v1/overview/thresholds`），不改动消息、投递、设备或清理策略。可见时每 5 秒读取，也可点“刷新概览”。切换页面/退出取消读取，401 结束会话；加载和失败不展示旧计数，无数据与读取失败分别呈现。
 
 ## 统计口径
 
@@ -16,30 +16,55 @@
 | `backlog.pending/sent` | 全部保留投递中当前为 `pending` / `sent` 的数量；页面积压为两者之和，包含等待 worker 收尾的记录，不承诺全部能立即发送 |
 | `failedDeliveries` | 全部保留投递的当前 `failed` 数；不是只计今天，也不是不可变审计 |
 | `mqtt` | 本次读取时传输连接的 `ready/unavailable`，在数据库查询之外读取；不能据此推导设备在线、已展示或已读 |
-| `thresholds` | 本次发版生效的告警阈值，见下节；前端据此染色与写文案，不自己保存常量 |
+| `thresholds` | `alert_thresholds` 表当前生效的告警阈值，与本次计数同快照读取；前端据此染色与写文案，不自己保存常量 |
 | `alerts` | 本次读取命中的告警（可能为空），见下节 |
 | `failureReasons` | 今日失败投递按 `last_error` 的归并（可能为空），见「失败原因」一节 |
 
-计数只覆盖当前保留的数据；启用保留策略后被删除的旧记录不会继续计入，没有永久累计或真实设备告警检测的含义。此版本不提供可选时区、可配置阈值或推送通知；历史趋势见下节，同样只覆盖保留记录。
+计数只覆盖当前保留的数据；启用保留策略后被删除的旧记录不会继续计入，没有永久累计或真实设备告警检测的含义。此版本不提供可选时区或推送通知；历史趋势见下节，同样只覆盖保留记录。
 
 ## 告警阈值 · OVERVIEW-ALERT-01
 
-概览的告警是**读时从同一份快照派生的状态**，不是事件：不落库、不写审计、不推送、不记历史。每 5 秒轮询都会重新判定，因此同一条告警在连续读取里重复出现是正常的；读取失败时不返回告警（`alerts` 随快照一起消失），不会留下过期的红色提示。
+概览的告警是**读时从同一份快照派生的状态**，不是事件：告警本身不落库、不推送、不记历史（阈值变更另记审计，见下节）。每 5 秒轮询都会重新判定，因此同一条告警在连续读取里重复出现是正常的；读取失败时不返回告警（`alerts` 随快照一起消失），不会留下过期的红色提示。
 
-阈值是代码里的固定常量（`OverviewAlerts`），要改就得改代码并发版——这是刻意的边界：可配置阈值需要配置面、修改审计和"阈值是谁改的"这类问题，属于单独一件事。
+阈值存放在 `alert_thresholds` 单行表，与计数由同一条 SQL 读出，改阈值不需要发版；管理员可在管理台调整，契约见「阈值配置 · ALERT-CONFIG-01」。
 
 | `code` | 级别 | 命中条件 | `value` / `threshold` / `unit` | 钻取目标 `target` |
 | --- | --- | --- | --- | --- |
 | `mqtt_connection` | `error` | 本次读取传输未就绪 | `0 < 1`，`unit=state`；只表达"发不出去"，不代表设备离线 | `null` |
-| `devices_online` | `warn` | 至少一台启用设备，但没有一台启用设备在线 | 在线启用设备数与 `1` 比较，`unit=count`；一台设备都没登记不报 | `devices` + `status=offline` |
-| `delivery_backlog` | `warn` | 当前 `pending` 积压 ≥ 100 | 积压条数与 `100` 比较，`unit=count`；只算 `pending`，不算等待设备确认的 `sent` | `deliveries` + `status=pending` |
-| `delivery_failure_rate` | `warn` | 今日投递 ≥ 20 条且失败率 ≥ 10% | 比例与 `0.10` 比较，`unit=ratio` | `deliveries` + `status=failed` |
+| `devices_online` | `warn` | 至少一台启用设备，但没有一台启用设备在线 | 在线启用设备数与 `onlineMin`（默认 1）比较，`unit=count`；一台设备都没登记不报 | `devices` + `status=offline` |
+| `delivery_backlog` | `warn` | 当前 `pending` 积压 ≥ `backlogPending`（默认 100） | 积压条数与阈值比较，`unit=count`；只算 `pending`，不算等待设备确认的 `sent` | `deliveries` + `status=pending` |
+| `delivery_failure_rate` | `warn` | 今日投递 ≥ `failureRateMinSample`（默认 20）条且失败率 ≥ `failureRate`（默认 10%） | 比例与阈值比较，`unit=ratio` | `deliveries` + `status=failed` |
 
 每条告警同时给出 `comparison`（`gte` 表示 `value ≥ threshold` 命中，`lt` 表示 `value < threshold` 命中），消费方不需要再猜方向。`devices_online` 的判定用"启用且在线"的子集：`devices.online` 仍按原口径统计（停用但在线的设备也算在线），所以两者不能互相推导。
 
-失败率有样本门槛：19 条投递全失败是 100%，但样本不足 20 条时不判定——单条失败就能造出 100%，据此报警只会变成噪音。这条门槛前后端一致：样本不足时失败率条形同样不染色。
+失败率有样本门槛：19 条投递全失败是 100%，但样本不足 `failureRateMinSample` 时不判定——单条失败就能造出 100%，据此报警只会变成噪音。门槛随响应下发，前后端一致：样本不足时失败率条形同样不染色。
 
 前端只负责把 `alerts` 渲染成一句话，未知 `code` 原样显示，服务端新增告警不会因为前端没改版而消失；文案里的阈值和百分比都取自本次响应。告警不含"持续时间"和"首次发生时间"：这类信息需要别处持久化，本版本不做。
+
+## 阈值配置 · ALERT-CONFIG-01
+
+`GET /api/v1/overview/thresholds` 所有已认证角色可读，返回当前阈值、版本与最近 20 次变更：
+
+```json
+{
+  "thresholds": {"failureRate": 0.1, "failureRateMinSample": 20, "backlogPending": 100, "onlineMin": 1},
+  "version": 1,
+  "updatedBy": "system",
+  "updatedAt": "2026-11-18T02:00:00Z",
+  "history": [{"sequence": 1, "actor": "admin", "fromVersion": 1, "toVersion": 2,
+               "failureRate": 0.25, "failureRateMinSample": 5, "backlogPending": 2,
+               "onlineMin": 3, "recordedAt": "2026-11-18T02:01:00Z"}]
+}
+```
+
+`PUT /api/v1/overview/thresholds` 仅管理员可用（写路径由 RoleTokens 拦在控制器之前），body 为 `{version, thresholds}`：
+
+- 取值范围：`failureRate` 为 0–1 的有限数，`failureRateMinSample` 1–100000，`backlogPending` 1–1000000，`onlineMin` 1–1000；越界、缺字段或类型不符返回 400 `invalid_alert_thresholds`。
+- `version` 必须等于当前版本，否则返回 409 `alert_threshold_version_conflict`：先提交的人成功，后提交的人重新读取再改，而不是悄悄覆盖。写入在事务里 `SELECT … FOR UPDATE` 比对版本、更新单行并把 `version+1`。
+- 成功返回与 GET 相同的结构（新版本 + 最新历史）。同一事务向 `alert_threshold_audit` 追加一行，记录操作者、前后版本与写入后的完整阈值；`updatedBy` 取本次请求的登录身份。审计不设读取上限的增长，GET 只回最近 20 条用于展示。
+- 阈值与概览计数由同一条 SQL 读出，改完下一次轮询（最长 5 秒）生效；`thresholds` 同时回给前端用于染色与文案，前端不保存常量。
+
+管理台在概览顶部说明句旁显示「调整阈值」，仅 `admin` 可见。表单把失败率按百分比输入（保留一位小数），保存时换算为 0–1 的比例；其余三项为整数。保存前显示「当前 vN · 最近更新 … · 已记录 N 次变更」，成功后关表单并刷新快照文案；400/409 在表单内就地提示，不关闭已填内容。operator/viewer 只读文案，没有按钮，直接调写接口同样被拒。
 
 ## 告警钻取 · ALERT-DRILL-01
 
@@ -94,6 +119,6 @@ python3 tools/run_local.py build
 bash tools/ci/test_overview_ui.sh
 ```
 
-HTTP/独立 PostgreSQL 专项覆盖空数据/鉴权、UTC 日界、旧来源时间/未来收件、在线 90 秒阈值/停用重合、当前失败比例/跨日积压与只读重复请求；告警专项覆盖空设备不报、只有停用设备不报、积压 99/100 边界、失败率 19 条样本不判定、2/20=10% 命中、无启用设备离线、`comparison` 方向与 `target` 下的页签/状态；失败原因专项覆盖折行合计等于今日失败数、多寡排序、测试消息与昨日失败被排除；列表专项覆盖按原因收窄、`unknown` 落回 NULL、未知原因返回空结果、非法原因与既有非法参数同样 400、导出与列表筛同一批；`OverviewAlertsTest` 是纯函数测试，直接覆盖夹具起不来的分支（MQTT 不可用是唯一的 `error` 且不带 `target`、告警顺序、各阈值边界）。趋势专项覆盖固定桶数、最后一桶 partial、收件归桶、测试消息/未来收件排除、失败事件归桶、窗口与桶数上限 400/401。浏览器检查覆盖数据、MQTT 异常（且不给它按钮）、加载/重复点击、空/失败/恢复、可见轮询、导航/退出的迟到响应、401、阈值文案与样本门槛、三处越线各自成条、上调阈值后同一比例不再告警、告警消除、三条告警各自钻取到已筛选列表（夹具核对请求真的带 `status`）、失败原因命名与折行合计、原因钻取到只有这类失败（核对请求同时带 `status` 与 `lastError`）、清空筛选后请求不再带任何筛选、趋势 24/28 桶与范围切换、趋势空/失败/恢复和 390px（含告警按钮）；夹具不是 CORE、Broker 或设备联调。实际结果与配套提交见 [04 台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
+HTTP/独立 PostgreSQL 专项覆盖空数据/鉴权、UTC 日界、旧来源时间/未来收件、在线 90 秒阈值/停用重合、当前失败比例/跨日积压与只读重复请求；阈值配置专项覆盖默认 v1 与空历史、管理员写入推进版本并写审计、`updated_by` 取登录身份、旧版本 409、`failureRate` 越界与 `failureRateMinSample=0` 的 400、新阈值立即改变概览判定与 `threshold` 数值、operator 写 403；告警专项覆盖空设备不报、只有停用设备不报、积压 99/100 边界、失败率 19 条样本不判定、2/20=10% 命中、无启用设备离线、`comparison` 方向与 `target` 下的页签/状态；失败原因专项覆盖折行合计等于今日失败数、多寡排序、测试消息与昨日失败被排除；列表专项覆盖按原因收窄、`unknown` 落回 NULL、未知原因返回空结果、非法原因与既有非法参数同样 400、导出与列表筛同一批；`OverviewAlertsTest` 是纯函数测试，直接覆盖夹具起不来的分支（MQTT 不可用是唯一的 `error` 且不带 `target`、告警顺序、各阈值边界、默认阈值与自定义阈值对同一快照给出不同结论）。趋势专项覆盖固定桶数、最后一桶 partial、收件归桶、测试消息/未来收件排除、失败事件归桶、窗口与桶数上限 400/401。浏览器检查覆盖数据、MQTT 异常（且不给它按钮）、加载/重复点击、空/失败/恢复、可见轮询、导航/退出的迟到响应、401、阈值文案与样本门槛、调整阈值到 v2 后概览文案同步（夹具核对写入值）、三处越线各自成条、上调阈值后同一比例不再告警、告警消除、三条告警各自钻取到已筛选列表（夹具核对请求真的带 `status`）、失败原因命名与折行合计、原因钻取到只有这类失败（核对请求同时带 `status` 与 `lastError`）、清空筛选后请求不再带任何筛选、趋势 24/28 桶与范围切换、趋势空/失败/恢复和 390px（含告警按钮）；夹具不是 CORE、Broker 或设备联调。实际结果与配套提交见 [04 台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
 
 规范沉淀：统计口径属于本项目契约；沿用已有测试和生命周期流程，无需修改通用 Skill。

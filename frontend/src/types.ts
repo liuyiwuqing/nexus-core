@@ -99,6 +99,16 @@ export interface OverviewAlert {
 /** 今日失败投递按 last_error 归并的一行；`unknown` 表示历史行没记录原因（NULL）。 */
 export interface OverviewFailureReason { code: string; count: number }
 export interface OverviewThresholds { failureRate: number; failureRateMinSample: number; backlogPending: number; onlineMin: number }
+/** 一次阈值变更；阈值字段是写入后的值，不是差量。 */
+export interface AlertThresholdAudit {
+  sequence: number; actor: string; fromVersion: number; toVersion: number;
+  failureRate: number; failureRateMinSample: number; backlogPending: number; onlineMin: number;
+  recordedAt: string;
+}
+export interface AlertThresholdSettings {
+  thresholds: OverviewThresholds; version: number; updatedBy: string; updatedAt: string;
+  history: AlertThresholdAudit[];
+}
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';
   devices: { total: number; online: number; offline: number; disabled: number };
@@ -183,6 +193,8 @@ export const errorNames: Record<string, string> = {
   admin_token_environment_managed: '管理员令牌由服务端环境配置管理，请先启用受保护凭据文件。', admin_token_readonly: '凭据文件不可写，请由服务端管理员更新。', invalid_admin_token: '新令牌需要 32 至 256 位可见 ASCII 字符，不能包含空白。', invalid_current_admin_token: '当前管理员令牌不正确。', admin_token_reused: '新令牌不能与现有凭据相同。', admin_token_version_conflict: '凭据已被其他操作修改，请刷新后重新核对。', credential_store_busy: '凭据正在更新，请稍后刷新核对。', authentication_configuration_unavailable: '认证配置暂不可用，请联系管理员核对。',
   forbidden: '当前角色无权执行此操作。', audit_unavailable: '审计存储暂时不可用，操作未开始。', invalid_role_token: '请检查令牌名称、角色和到期时间。', role_token_version_conflict: '令牌状态已变化，请刷新核对。',
   invalid_source: '请检查来源标识、名称、正文和设备范围。', source_version_conflict: '来源版本已变化，请核对当前来源后操作。', source_disabled: '来源已停用。', source_enabled: '请先停用来源，再轮换凭据。', source_rate_limited: '来源请求过于频繁，请稍后重试。',
+  invalid_alert_thresholds: '阈值超出允许范围：失败率 0–100%，其余三项至少为 1。',
+  alert_threshold_version_conflict: '阈值已被其他操作修改，请取消后重新打开再保存。',
   device_already_registered: '此设备 ID 已登记。', invalid_message_time: '消息时间或有效期不正确。',
   halo_not_configured: '请先在本机配置 Halo 只读令牌并启用接入。',
   halo_poll_in_progress: '正在同步，请稍后查看结果。',
