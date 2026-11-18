@@ -198,6 +198,7 @@ class ConsoleOverviewFlowTest {
         assertThat(current.path("thresholds").path("failureRate").asDouble()).isEqualTo(0.1);
         assertThat(current.path("thresholds").path("onlineMin").asInt()).isEqualTo(1);
         assertThat(current.path("history").size()).isZero();
+        assertThat(current.path("historyTotal").asInt()).isZero();
 
         // 版本对不上不覆盖；越界值直接拒绝，概览仍读原阈值。
         assertThat(putThresholds(2,0.25,5,2,3,TOKEN).statusCode()).isEqualTo(409);
@@ -211,6 +212,7 @@ class ConsoleOverviewFlowTest {
         assertThat(saved.path("version").asInt()).isEqualTo(2);
         assertThat(saved.path("thresholds").path("failureRate").asDouble()).isEqualTo(0.25);
         assertThat(saved.path("history").size()).isEqualTo(1);
+        assertThat(saved.path("historyTotal").asInt()).isEqualTo(1);
         assertThat(saved.path("history").get(0).path("fromVersion").asInt()).isEqualTo(1);
         assertThat(saved.path("history").get(0).path("toVersion").asInt()).isEqualTo(2);
         assertThat(saved.path("history").get(0).path("onlineMin").asInt()).isEqualTo(3);
@@ -242,6 +244,63 @@ class ConsoleOverviewFlowTest {
         String operator=json.readTree(issued.body()).path("token").asText();
         assertThat(putThresholds(2,0.3,5,2,3,operator).statusCode()).isEqualTo(403);
         assertThat(overview().path("thresholds").path("failureRate").asDouble()).isEqualTo(0.25);
+    }
+
+    @Test void thresholdAuditPagesBackwardsWithoutDuplicates()throws Exception {
+        awaitReady();
+        for(int i=1;i<=25;i++)
+            fixtures.update("""
+                INSERT INTO alert_threshold_audit(actor,from_version,to_version,failure_rate,
+                    failure_rate_min_sample,backlog_pending,online_min)
+                VALUES(?,?,?,?,?,?,?)
+                ""","tester",i-1,i,0.1,20,100,1);
+
+        var first=json.readTree(thresholdAudit("",TOKEN).body());
+        assertThat(first.path("total").asInt()).isEqualTo(25);
+        assertThat(first.path("hasMore").asBoolean()).isTrue();
+        assertThat(first.path("items").size()).isEqualTo(20);
+        assertThat(first.path("items").get(0).path("toVersion").asInt()).isEqualTo(25);
+        assertThat(first.path("items").get(19).path("toVersion").asInt()).isEqualTo(6);
+
+        // 用已加载最旧一行的 sequence 作游标，只取更早的 5 条，不重复。
+        long oldest=first.path("items").get(19).path("sequence").asLong();
+        var older=json.readTree(thresholdAudit("?before="+oldest,TOKEN).body());
+        assertThat(older.path("total").asInt()).isEqualTo(25);
+        assertThat(older.path("hasMore").asBoolean()).isFalse();
+        assertThat(older.path("items").size()).isEqualTo(5);
+        assertThat(older.path("items").get(0).path("toVersion").asInt()).isEqualTo(5);
+        assertThat(older.path("items").get(4).path("toVersion").asInt()).isEqualTo(1);
+
+        // size 与游标组合：边界前一行开始，hasMore 仍为真。
+        long cursor20=first.path("items").get(5).path("sequence").asLong();
+        var sized=json.readTree(thresholdAudit("?before="+cursor20+"&size=5",TOKEN).body());
+        assertThat(sized.path("items").size()).isEqualTo(5);
+        assertThat(sized.path("items").get(0).path("toVersion").asInt()).isEqualTo(19);
+        assertThat(sized.path("items").get(4).path("toVersion").asInt()).isEqualTo(15);
+        assertThat(sized.path("hasMore").asBoolean()).isTrue();
+
+        var none=json.readTree(thresholdAudit("?before=1",TOKEN).body());
+        assertThat(none.path("items").size()).isZero();
+        assertThat(none.path("hasMore").asBoolean()).isFalse();
+
+        // 当前阈值读取同时给出真实总数与最新 20 条。
+        var read=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/overview/thresholds"))
+            .header("Authorization","Bearer "+TOKEN).GET().build(),HttpResponse.BodyHandlers.ofString());
+        var current=json.readTree(read.body());
+        assertThat(current.path("historyTotal").asInt()).isEqualTo(25);
+        assertThat(current.path("history").size()).isEqualTo(20);
+
+        assertThat(thresholdAudit("",null).statusCode()).isEqualTo(401);
+        assertThat(thresholdAudit("?before=0",TOKEN).statusCode()).isEqualTo(400);
+        assertThat(thresholdAudit("?size=0",TOKEN).statusCode()).isEqualTo(400);
+        assertThat(thresholdAudit("?size=101",TOKEN).statusCode()).isEqualTo(400);
+    }
+
+    HttpResponse<String> thresholdAudit(String query,String token)throws Exception {
+        var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/overview/thresholds/audit"+query))
+            .timeout(Duration.ofSeconds(5));
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        return http.send(builder.GET().build(),HttpResponse.BodyHandlers.ofString());
     }
 
     HttpResponse<String> putThresholds(int version,double rate,int minSample,int pending,int onlineMin,String token)throws Exception {

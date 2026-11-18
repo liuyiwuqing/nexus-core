@@ -19,6 +19,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class AlertThresholds {
     public record Update(int version, Thresholds thresholds) {}
 
+    private static final int AUDIT_PAGE = 20;
+    private static final int AUDIT_MAX = 100;
+    private static final String AUDIT_COLUMNS = """
+        sequence,actor,from_version AS "fromVersion",to_version AS "toVersion",
+        failure_rate AS "failureRate",failure_rate_min_sample AS "failureRateMinSample",
+        backlog_pending AS "backlogPending",online_min AS "onlineMin",recorded_at AS "recordedAt"
+        """;
+
     private final JdbcTemplate db;
 
     public AlertThresholds(JdbcTemplate db) { this.db = db; }
@@ -45,17 +53,41 @@ public class AlertThresholds {
                 value.put("updatedBy",r.getString("updatedBy"));
                 value.put("updatedAt",r.getTimestamp("updatedAt").toInstant());
                 value.put("history",history());
+                value.put("historyTotal",auditTotal());
                 return value;
             });
     }
 
     private List<Map<String,Object>> history() {
-        return db.queryForList("""
-            SELECT sequence,actor,from_version AS "fromVersion",to_version AS "toVersion",
-                   failure_rate AS "failureRate",failure_rate_min_sample AS "failureRateMinSample",
-                   backlog_pending AS "backlogPending",online_min AS "onlineMin",recorded_at AS "recordedAt"
-            FROM alert_threshold_audit ORDER BY sequence DESC LIMIT 20
-            """);
+        return db.queryForList("SELECT " + AUDIT_COLUMNS
+            + " FROM alert_threshold_audit ORDER BY sequence DESC LIMIT " + AUDIT_PAGE);
+    }
+
+    /**
+     * 审计按 {@code sequence} 向前翻页：{@code before} 是当前已加载最旧一行的序号，
+     * 新写入只会出现在更大序号一侧，因此翻页不会因并发保存而重复或跳过。
+     */
+    public Map<String,Object> audit(Long before,int size) {
+        if (size < 1 || size > AUDIT_MAX || (before != null && before < 1))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_request");
+        List<Map<String,Object>> items = before == null
+            ? db.queryForList("SELECT " + AUDIT_COLUMNS
+                + " FROM alert_threshold_audit ORDER BY sequence DESC LIMIT ?",size)
+            : db.queryForList("SELECT " + AUDIT_COLUMNS
+                + " FROM alert_threshold_audit WHERE sequence<? ORDER BY sequence DESC LIMIT ?",before,size);
+        boolean hasMore = !items.isEmpty() && db.queryForObject(
+            "SELECT exists(SELECT 1 FROM alert_threshold_audit WHERE sequence<?)",
+            Boolean.class,((Number)items.getLast().get("sequence")).longValue());
+        Map<String,Object> value = new LinkedHashMap<>();
+        value.put("items",items);
+        value.put("total",auditTotal());
+        value.put("hasMore",hasMore);
+        return value;
+    }
+
+    private long auditTotal() {
+        Long total = db.queryForObject("SELECT count(*) FROM alert_threshold_audit",Long.class);
+        return total == null ? 0 : total;
     }
 
     @Transactional

@@ -107,7 +107,10 @@ export interface AlertThresholdAudit {
 }
 export interface AlertThresholdSettings {
   thresholds: OverviewThresholds; version: number; updatedBy: string; updatedAt: string;
-  history: AlertThresholdAudit[];
+  history: AlertThresholdAudit[]; historyTotal: number;
+}
+export interface AlertThresholdAuditPage {
+  items: AlertThresholdAudit[]; total: number; hasMore: boolean;
 }
 export interface Overview {
   asOf: string; dayStart: string; timezone: 'UTC'; mqtt: 'ready' | 'unavailable';

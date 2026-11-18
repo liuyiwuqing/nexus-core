@@ -7,7 +7,7 @@ import StatusNote from './StatusNote.vue';
 import { NButton, NInputNumber } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
-import { deliveryErrorNames, formatTime, type AlertThresholdSettings, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
+import { deliveryErrorNames, formatTime, type AlertThresholdAudit, type AlertThresholdAuditPage, type AlertThresholdSettings, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
 import { useAccess } from './access';
 
 import { readFailure } from './failure';
@@ -30,7 +30,7 @@ async function load() {
 }
 void load();
 const timer = setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 5000);
-onUnmounted(() => { generation++; controller?.abort(); clearInterval(timer); });
+onUnmounted(() => { generation++; thresholdGeneration++; controller?.abort(); clearInterval(timer); });
 // 失败率只在有投递时画条形；null 表示"今日还没有投递"，不是 0%。
 const failureRate = computed(() => snapshot.value?.today.deliveryFailureRate ?? null);
 // 阈值来自服务端：页面不再自己写 10%，否则改阈值要两处一起改。
@@ -62,19 +62,49 @@ function alertAction(alert: OverviewAlert): string {
 type ThresholdDraft = { failureRate: number | null; failureRateMinSample: number | null; backlogPending: number | null; onlineMin: number | null };
 const editingThresholds = ref(false), thresholdSettings = ref<AlertThresholdSettings | null>(null);
 const thresholdError = ref(''), thresholdBusy = ref(false);
+const auditRows = ref<AlertThresholdAudit[]>([]), auditTotal = ref(0);
+const auditHasMore = ref(false), auditBusy = ref(false), auditError = ref('');
+let thresholdGeneration = 0;
 const thresholdDraft = ref<ThresholdDraft>({ failureRate: null, failureRateMinSample: null, backlogPending: null, onlineMin: null });
 function draftOf(thresholds: Overview['thresholds']): ThresholdDraft {
   return { failureRate: Math.round(thresholds.failureRate * 1000) / 10,
     failureRateMinSample: thresholds.failureRateMinSample, backlogPending: thresholds.backlogPending, onlineMin: thresholds.onlineMin };
 }
+function applyThresholds(result: AlertThresholdSettings) {
+  thresholdSettings.value = result; thresholdDraft.value = draftOf(result.thresholds);
+  auditRows.value = result.history; auditTotal.value = result.historyTotal;
+  auditHasMore.value = result.history.length < result.historyTotal; auditError.value = '';
+}
 async function openThresholds() {
+  const current = ++thresholdGeneration;
   editingThresholds.value = true; thresholdError.value = ''; thresholdSettings.value = null;
+  auditRows.value = []; auditTotal.value = 0; auditHasMore.value = false; auditError.value = '';
   try {
     const result = await props.api<AlertThresholdSettings>('overview/thresholds', 'GET');
-    thresholdSettings.value = result; thresholdDraft.value = draftOf(result.thresholds);
-  } catch (failure) { thresholdError.value = readFailure(failure, '阈值读取失败，请重试。'); }
+    if (current === thresholdGeneration) applyThresholds(result);
+  } catch (failure) {
+    if (current === thresholdGeneration) thresholdError.value = readFailure(failure, '阈值读取失败，请重试。');
+  }
 }
-function closeThresholds() { editingThresholds.value = false; thresholdError.value = ''; }
+function closeThresholds() {
+  thresholdGeneration++; editingThresholds.value = false; thresholdError.value = '';
+  auditRows.value = []; auditTotal.value = 0; auditHasMore.value = false; auditBusy.value = false; auditError.value = '';
+}
+async function loadOlderAudit() {
+  if (auditBusy.value || !auditRows.value.length) return;
+  const current = thresholdGeneration;
+  const before = auditRows.value[auditRows.value.length - 1].sequence;
+  auditBusy.value = true; auditError.value = '';
+  try {
+    const page = await props.api<AlertThresholdAuditPage>(`overview/thresholds/audit?before=${before}`, 'GET');
+    if (current !== thresholdGeneration) return;
+    const known = new Set(auditRows.value.map(item => item.sequence));
+    auditRows.value = [...auditRows.value, ...page.items.filter(item => !known.has(item.sequence))];
+    auditTotal.value = page.total; auditHasMore.value = page.hasMore;
+  } catch (failure) {
+    if (current === thresholdGeneration) auditError.value = readFailure(failure, '更早的变更读取失败，请重试。');
+  } finally { if (current === thresholdGeneration) auditBusy.value = false; }
+}
 async function saveThresholds() {
   const settings = thresholdSettings.value, draft = thresholdDraft.value;
   if (thresholdBusy.value || !settings) return;
@@ -88,7 +118,7 @@ async function saveThresholds() {
       thresholds: { failureRate: draft.failureRate / 100, failureRateMinSample: draft.failureRateMinSample,
         backlogPending: draft.backlogPending, onlineMin: draft.onlineMin },
     });
-    thresholdSettings.value = result; thresholdDraft.value = draftOf(result.thresholds);
+    applyThresholds(result);
     await load();
   } catch (failure) { thresholdError.value = readFailure(failure, '阈值保存失败，请重试。'); }
   finally { thresholdBusy.value = false; }
@@ -153,7 +183,7 @@ async function saveThresholds() {
     <!-- 阈值设置独立于快照轮询：表单放在快照分支外，保存后调用 load() 让上面的文案采用新值。 -->
     <ConsoleForm v-if="admin && editingThresholds" class="inline-form threshold-editor" @submit="saveThresholds">
       <h2>告警阈值</h2>
-      <p v-if="thresholdSettings" class="overview-caption">当前 v{{ thresholdSettings.version }} · 最近更新 {{ formatTime(thresholdSettings.updatedAt) }} · 已记录 {{ thresholdSettings.history.length }} 次变更</p>
+      <p v-if="thresholdSettings" class="overview-caption">当前 v{{ thresholdSettings.version }} · 最近更新 {{ formatTime(thresholdSettings.updatedAt) }}</p>
       <p v-else-if="!thresholdError" class="overview-caption">正在读取阈值…</p>
       <div v-if="thresholdSettings" class="threshold-fields">
         <ConsoleField label="今日失败率（%）">
@@ -172,6 +202,22 @@ async function saveThresholds() {
           <NInputNumber v-model:value="thresholdDraft.onlineMin" :min="1" :max="1000" :show-button="false"
                          :input-props="{ id: 'threshold-online' }" />
         </ConsoleField>
+      </div>
+      <div v-if="thresholdSettings" class="threshold-audit">
+        <p class="overview-caption">变更审计（已显示 {{ auditRows.length }} / 共 {{ auditTotal }} 条，最新在前）</p>
+        <ol v-if="auditRows.length">
+          <li v-for="item in auditRows" :key="item.sequence">
+            <span class="threshold-audit-version">v{{ item.fromVersion }} → v{{ item.toVersion }}</span>
+            <span class="threshold-audit-actor">{{ item.actor }}</span>
+            <span>{{ formatTime(item.recordedAt) }}</span>
+            <span class="threshold-audit-values">失败率 ≥ {{ percent(item.failureRate) }} · 样本 {{ item.failureRateMinSample }} · 积压 {{ item.backlogPending }} · 在线 ≥ {{ item.onlineMin }}</span>
+          </li>
+        </ol>
+        <p v-else class="overview-caption">还没有变更记录。</p>
+        <StatusNote v-if="auditError" tone="danger">{{ auditError }}</StatusNote>
+        <NButton v-if="auditHasMore" attr-type="button" class="text-button" :disabled="auditBusy" @click="loadOlderAudit">
+          {{ auditBusy ? '正在读取更早变更…' : '加载更早变更' }}
+        </NButton>
       </div>
       <StatusNote v-if="thresholdError" tone="danger">{{ thresholdError }}</StatusNote>
       <div class="form-footer">
@@ -208,6 +254,14 @@ async function saveThresholds() {
 .threshold-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: var(--space-2) var(--space-3); }
 .threshold-fields :deep(.n-form-item) { margin-bottom: 0; }
 .threshold-actions { display: flex; gap: var(--space-2); }
+.threshold-audit { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--divider); }
+.threshold-audit ol { display: grid; gap: var(--space-1); margin: var(--space-1) 0; padding: 0; list-style: none; }
+.threshold-audit li { display: flex; flex-wrap: wrap; gap: 2px var(--space-2); padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--divider); color: var(--ink-2); font-size: var(--text-sm); }
+.threshold-audit li:last-child { border-bottom: 0; }
+.threshold-audit-version { color: var(--ink); font-variant-numeric: tabular-nums; }
+.threshold-audit-actor { overflow-wrap: anywhere; }
+.threshold-audit-values { flex-basis: 100%; }
 .health-bar { position: relative; overflow: hidden; height: 6px; margin: var(--space-3) 0; border-radius: 999px; background: var(--divider); }
 .health-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--success); transition: width var(--motion) var(--ease); }
 .health-bar--warn .health-bar-fill { background: var(--warning); }

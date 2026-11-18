@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 概览告警阈值：所有已认证角色可读，只有管理员能改（写路径由 RoleTokens 拦在控制器之前）。 */
@@ -16,6 +17,13 @@ public class AlertThresholdsController {
 
     @GetMapping("/api/v1/overview/thresholds")
     Map<String,Object> read() { return thresholds.read(); }
+
+    /** 更早的变更按 sequence 向前翻；省略 before 时与 GET 阈值里的最新 20 条一致。 */
+    @GetMapping("/api/v1/overview/thresholds/audit")
+    Map<String,Object> audit(@RequestParam(required=false) Long before,
+                             @RequestParam(defaultValue="20") int size) {
+        return thresholds.audit(before,size);
+    }
 
     @PutMapping("/api/v1/overview/thresholds")
     Map<String,Object> update(@RequestBody AlertThresholds.Update input,HttpServletRequest request) {

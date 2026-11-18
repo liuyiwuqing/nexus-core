@@ -62,11 +62,11 @@ python3 tools/run_local.py run
 
 “概览”提供同一数据库快照的设备在线/离线、UTC 今日收件、当前失败率和投递积压；无投递时失败率显示 `—`。越线的指标以告警条列在计数上方，MQTT 健康与设备在线各成一条。口径及验证入口见[运行概览](docs/console-overview.md)。
 
-概览的“运行趋势”按 6 小时/24 小时/7 天读取固定桶历史（`15m`/`1h`/`6h`/`1d`），收件、投递与失败事件各一条序列；最后一桶尚未结束会标出来，空窗口仍返回完整网格。失败按投递历史里“进入失败”的事件计数，不是当前失败记录的回看。
+概览的“运行趋势”按 6 小时/24 小时/7 天读取固定桶历史（`15m`/`1h`/`6h`/`1d`），收件、投递与失败事件各一条序列；最后一桶尚未结束会标出来，空窗口仍返回完整网格。失败按投递历史里“进入失败”的事件计数，不是当前失败记录的回看；`failureReasons` 给出窗口内全部失败事件按原因的折行（合计等于 `totals.allFailures`），可选 `reason` 只收窄失败序列。
 
 概览的告警（`alerts`）与计数来自同一份快照：传输未就绪、启用设备在线数低于下限（默认 1）、`pending` 积压 ≥ 阈值（默认 100）、今日失败率 ≥ 阈值（默认 10%，投递达到样本下限才判定，默认 20 条）各自成条，并带上 `threshold`/`comparison`；阈值随响应一起返回（`thresholds`），前端不保存常量。告警本身是读时派生状态，不落库、不推送、不写审计，每 5 秒重算，读取失败时随快照一起消失。
 
-阈值存于 `alert_thresholds` 单行表，改阈值不需要发版：`GET /api/v1/overview/thresholds` 所有已认证角色可读，管理员用 `PUT` 提交 `{version, thresholds}` 调整，旧版本返回 409、越界返回 400；每次成功写入在同一事务追加 `alert_threshold_audit`。管理台概览的「调整阈值」入口仅管理员可见，口径与验证见[运行概览](docs/console-overview.md)。
+阈值存于 `alert_thresholds` 单行表，改阈值不需要发版：`GET /api/v1/overview/thresholds` 所有已认证角色可读，返回最近 20 条变更与真实总数 `historyTotal`；更早的变更用 `GET /api/v1/overview/thresholds/audit?before&size` 按 `sequence` 向前翻。管理员用 `PUT` 提交 `{version, thresholds}` 调整，旧版本返回 409、越界返回 400；每次成功写入在同一事务追加 `alert_threshold_audit`。管理台概览的「调整阈值」入口仅管理员可见，口径与验证见[运行概览](docs/console-overview.md)。
 
 能落到现存筛选的告警还带 `target`（积压 → 投递页 `status=pending`、失败率 → `status=failed`、无在线设备 → 设备页），管理台据此跳到已筛选的列表；传输不可用没有对应筛选，`target` 为 `null`，不给按钮。
 
