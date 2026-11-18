@@ -100,13 +100,19 @@ public class OverviewController {
      * 收件与投递按消息 received_at 归桶（与今日口径一致，来源时间不移动归日）；
      * 失败按 delivery_history 记录的进入 failed 事件计数，不是"当前失败按收件桶回看"。
      * 三者都只覆盖仍保留的记录，旧 baseline 不算失败事件。
+     * reason 只收窄失败序列；failureReasons 始终给出整个窗口的折行，allFailures 是它的合计。
      */
     @GetMapping("/api/v1/overview/trend")
     Map<String,Object> trend(@RequestParam(defaultValue="24") int hours,
-                             @RequestParam(defaultValue="1h") String bucket) {
+                             @RequestParam(defaultValue="1h") String bucket,
+                             @RequestParam(required=false) String reason) {
         Integer seconds = BUCKETS.get(bucket);
         long span = (long) hours * 3600;
         if (seconds == null || hours < 1 || hours > 168 || span % seconds != 0 || span / seconds > MAX_POINTS)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_request");
+        // 原因只是投递历史里的 last_error 等值筛选；空值和超过列宽的值直接拒绝，未知原因返回空序列。
+        String selected = reason == null ? "" : reason.trim();
+        if (reason != null && (selected.isEmpty() || selected.length() > 64))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_request");
         int points = (int) (span / seconds);
         String step = seconds + " seconds";
@@ -139,18 +145,28 @@ public class OverviewController {
                 FROM delivery_history h,grid g
                 WHERE h.recorded_at >= g.first_at AND h.recorded_at <= g.as_of
                     AND h.status='failed' AND h.kind<>'baseline'
+                    AND (?='' OR coalesce(h.last_error,'unknown')=?)
+                GROUP BY 1
+            ), window_reasons AS (
+                -- 折行始终覆盖整个窗口，不随 reason 收窄；totals.allFailures 由它求和，两个数字同源。
+                SELECT coalesce(h.last_error,'unknown') AS code,count(*) AS n
+                FROM delivery_history h,grid g
+                WHERE h.recorded_at >= g.first_at AND h.recorded_at <= g.as_of
+                    AND h.status='failed' AND h.kind<>'baseline'
                 GROUP BY 1
             )
             SELECT to_char(p.at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at,
                 coalesce(msg.n,0) AS messages,coalesce(del.n,0) AS deliveries,coalesce(fail.n,0) AS failures,
                 (p.at=max(p.at) OVER ()) AS partial,
-                to_char(p.as_of AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS as_of
+                to_char(p.as_of AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS as_of,
+                (SELECT coalesce(json_agg(json_build_object('code',code,'count',n) ORDER BY n DESC,code),'[]'::json)
+                 FROM window_reasons)::text AS reason_json
             FROM points p
             LEFT JOIN messages msg ON msg.at=p.at
             LEFT JOIN deliveries del ON del.at=p.at
             LEFT JOIN failures fail ON fail.at=p.at
             ORDER BY p.at
-            """,step,points,step,step,step,step,step,step);
+            """,step,points,step,step,step,step,step,step,selected,selected);
         List<Map<String,Object>> series = new ArrayList<>(rows.size());
         long messages = 0, deliveries = 0, failures = 0;
         for (var row : rows) {
@@ -166,6 +182,18 @@ public class OverviewController {
             point.put("partial", row.get("partial"));
             series.add(point);
         }
+        List<Map<String,Object>> reasons = new ArrayList<>();
+        long allFailures = 0;
+        if (!rows.isEmpty()) {
+            for (var node : json.readTree(rows.getFirst().get("reason_json").toString())) {
+                long count = node.path("count").asLong();
+                allFailures += count;
+                Map<String,Object> item = new LinkedHashMap<>();
+                item.put("code", node.path("code").asText());
+                item.put("count", count);
+                reasons.add(item);
+            }
+        }
         // 空表也返回完整网格：前端画的是"没有数据"，不是"没有窗口"。
         String asOf = rows.isEmpty() ? Instant.now().toString() : rows.getLast().get("as_of").toString();
         Map<String,Object> value = new LinkedHashMap<>();
@@ -175,8 +203,15 @@ public class OverviewController {
         value.put("hours", hours);
         value.put("bucket", bucket);
         value.put("bucketSeconds", seconds);
+        value.put("reason", selected.isEmpty() ? null : selected);
+        value.put("failureReasons", reasons);
         value.put("points", series);
-        value.put("totals", Map.of("messages", messages, "deliveries", deliveries, "failures", failures));
+        Map<String,Object> totals = new LinkedHashMap<>();
+        totals.put("messages", messages);
+        totals.put("deliveries", deliveries);
+        totals.put("failures", failures);
+        totals.put("allFailures", allFailures);
+        value.put("totals", totals);
         return value;
     }
 }

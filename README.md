@@ -203,7 +203,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | 路径 | 用途 |
 | --- | --- |
 | `GET /overview` | 只读运行统计，固定 UTC 今日窗口，附派生告警 `alerts` 与阈值 `thresholds` |
-| `GET /overview/trend?hours&bucket` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial` |
+| `GET /overview/trend?hours&bucket&reason` | 收件/投递/失败事件历史趋势；固定桶 `15m`–`1d`，末桶标 `partial`；失败可按 `reason` 收窄，响应含窗口原因折行 `failureReasons` |
 | `GET/POST /messages`，`POST /messages/{id}/read` | 消息列表、接入、已读 |
 | `GET/POST /devices`，`PUT /devices/{id}/enabled`，`PATCH /devices/{id}/name` | 设备登记、新投递开关及名称 CAS |
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |

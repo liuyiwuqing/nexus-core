@@ -100,13 +100,16 @@
 | `hours` | 1–168，默认 24 |
 | `bucket` | `15m`/`1h`/`6h`/`1d`，默认 `1h`；`hours×3600` 必须能被桶秒整除 |
 | 桶数 | `hours×3600÷bucketSeconds`，超过 400 返回 400 `invalid_request` |
+| `reason` | 可选，按投递历史的 `last_error` 收窄失败序列；去空白后 1–64 字符，空值或超长返回 400 `invalid_request`，未知原因返回空失败序列而不是错误 |
 
-返回 `asOf`、`from`、`to`、`hours`、`bucket`、`bucketSeconds`、`totals{messages,deliveries,failures}` 和固定长度的 `points[]`。每个点包含 `at`（UTC 整点桶起点）、`messages`、`deliveries`、`failures`、`partial`。**最后一桶是当前未结束的桶**（`partial=true`），数值会随刷新增长，页面对此有明确文案；空窗口仍返回完整网格，页面据此区分“没有数据”和“没有窗口”。
+返回 `asOf`、`from`、`to`、`hours`、`bucket`、`bucketSeconds`、`reason`、`failureReasons`、`totals{messages,deliveries,failures,allFailures}` 和固定长度的 `points[]`。每个点包含 `at`（UTC 整点桶起点）、`messages`、`deliveries`、`failures`、`partial`。**最后一桶是当前未结束的桶**（`partial=true`），数值会随刷新增长，页面对此有明确文案；空窗口仍返回完整网格，页面据此区分“没有数据”和“没有窗口”。
+
+`failureReasons` 是窗口内全部失败事件按 `coalesce(last_error,'unknown')` 的归并，形如 `[{code,count}]`，按 `count` 降序、同数量按 `code` 升序；它**始终覆盖整个窗口**，不受 `reason` 影响。`totals.allFailures` 由这个归并求和得出，因此两者同源。`reason` 为空时 `totals.failures = totals.allFailures`；带 `reason` 时只有失败序列与 `totals.failures` 收窄，`failureReasons` 与 `allFailures` 仍保留窗口全量，供页面切换原因。
 
 口径：
 
 - `messages`/`deliveries` 与今日统计同源：按消息 `received_at` 归桶、排除 `metadata.test=true`、来源时间不移动归日、未来收件不计。
-- `failures` 来自 `delivery_history` 中 `status='failed'` 且 `kind<>'baseline'` 的记录，按 `recorded_at` 归桶。它是“进入失败的次数”，不是“当前失败按收件桶回看”；迁移前的 baseline 不计为失败事件，因此窗口早于该表建立时无法还原。
+- `failures` 来自 `delivery_history` 中 `status='failed'` 且 `kind<>'baseline'` 的记录，按 `recorded_at` 归桶。它是“进入失败的次数”，不是“当前失败按收件桶回看”；迁移前的 baseline 不计为失败事件，因此窗口早于该表建立时无法还原。`failureReasons` 使用同一批事件；`last_error` 为空的旧行归入 `unknown`。
 - 三个序列都只覆盖仍保留的记录：保留策略清理后对应桶会变空，趋势不是永久累计。
 - 桶按固定 origin（`2000-01-01T00:00:00Z`）用 `date_bin` 对齐，因此 15 分钟与 6 小时桶在不同窗口间一致；不使用 `date_trunc`，它不支持任意间隔。
 
@@ -119,6 +122,6 @@ python3 tools/run_local.py build
 bash tools/ci/test_overview_ui.sh
 ```
 
-HTTP/独立 PostgreSQL 专项覆盖空数据/鉴权、UTC 日界、旧来源时间/未来收件、在线 90 秒阈值/停用重合、当前失败比例/跨日积压与只读重复请求；阈值配置专项覆盖默认 v1 与空历史、管理员写入推进版本并写审计、`updated_by` 取登录身份、旧版本 409、`failureRate` 越界与 `failureRateMinSample=0` 的 400、新阈值立即改变概览判定与 `threshold` 数值、operator 写 403；告警专项覆盖空设备不报、只有停用设备不报、积压 99/100 边界、失败率 19 条样本不判定、2/20=10% 命中、无启用设备离线、`comparison` 方向与 `target` 下的页签/状态；失败原因专项覆盖折行合计等于今日失败数、多寡排序、测试消息与昨日失败被排除；列表专项覆盖按原因收窄、`unknown` 落回 NULL、未知原因返回空结果、非法原因与既有非法参数同样 400、导出与列表筛同一批；`OverviewAlertsTest` 是纯函数测试，直接覆盖夹具起不来的分支（MQTT 不可用是唯一的 `error` 且不带 `target`、告警顺序、各阈值边界、默认阈值与自定义阈值对同一快照给出不同结论）。趋势专项覆盖固定桶数、最后一桶 partial、收件归桶、测试消息/未来收件排除、失败事件归桶、窗口与桶数上限 400/401。浏览器检查覆盖数据、MQTT 异常（且不给它按钮）、加载/重复点击、空/失败/恢复、可见轮询、导航/退出的迟到响应、401、阈值文案与样本门槛、调整阈值到 v2 后概览文案同步（夹具核对写入值）、三处越线各自成条、上调阈值后同一比例不再告警、告警消除、三条告警各自钻取到已筛选列表（夹具核对请求真的带 `status`）、失败原因命名与折行合计、原因钻取到只有这类失败（核对请求同时带 `status` 与 `lastError`）、清空筛选后请求不再带任何筛选、趋势 24/28 桶与范围切换、趋势空/失败/恢复和 390px（含告警按钮）；夹具不是 CORE、Broker 或设备联调。实际结果与配套提交见 [04 台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
+HTTP/独立 PostgreSQL 专项覆盖空数据/鉴权、UTC 日界、旧来源时间/未来收件、在线 90 秒阈值/停用重合、当前失败比例/跨日积压与只读重复请求；阈值配置专项覆盖默认 v1 与空历史、管理员写入推进版本并写审计、`updated_by` 取登录身份、旧版本 409、`failureRate` 越界与 `failureRateMinSample=0` 的 400、新阈值立即改变概览判定与 `threshold` 数值、operator 写 403；告警专项覆盖空设备不报、只有停用设备不报、积压 99/100 边界、失败率 19 条样本不判定、2/20=10% 命中、无启用设备离线、`comparison` 方向与 `target` 下的页签/状态；失败原因专项覆盖折行合计等于今日失败数、多寡排序、测试消息与昨日失败被排除；列表专项覆盖按原因收窄、`unknown` 落回 NULL、未知原因返回空结果、非法原因与既有非法参数同样 400、导出与列表筛同一批；`OverviewAlertsTest` 是纯函数测试，直接覆盖夹具起不来的分支（MQTT 不可用是唯一的 `error` 且不带 `target`、告警顺序、各阈值边界、默认阈值与自定义阈值对同一快照给出不同结论）。趋势专项覆盖固定桶数、最后一桶 partial、收件归桶、测试消息/未来收件排除、失败事件归桶、窗口与桶数上限 400/401、原因折行排序与合计、`reason` 只收窄失败序列且保留窗口折行、未知原因返回空序列、空值/空白/超长原因 400。浏览器检查覆盖数据、MQTT 异常（且不给它按钮）、加载/重复点击、空/失败/恢复、可见轮询、导航/退出的迟到响应、401、阈值文案与样本门槛、调整阈值到 v2 后概览文案同步（夹具核对写入值）、三处越线各自成条、上调阈值后同一比例不再告警、告警消除、三条告警各自钻取到已筛选列表（夹具核对请求真的带 `status`）、失败原因命名与折行合计、原因钻取到只有这类失败（核对请求同时带 `status` 与 `lastError`）、清空筛选后请求不再带任何筛选、趋势 24/28 桶与范围切换、趋势空/失败/恢复、趋势原因折行与计数、点选原因后只收窄失败列并保留窗口总数（核对请求带 `reason`）、清空原因后请求不再带筛选、390px（含趋势原因行）；夹具不是 CORE、Broker 或设备联调。实际结果与配套提交见 [04 台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
 
 规范沉淀：统计口径属于本项目契约；沿用已有测试和生命周期流程，无需修改通用 Skill。

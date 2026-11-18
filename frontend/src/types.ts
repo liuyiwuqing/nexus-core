@@ -119,7 +119,9 @@ export interface Overview {
 export interface OverviewTrendPoint { at: string; messages: number; deliveries: number; failures: number; partial: boolean }
 export interface OverviewTrend {
   asOf: string; from: string; to: string; hours: number; bucket: string; bucketSeconds: number;
-  points: OverviewTrendPoint[]; totals: { messages: number; deliveries: number; failures: number };
+  reason: string | null; failureReasons: OverviewFailureReason[];
+  points: OverviewTrendPoint[];
+  totals: { messages: number; deliveries: number; failures: number; allFailures: number };
 }
 export type Api = <T>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export interface Analysis {

@@ -320,6 +320,49 @@ class ConsoleOverviewFlowTest {
         assertThat(trend.path("to").asText()).isEqualTo(trend.path("asOf").asText());
     }
 
+    @Test void trendSplitsFailureEventsByReasonAndNarrowsTheSeries()throws Exception {
+        fixtures.update("INSERT INTO devices(device_id,name,enabled,online,last_seen) VALUES ('reason-device','原因设备',true,true,now())");
+        String timeout=createMessage("确认超时"),busy=createMessage("设备忙"),unrecorded=createMessage("未记录原因");
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(timeout));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='busy' WHERE message_id=?",UUID.fromString(busy));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error=NULL WHERE message_id=?",UUID.fromString(unrecorded));
+
+        var all=trend("hours=6&bucket=1h");
+        assertThat(all.path("reason").isNull()).isTrue();
+        assertThat(all.path("totals").path("failures").asInt()).isEqualTo(3);
+        assertThat(all.path("totals").path("allFailures").asInt()).isEqualTo(3);
+        var reasons=all.path("failureReasons");
+        assertThat(reasons.size()).isEqualTo(3);
+        // 数量相同时按 code 排序；unknown 覆盖没有 last_error 的旧行。
+        assertThat(reasons.get(0).path("code").asText()).isEqualTo("ack_timeout");
+        assertThat(reasons.get(1).path("code").asText()).isEqualTo("busy");
+        assertThat(reasons.get(2).path("code").asText()).isEqualTo("unknown");
+        long reasonSum=0;
+        for(var item:reasons)reasonSum+=item.path("count").asInt();
+        assertThat(reasonSum).isEqualTo(all.path("totals").path("allFailures").asInt());
+        assertThat(all.path("totals").path("messages").asInt()).isEqualTo(3);
+
+        var busyOnly=trend("hours=6&bucket=1h&reason=busy");
+        assertThat(busyOnly.path("reason").asText()).isEqualTo("busy");
+        assertThat(busyOnly.path("totals").path("failures").asInt()).isEqualTo(1);
+        assertThat(busyOnly.path("totals").path("allFailures").asInt()).isEqualTo(3);
+        assertThat(busyOnly.path("failureReasons").size()).isEqualTo(3);
+        long busyPoints=0;
+        for(var point:busyOnly.path("points"))busyPoints+=point.path("failures").asInt();
+        assertThat(busyPoints).isEqualTo(1);
+
+        // 未知原因不是错误，只得到空失败序列；折行仍保留整个窗口。
+        var missing=trend("hours=6&bucket=1h&reason=expired");
+        assertThat(missing.path("totals").path("failures").asInt()).isZero();
+        assertThat(missing.path("totals").path("allFailures").asInt()).isEqualTo(3);
+        assertThat(missing.path("failureReasons").size()).isEqualTo(3);
+        assertThat(missing.path("totals").path("messages").asInt()).isEqualTo(3);
+
+        assertThat(trendRequest("hours=6&bucket=1h&reason=").statusCode()).isEqualTo(400);
+        assertThat(trendRequest("hours=6&bucket=1h&reason=%20").statusCode()).isEqualTo(400);
+        assertThat(trendRequest("hours=6&bucket=1h&reason="+"x".repeat(65)).statusCode()).isEqualTo(400);
+    }
+
     @Test void trendRejectsUnboundedWindowsAndKeepsAGridWhenEmpty()throws Exception {
         assertThat(trendRequest("hours=0&bucket=1h").statusCode()).isEqualTo(400);
         assertThat(trendRequest("hours=24&bucket=7m").statusCode()).isEqualTo(400);
@@ -331,6 +374,9 @@ class ConsoleOverviewFlowTest {
         assertThat(empty.path("totals").path("messages").asInt()).isZero();
         assertThat(empty.path("totals").path("deliveries").asInt()).isZero();
         assertThat(empty.path("totals").path("failures").asInt()).isZero();
+        assertThat(empty.path("totals").path("allFailures").asInt()).isZero();
+        assertThat(empty.path("failureReasons").size()).isZero();
+        assertThat(empty.path("reason").isNull()).isTrue();
         assertThat(empty.path("points").get(23).path("partial").asBoolean()).isTrue();
     }
 

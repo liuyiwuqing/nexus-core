@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { NButton } from 'naive-ui';
 import ConsoleState from './ConsoleState.vue';
-import { formatTime, type Api, type OverviewTrend, type OverviewTrendPoint } from './types';
+import { deliveryErrorNames, formatTime, type Api, type OverviewTrend, type OverviewTrendPoint } from './types';
 import { readFailure } from './failure';
 
 // 趋势与快照分开读取：快照每 5 秒轮询，趋势只在切换范围或点刷新时读，避免长窗口反复扫表。
@@ -15,6 +15,7 @@ const ranges = [
 type RangeId = (typeof ranges)[number]['id'];
 const bucketLabels: Record<string, string> = { '15m': '15 分钟', '1h': '1 小时', '6h': '6 小时', '1d': '1 天' };
 const range = ref<RangeId>('24h');
+const reason = ref('');
 const current = computed(() => ranges.find(item => item.id === range.value)!);
 const data = ref<OverviewTrend | null>(null), loading = ref(false), error = ref('');
 let alive = true, generation = 0, control: AbortController | undefined;
@@ -27,8 +28,10 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
+    const query = new URLSearchParams({ hours: String(current.value.hours), bucket: current.value.bucket });
+    if (reason.value) query.set('reason', reason.value);
     const value = await props.api<OverviewTrend>(
-      `overview/trend?hours=${current.value.hours}&bucket=${current.value.bucket}`, 'GET', undefined, ctl.signal);
+      `overview/trend?${query}`, 'GET', undefined, ctl.signal);
     if (alive && ticket === generation) data.value = value;
   } catch (failure) {
     if (alive && ticket === generation && !ctl.signal.aborted) {
@@ -53,13 +56,23 @@ function barY(value: number, max: number) { return HEIGHT - Math.round((value / 
 function pointLabel(point: OverviewTrendPoint) {
   return `${formatTime(point.at)} · 收件 ${point.messages} · 投递 ${point.deliveries} · 失败 ${point.failures}`;
 }
+function reasonName(code: string) { return deliveryErrorNames[code] ?? code; }
+function pickReason(code: string) { reason.value = reason.value === code ? '' : code; }
+function clearReason() { if (reason.value) reason.value = ''; }
+const failureSummary = computed(() => {
+  if (!data.value) return '';
+  const base = `失败事件 ${data.value.totals.failures} 次`;
+  return data.value.reason
+    ? `${base}（仅${reasonName(data.value.reason)}；窗口共 ${data.value.totals.allFailures} 次）`
+    : base;
+});
 const summary = computed(() => data.value
-  ? `窗口内收件 ${data.value.totals.messages} 条 · 投递 ${data.value.totals.deliveries} 条 · 失败事件 ${data.value.totals.failures} 次`
+  ? `窗口内收件 ${data.value.totals.messages} 条 · 投递 ${data.value.totals.deliveries} 条 · ${failureSummary.value}`
   : '');
 
 onMounted(load);
 onUnmounted(() => { alive = false; control?.abort(); });
-watch(range, load);
+watch([range, reason], load);
 </script>
 
 <template>
@@ -92,9 +105,9 @@ watch(range, load);
             <title>{{ pointLabel(point) }}</title>
           </rect>
         </svg>
-        <figcaption>失败事件（次）</figcaption>
+        <figcaption>失败事件（次）<template v-if="data.reason"> · 仅 {{ reasonName(data.reason) }}</template></figcaption>
         <svg class="overview-trend-chart overview-trend-chart--failures" :viewBox="`0 0 ${WIDTH} ${HEIGHT}`"
-          preserveAspectRatio="none" role="img" :aria-label="`失败事件趋势，${summary}`">
+          preserveAspectRatio="none" role="img" :aria-label="`失败事件趋势，${failureSummary}`">
           <line class="overview-trend-axis" x1="0" :y1="HEIGHT" :x2="WIDTH" :y2="HEIGHT" />
           <rect v-for="(point, index) in points" :key="point.at" class="overview-trend-bar overview-trend-bar--failure"
             :class="{ 'is-partial': point.partial, 'is-empty': point.failures === 0 }" :data-index="index"
@@ -103,6 +116,23 @@ watch(range, load);
             <title>{{ pointLabel(point) }}</title>
           </rect>
         </svg>
+        <div v-if="data.failureReasons.length || data.reason" class="overview-trend-reasons">
+          <p v-if="data.failureReasons.length" class="overview-caption">
+            窗口内失败事件按原因（合计 {{ data.totals.allFailures }} 次），点选可只查看该原因
+          </p>
+          <ul v-if="data.failureReasons.length">
+            <li v-for="item in data.failureReasons" :key="item.code">
+              <NButton attr-type="button" class="text-button" :data-trend-reason="item.code"
+                :aria-pressed="data.reason === item.code" @click="pickReason(item.code)">
+                {{ reasonName(item.code) }} <strong>{{ item.count }}</strong>
+              </NButton>
+            </li>
+          </ul>
+          <p v-if="data.reason" class="overview-caption">
+            <NButton attr-type="button" class="text-button" @click="clearReason">全部原因</NButton>
+            <span v-if="data.totals.failures === 0">该原因在窗口内没有失败事件。</span>
+          </p>
+        </div>
         <p class="overview-caption">
           每桶 {{ bucketLabels[data.bucket] ?? data.bucket }}，共 {{ data.points.length }} 桶；最后一桶尚未结束。
           失败按投递历史记录的进入 failed 事件计数，不是当前失败状态回看。
@@ -130,4 +160,10 @@ watch(range, load);
 .overview-trend-bar.is-partial { opacity: .55; }
 .overview-trend-bar--failure { fill: var(--danger); }
 .overview-trend-bar--failure.is-empty { fill: transparent; }
+.overview-trend-reasons { margin: var(--space-1) 0 var(--space-2); }
+.overview-trend-reasons ul { display: flex; flex-wrap: wrap; gap: var(--space-2);
+  margin: var(--space-1) 0; padding: 0; list-style: none; }
+.overview-trend-reasons li { display: flex; }
+.overview-trend-reasons [aria-pressed='true'] { color: var(--ink); font-weight: 600; }
+.overview-trend-reasons strong { margin-left: 4px; font-variant-numeric: tabular-nums; }
 </style>
