@@ -8,7 +8,7 @@ import { Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
 import { computed, nextTick, ref, watch } from 'vue';
-import { formatTime, type Api, type Message, type MessageSubmission, type Page, type ListSearch } from './types';
+import { formatTime, type Api, type Message, type MessagePriority, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
@@ -20,7 +20,7 @@ const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
   pending: MessageSubmission | null; uncertain: boolean;
-  create: (title: string, content: string) => Promise<string | null>;
+  create: (title: string, content: string, priority: MessagePriority) => Promise<string | null>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
@@ -57,16 +57,25 @@ const compose = ref(false);
 const bodyExport=ref(false),bodyConfirm=ref(false);
 const title = ref('');
 const content = ref('');
+const priority = ref<MessagePriority>('normal');
+const priorities: { label: string; value: MessagePriority }[] = [
+  { label: '低', value: 'low' },
+  { label: '普通', value: 'normal' },
+  { label: '高', value: 'high' },
+  { label: '紧急', value: 'critical' },
+];
 watch(() => props.pending, submission => {
-  if (submission) { title.value = submission.title; content.value = submission.content; compose.value = true; }
+  if (submission) {
+    title.value = submission.title; content.value = submission.content; priority.value = submission.priority; compose.value = true;
+  }
 }, { immediate: true });
 const note = ref<InstanceType<typeof StatusNote> | null>(null);
 const receiptId = ref('');
 async function send() {
-  const sent = await props.create(title.value, content.value);
+  const sent = await props.create(title.value, content.value, priority.value);
   if (sent) {
     receiptId.value = sent;
-    title.value = ''; content.value = ''; compose.value = false; return;
+    title.value = ''; content.value = ''; priority.value = 'normal'; compose.value = false; return;
   }
   // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
   await nextTick(); note.value?.focus();
@@ -183,9 +192,23 @@ async function send() {
           :readonly="!!pending"
         />
       </ConsoleField>
+      <ConsoleField
+        path="field-4"
+        :label-props="{ id: 'inboxpanel-field-4' + '-label', for: 'inboxpanel-field-4' }"
+      >
+        <template #label>优先级</template>
+        <NSelect
+          class="priority-select"
+          :value="priority"
+          :options="priorities"
+          :disabled="busy || !!pending"
+          :input-props="{ id: 'inboxpanel-field-4', 'aria-label': '优先级' }"
+          @update:value="(value: MessagePriority) => (priority = value)"
+        />
+      </ConsoleField>
       <StatusNote v-if="uncertain" ref="note" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>
       <div class="form-footer">
-        <span>发送到所有已启用的设备。</span>
+        <span>发送到所有已启用的设备；低/普通不打扰，高亮屏不发声，紧急正常提醒。</span>
         <NButton type="primary" attr-type="submit" class="primary" :disabled="busy">
           {{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}
         </NButton>

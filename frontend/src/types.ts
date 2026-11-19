@@ -1,10 +1,11 @@
 export interface Page<T> { items: T[]; total: number; page: number; size: number }
 export interface ListSearch { identity: string; receivedFrom: string; receivedBefore: string }
-export interface MessageSubmission { readonly eventId: string; readonly title: string; readonly content: string }
+export type MessagePriority = 'low' | 'normal' | 'high' | 'critical';
+export interface MessageSubmission { readonly eventId: string; readonly title: string; readonly content: string; readonly priority: MessagePriority }
 export interface Message {
   messageId: string; connectorId: string; source: string; eventType: string;
   title: string; content: string; summary: string; sender: string; originalUrl: string;
-  priority: 'low' | 'normal' | 'high' | 'critical'; receivedAt: string; createdAt: string;
+  priority: MessagePriority; receivedAt: string; createdAt: string;
   expiresAt: string; readAt: string | null; readStatus: 'read' | 'unread'; dataClass: string;
   contentPurgedAt?: string | null;
 }

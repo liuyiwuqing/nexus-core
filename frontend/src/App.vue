@@ -14,7 +14,7 @@ import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
 import { ApiFailure, readFailure } from './failure';
 import type { Role,ConsoleSession as SessionInfo } from './access';
-import { type Message, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type DevicePage, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
+import { type Message, type MessagePriority, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type DevicePage, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
 const ConnectorsPanel = asyncPanel('connectors');
@@ -302,17 +302,17 @@ async function mutate(action: () => Promise<unknown>, success: string): Promise<
   } finally { busy.value = false; }
 }
 
-async function createMessage(title: string, content: string): Promise<string | null> {
+async function createMessage(title: string, content: string, priority: MessagePriority): Promise<string | null> {
   if (busy.value) return null;
   const currentEpoch = epoch;
   // HTTP 结果未知时，重试必须保持同一逻辑提交；导航不能丢掉去重身份。
-  const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content };
+  const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content, priority };
   messageSubmission.value = submission;
   let acceptedId = '';
   const done = await mutate(async () => {
     try {
       const accepted = await api<{ messageId: string }>('messages', 'POST', {
-        connectorId: 'manual', source: 'manual', eventType: 'manual.test', priority: 'normal', ...submission,
+        connectorId: 'manual', source: 'manual', eventType: 'manual.test', ...submission,
       });
       if (!accepted || typeof accepted.messageId !== 'string' || !accepted.messageId)
         throw new Error('Invalid message acknowledgment');
