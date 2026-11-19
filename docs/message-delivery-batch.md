@@ -1,6 +1,6 @@
-# 投递批量撤销与重试 · MSG-BATCH-01/02
+# 投递批量撤销与重试 · MSG-BATCH-01/02 + DEVICE-QUEUE-CLEAR-01
 
-状态：CORE 侧软件已实现（2026-11-18），隔离 HTTP/PostgreSQL 与真实 Vue 页面验证通过；单条消息与跨消息两种范围共用同一套判定。
+状态：CORE 侧软件已实现（2026-11-19），隔离 HTTP/PostgreSQL 与真实 Vue 页面验证通过；单条消息、跨消息和单设备待发队列三种范围共用同一套判定。
 
 一条消息会为每台启用设备各建一条投递。此前撤销和重试只能进单条投递的时间线操作，设备一多就要重复点 N 次，而且每次都要看一条时间线。本项提供按消息的批量入口，**不新增批量范围**：能批量的条件与单条接口完全一致。
 
@@ -154,3 +154,50 @@ bash tools/ci/test_message_batch_ui.sh
 - 完整 CORE 构建：168 项，0 失败/0 错误，5 项条件跳过。
 
 未验收：真实 Broker/设备上的跨消息批量表现、接近上限时的耗时、多管理员并发操作同一批消息，以及生产库。
+
+## 8. 单设备待发队列 · DEVICE-QUEUE-CLEAR-01
+
+状态：软件已实现（2026-11-19）。产品计划里设备危险操作的「清空队列」落地为**只撤销该设备尚未开始发送的投递**：设备卡片上的「待接收 N 条」旁展开「撤销待发…」，范围与卡片计数同为 pending+sent，但已发送等待回执的行不会被假装撤回。
+
+### 8.1 接口与范围
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `POST /api/v1/devices/{deviceId}/deliveries/cancel?dryRun=true` | 只读核对整条待发队列，列出可撤销与保留原因 |
+| `POST /api/v1/devices/{deviceId}/deliveries/cancel?confirm=CANCEL_DEVICE_DELIVERIES` | 执行撤销 |
+
+```json
+{
+  "deviceId": "dodo-1", "action": "cancel", "dryRun": false, "applied": 2,
+  "counts": { "waiting": 3, "candidates": 2, "skipped": 1, "remaining": 0 },
+  "candidates": [ { "eventId": "…", "deviceId": "dodo-1", "status": "pending", "attempts": 0 } ],
+  "skipped":    [ { "eventId": "…", "deviceId": "dodo-1", "status": "sent", "attempts": 1, "reason": "not_pending" } ],
+  "asOf": "2026-11-19T01:00:00Z"
+}
+```
+
+- `counts.waiting` 是请求开始时的 pending+sent 快照，与设备卡片的「待接收 N 条」同口径；`candidates` 是其中通过 `CAN_CANCEL` 的条数，`applied` 是实际改动，`remaining` 是写入后仍可撤销的条数。正常写入后 `waiting = applied + skipped + remaining`；并发预留或回执可能让快照与结果略有差异，页面以随后的重新预演为准。
+- failed 等终态不在本入口的范围，仍走单条重试或按消息/跨消息重试。
+- 等待行超过 500 条返回 `409 batch_too_large`，不截断；设备不存在返回 `404 device_not_found`；非预演缺少确认令牌返回 `400 delivery_batch_confirmation_required`。
+- 设备路径沿用 CORE 的管理员边界：viewer 与 operator 都返回 403，避免借队列撤销绕开设备权限。
+
+### 8.2 判定与审计
+
+写入复用同一个 `CAN_CANCEL` 和同一条 `UPDATE … RETURNING`，只是把消息范围换成 `d.device_id=? AND d.status IN ('pending','sent')`；跳过原因仍是谓词各合取项的否定。每行改动照常由 `delivery_history` 触发器记录 `state_changed`，`last_error='cancelled_by_admin'`；不新增迁移、不发送撤回包，也不改变已收到/已展示/已读事实。
+
+### 8.3 管理台
+
+卡片上的「待接收 N 条」与「撤销待发…」并排；撤销面板与设置、升级、改名、删除互斥，展开即发一次 `dryRun` 预演，显示「待接收 / 可撤销 / 保留」和保留原因折行（例如「已发送，等待回执 1」）。只有存在候选时才出现确认区，且必须输入设备名；写入成功后显示实际撤销条数、重新预演并把卡片计数更新为服务端结果。读取失败清空旧计划、只显示错误；未知结果先重读队列，不自动重放。收起或 Esc 后焦点回到撤销入口。
+
+### 8.4 验证
+
+```sh
+JAVA_HOME="$(/usr/libexec/java_home -v 21)" mvn -s .mvn/settings.xml -B -ntp -Dtest=DeviceDeliveryQueueFlowTest test
+# 同级 04 项目，使用实际编译 Vue 与回环 RAM HTTP 夹具
+bash tools/ci/test_management_ui.sh
+```
+
+- `DeviceDeliveryQueueFlowTest`（真实 HTTP + 隔离 PostgreSQL/MQTT，3 项）：预演只读且 sent/attempted 的保留原因正确；撤销只改该设备 pending+0，其他设备与已发送行不变，历史写入 `state_changed` 并可从筛选复核；确认令牌、viewer/operator 403、未知设备 404 与 501 条队列 409 且不写入。
+- 完整 CORE `build` 与 04 `test_management_ui.sh` 结果见任务台账；浏览器夹具是回环 RAM，不是真实 CORE、Broker 或设备。
+
+未验收：真实 Broker/设备上的设备级撤销、撤销后设备侧仍展示旧提醒的行为、接近 500 条时的耗时，以及生产库并发。

@@ -787,6 +787,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         @size="deviceSizeChange"
         @page="devicePageChange"
         @deliveries="drillDeviceDeliveries"
+        @queue-changed="fullRefresh(true)"
       />
       <section v-else-if="tab === 'connectors'">
         <ConnectorsPanel :items="connectors" :busy="busy" :loading="loading" :failed="readFailed" :poll="poll" :import-comment="importComment" />

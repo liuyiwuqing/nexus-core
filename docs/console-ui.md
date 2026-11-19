@@ -247,3 +247,11 @@ CONSOLE-25 最终：22 组浏览器 1038 次检查通过（状态矩阵 125，�
 `GET /api/v1/deliveries` 与 `/deliveries/export` 新增可选 `waiting`：只接受 `true`/`false`；`true` 追加 `d.status IN ('pending','sent')`，`false` 等同于省略。`waiting=true` 与 `status` 同时出现、空值或其他拼写均返回 400（`invalid_list_filter`）。设备、失败原因与收件窗口仍可正常叠加；页面在状态为「待接收」时发送 `waiting=true`，导出与列表共用同一条谓词。
 
 钻取沿用告警钻取的做法：先清空上一次搜索、写入设备身份与「待接收」，清空旧行并回到第 1 页，再切页签；不会先读一遍全表，也不会被旧筛选收窄。返回设备页时保留原状态筛选与页码。卡片计数与钻取结果都是读时快照，并发接收/失败后可能不同，页面不把它们当作同一事务。
+
+## 设备待发队列撤销（DEVICE-QUEUE-CLEAR-01）
+
+设备卡片的「待接收 N 条」旁新增管理员入口「撤销待发…」，把产品计划里的「清空队列」落到可验证的范围：只取消该设备 pending+sent 队列中尚未开始发送的投递。展开后先发 `POST /api/v1/devices/{id}/deliveries/cancel?dryRun=true`，显示「待接收 / 可撤销 / 保留」及保留原因；没有候选时不出现确认区。确认必须输入完整设备名称，写入带 `confirm=CANCEL_DEVICE_DELIVERIES`，成功后显示实际条数、重新预演并整表刷新卡片计数。
+
+已发送等待回执的行保留并归类为「已发送，等待回执」；它不会被撤回，也不会从设备消失。面板与设置/升级/改名/删除互斥，读取失败清空旧计划，未知结果先重读队列；收起或 Esc 后焦点回到入口。接口、判定与边界见 [投递批量撤销与重试](message-delivery-batch.md#8-单设备待发队列--device-queue-clear-01)。
+
+验证（2026-11-19，本机 macOS/Docker）：`DeviceDeliveryQueueFlowTest` 3 项通过（预演只读与保留原因、单设备撤销与历史、确认令牌/角色/404/501 条 409）；04 `test_management_ui.sh` 新增 7 项、共 81 项通过，覆盖预演计数、保留原因、设备名确认、写入后计数与读取失败。夹具是回环 RAM，不连接真实 CORE、数据库、Broker 或设备。

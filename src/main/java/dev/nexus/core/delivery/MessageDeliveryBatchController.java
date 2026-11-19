@@ -18,9 +18,9 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/v1/messages/{messageId}/deliveries")
 public class MessageDeliveryBatchController {
-    private final MessageDeliveryBatchService batches;
+    private final DeliveryBatchService batches;
 
-    public MessageDeliveryBatchController(MessageDeliveryBatchService batches) { this.batches = batches; }
+    public MessageDeliveryBatchController(DeliveryBatchService batches) { this.batches = batches; }
 
     @PostMapping("/cancel")
     Map<String,Object> cancel(@PathVariable UUID messageId, @RequestParam(defaultValue="false") boolean dryRun,

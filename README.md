@@ -76,6 +76,8 @@ python3 tools/run_local.py run
 
 消息详情另有[投递批量操作](docs/message-delivery-batch.md)：对当前消息一次性撤销「从未开始发送」的投递或重试「已失败」的投递。批量条件与单条接口共用同一判定，跳过原因按条列出；`dryRun` 只读预演，写入需确认令牌，超过 500 条拒绝而不是截断。
 
+设备卡片的「待接收 N 条」旁提供「撤销待发…」：只处理该设备 pending+sent 队列中从未开始发送的投递，已发送等待回执的行会保留并说明原因；计划同样只读预演，写入需输入设备名并带设备级确认令牌。它不撤回设备已收到的内容，也不替代停用设备。
+
 工具与规则创建在断线后保持同一提交编号和参数；规则 API 提供可选 `requestKey`，旧调用仍兼容。独立读取/审计失败会隐藏旧操作，详情见[工具与自动化故障处理](docs/console-operations.md)。
 
 `build` 先检查 TypeScript、构建前端，再运行 Maven verify，输出 `target/nexus-core-0.1.0-SNAPSHOT.jar`；需要 Docker 执行集成测试。`test` 不读取 `data/local.env`，测试使用独立数据库和 Broker，不接真实博客/模型。环境变量优先于本机配置。配置文件按 `KEY=value` 读取，不执行 shell，也不要添加 shell 引号或变量替换。
@@ -212,6 +214,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态或 `waiting=true` 待接收、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
 | `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
 | `POST /deliveries/batch-{cancel,retry}` | 跨消息批量，请求体 `messageIds`；最多 20 条消息且合计 500 条投递，整单一个事务，任一消息不可读返回 404 且不写入；写入令牌 `CANCEL_MESSAGE_DELIVERIES_BATCH` / `RETRY_MESSAGE_DELIVERIES_BATCH` |
+| `POST /devices/{id}/deliveries/cancel` | 单设备待发队列：只读预演 pending+sent 中从未开始发送的投递并列出保留原因；写入需 `confirm=CANCEL_DEVICE_DELIVERIES`，超过 500 条返回 409；管理员专用 |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |
 | `POST /connectors/halo/comments/{name}/import` | 显式导入单条历史公开评论 |
 | `GET /ai`，`GET/POST /messages/{id}/analysis`，`POST .../analysis/retry` | 模型状态和分析 |

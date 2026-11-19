@@ -22,9 +22,9 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/v1/deliveries")
 public class MessageDeliveryMultiBatchController {
-    private final MessageDeliveryBatchService batches;
+    private final DeliveryBatchService batches;
 
-    public MessageDeliveryMultiBatchController(MessageDeliveryBatchService batches) { this.batches = batches; }
+    public MessageDeliveryMultiBatchController(DeliveryBatchService batches) { this.batches = batches; }
 
     public record Selection(List<UUID> messageIds) {}
 

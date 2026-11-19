@@ -9,10 +9,11 @@ import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
+import DeviceQueuePanel from './DeviceQueuePanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
 const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean>; remove: (id: string) => Promise<boolean> }>();
-const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number]; deliveries: [deviceId: string] }>();
+const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number]; deliveries: [deviceId: string]; queueChanged: [] }>();
 // 搜索输入本地防抖 300ms 后才请求；排序与页大小立即生效并回到第一页。
 const searchDraft = ref(props.q);
 watch(() => props.q, value => { if (value !== searchDraft.value) searchDraft.value = value; });
@@ -44,6 +45,7 @@ const sizeOptions = [12, 24, 48, 96].map(value => ({ label: `每页 ${value} 台
 const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
+const queueId = ref('');
 const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
 const deleteId = ref(''), deleteDraft = ref(''), deleteSaving = ref(false);
@@ -55,7 +57,7 @@ const stateNames: Record<string, string> = { online: '在线', offline: '离线'
 const lastPage = computed(() => Math.max(1, Math.ceil(props.matched / props.size)));
 function loadName() { if (editingDevice.value) nameDraft.value = originalName.value = editingDevice.value.name; }
 async function editName(device: Device) {
-  deleteId.value = '';
+  deleteId.value = ''; queueId.value = '';
   renameId.value = device.deviceId; loadName(); await nextTick();
   document.getElementById('device-name-' + device.deviceId)?.focus();
 }
@@ -71,20 +73,30 @@ async function saveName() {
 }
 // 设置与升级互斥：同开会让 Tab 从升级按钮串进设置面板，卡内还会出现两组同名的刷新/收起按钮。
 async function manage(id: string) {
-  deleteId.value = '';
+  deleteId.value = ''; queueId.value = '';
   if (selectedId.value === id) { await closeManagement(id); return; }
   otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
 }
 async function upgrade(id: string) {
-  deleteId.value = '';
+  deleteId.value = ''; queueId.value = '';
   if (otaId.value === id) { await closeOta(); return; }
   selectedId.value = ''; otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus();
+}
+// 撤销待发与设置/升级/删除互斥，避免同一张卡里出现多组撤销确认。
+async function openQueue(device: Device) {
+  selectedId.value = ''; otaId.value = ''; deleteId.value = '';
+  if (queueId.value === device.deviceId) { await closeQueue(); return; }
+  queueId.value = device.deviceId; await nextTick(); document.getElementById('device-queue-panel')?.focus();
+}
+async function closeQueue() {
+  const id = queueId.value; queueId.value = ''; await nextTick();
+  document.getElementById('device-queue-' + id)?.focus();
 }
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
 async function closeManagement(id: string) { selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
 // 删除是不可逆操作：必须输入完整设备名称，且只对从未使用、未被引用的设备开放。
 async function askDelete(device: Device) {
-  selectedId.value = ''; otaId.value = '';
+  selectedId.value = ''; otaId.value = ''; queueId.value = '';
   deleteId.value = device.deviceId; deleteDraft.value = ''; await nextTick();
   document.getElementById('devicespanel-field-4')?.focus();
 }
@@ -217,7 +229,7 @@ async function submit() {
         :key="device.deviceId"
         class="device-card"
         :data-state="device.online ? 'online' : 'offline'"
-        :class="{ expanded: selectedId === device.deviceId || otaId === device.deviceId || deleteId === device.deviceId }"
+        :class="{ expanded: selectedId === device.deviceId || otaId === device.deviceId || deleteId === device.deviceId || queueId === device.deviceId }"
       >
         <div class="device-top">
           <span class="pet-symbol" aria-hidden="true">
@@ -260,6 +272,17 @@ async function submit() {
             @click="emit('deliveries', device.deviceId)"
           >
             {{ device.waitingDeliveries }} 条
+          </NButton>
+          <NButton
+            v-if="admin"
+            attr-type="button"
+            :id="'device-queue-' + device.deviceId"
+            class="text-button device-queue"
+            :aria-expanded="queueId === device.deviceId"
+            aria-controls="device-queue-panel"
+            @click="openQueue(device)"
+          >
+            撤销待发…
           </NButton>
         </p>
         <ConsoleForm v-if="renameId === device.deviceId" class="device-name-form" @submit.prevent="saveName">
@@ -376,6 +399,15 @@ async function submit() {
             <NButton attr-type="button" class="text-button" :disabled="busy || deleteSaving" @click="closeDelete">取消</NButton>
           </div>
         </ConsoleForm>
+        <DeviceQueuePanel
+          v-if="queueId === device.deviceId"
+          :key="'queue-' + device.deviceId"
+          :device="device"
+          :api="api"
+          :busy="busy"
+          @close="closeQueue"
+          @changed="emit('queueChanged')"
+        />
         <DeviceManagementPanel
           v-if="selectedId === device.deviceId"
           :key="'manage-' + device.deviceId"

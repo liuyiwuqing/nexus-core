@@ -12,6 +12,12 @@ export interface Device { deviceId: string; name: string; enabled: boolean; onli
   wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null;
   firmwareVersion?: string | null; waitingDeliveries?: number }
 export interface DeviceCounts { online: number; offline: number; disabled: number }
+export interface DeviceQueueItem { eventId: string; deviceId: string; status: string; attempts: number; reason?: string }
+export interface DeviceQueuePlan {
+  deviceId: string; action: 'cancel'; dryRun: boolean; applied: number;
+  counts: { waiting: number; candidates: number; skipped: number; remaining: number };
+  candidates: DeviceQueueItem[]; skipped: DeviceQueueItem[]; asOf: string;
+}
 export interface DevicePage extends Page<Device> { matched: number; state: string; q: string; sort: string; order: string; counts: DeviceCounts }
 export interface DeviceConfig {
   schemaVersion: 1; timezone: string; language: 'zh-CN'; volume: number; brightness: number; muted: boolean;

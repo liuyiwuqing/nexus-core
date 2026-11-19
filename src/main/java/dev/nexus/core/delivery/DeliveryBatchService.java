@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Applies cancel/retry to every delivery of one message.
+ * Applies cancel/retry to every delivery of one message, and cancel to one device's waiting queue.
  *
  * <p>The predicate is literally {@link DeliveryService#CAN_CANCEL}/{@link DeliveryService#CAN_RETRY},
  * so a batch can never reach a row the single-delivery endpoints refuse. Skip reasons are written as
@@ -23,7 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
  * "eligible" agree by construction instead of by a second, drifting copy of the rules.
  */
 @Service
-public class MessageDeliveryBatchService {
+public class DeliveryBatchService {
     /** A message fans out to a bounded device set; a larger batch would hide a runaway fan-out. */
     public static final int MAX_BATCH = 500;
     /** The console selects at most one page of messages; a larger span is accidental, not a plan. */
@@ -48,10 +48,14 @@ public class MessageDeliveryBatchService {
         UPDATE deliveries d SET status='pending',attempts=0,next_attempt_at=now(),last_error=NULL
         FROM inbox_messages m,devices v WHERE d.message_id=m.message_id AND d.device_id=v.device_id AND d.message_id=?"""
         + " AND " + DeliveryService.CAN_RETRY;
+    private static final String CANCEL_DEVICE_UPDATE = """
+        UPDATE deliveries d SET status='cancelled',last_error='cancelled_by_admin'
+        FROM inbox_messages m,devices v WHERE d.message_id=m.message_id AND d.device_id=v.device_id AND d.device_id=?"""
+        + " AND d.status IN ('pending','sent') AND " + DeliveryService.CAN_CANCEL;
 
     private final JdbcTemplate db;
 
-    public MessageDeliveryBatchService(JdbcTemplate db) { this.db = db; }
+    public DeliveryBatchService(JdbcTemplate db) { this.db = db; }
 
     record Row(UUID eventId, String deviceId, String status, int attempts, String reason) {}
 
@@ -80,6 +84,45 @@ public class MessageDeliveryBatchService {
         result.put("dryRun", dryRun);
         result.put("applied", applied.size());
         result.put("counts", Map.of("deliveries", deliveries, "candidates", candidates.size(),
+            "skipped", skipped.size(), "remaining", remaining));
+        result.put("candidates", candidates);
+        result.put("skipped", skipped);
+        result.put("asOf", Instant.now());
+        return result;
+    }
+
+    /**
+     * Cancels every delivery that is still waiting for one device and never started sending.
+     *
+     * <p>The scope is the same pending+sent set the device card counts, so the plan explains the
+     * whole visible queue: sent rows are reported as {@code not_pending} and stay untouched. A
+     * device queue is bounded like a message fan-out; a larger set is refused, not truncated.
+     */
+    @Transactional
+    public Map<String,Object> cancelDeviceQueue(String deviceId, boolean dryRun) {
+        if (db.queryForList("SELECT 1 FROM devices WHERE device_id=?", Integer.class, deviceId).isEmpty())
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "device_not_found");
+        int waiting = db.queryForObject("SELECT count(*) FROM deliveries WHERE device_id=? AND status IN ('pending','sent')",
+            Integer.class, deviceId);
+        if (waiting > MAX_BATCH) throw new ResponseStatusException(HttpStatus.CONFLICT, "batch_too_large");
+        var before = classifyDeviceQueue(deviceId);
+        var applied = dryRun ? List.<UUID>of() : db.queryForList(CANCEL_DEVICE_UPDATE + " RETURNING d.event_id",
+            UUID.class, deviceId);
+        Set<UUID> appliedIds = new HashSet<>(applied);
+        var after = dryRun ? before : classifyDeviceQueue(deviceId);
+        var candidates = new ArrayList<Map<String,Object>>();
+        for (var row : before) if (row.reason() == null) candidates.add(view(row, false));
+        var skipped = new ArrayList<Map<String,Object>>();
+        for (var row : after) if (row.reason() != null && !appliedIds.contains(row.eventId())) skipped.add(view(row, true));
+        int remaining = 0;
+        for (var row : after) if (row.reason() == null) remaining++;
+        var result = new LinkedHashMap<String,Object>();
+        result.put("deviceId", deviceId);
+        result.put("action", "cancel");
+        result.put("dryRun", dryRun);
+        result.put("applied", applied.size());
+        // waiting 是请求开始时的快照；写入后它仍等于 applied + skipped + remaining（除非并发改动了状态）。
+        result.put("counts", Map.of("waiting", waiting, "candidates", candidates.size(),
             "skipped", skipped.size(), "remaining", remaining));
         result.put("candidates", candidates);
         result.put("skipped", skipped);
@@ -142,6 +185,16 @@ public class MessageDeliveryBatchService {
             """.formatted(cancel ? CANCEL_REASON : RETRY_REASON),
             (rs, index) -> new Row(rs.getObject("event_id", UUID.class), rs.getString("device_id"),
                 rs.getString("status"), rs.getInt("attempts"), rs.getString("reason")), messageId);
+    }
+
+    private List<Row> classifyDeviceQueue(String deviceId) {
+        return db.query("""
+            SELECT d.event_id,d.device_id,d.status,d.attempts,%s AS reason
+            FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)
+            WHERE d.device_id=? AND d.status IN ('pending','sent') ORDER BY d.event_id
+            """.formatted(CANCEL_REASON),
+            (rs, index) -> new Row(rs.getObject("event_id", UUID.class), rs.getString("device_id"),
+                rs.getString("status"), rs.getInt("attempts"), rs.getString("reason")), deviceId);
     }
 
     private static Map<String,Object> view(Row row, boolean withReason) {

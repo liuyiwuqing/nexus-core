@@ -25,7 +25,7 @@ public class DeliveryService {
     private final int retrySeconds;
     private final InboxService inbox;
     private static final List<String> ACK_ORDER = List.of("pending", "sent", "received", "displayed", "read");
-    // Shared with MessageDeliveryBatchService so a batch can never touch a row the
+    // Shared with DeliveryBatchService so a batch can never touch a row the
     // single-delivery endpoints would refuse.
     static final String CAN_CANCEL = "d.status='pending' AND d.attempts=0 AND NOT d.cancel_blocked AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
     static final String CAN_RETRY = "d.status='failed' AND m.expires_at>now() AND m.read_at IS NULL AND v.enabled";
