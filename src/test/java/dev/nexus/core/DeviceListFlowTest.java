@@ -88,6 +88,18 @@ class DeviceListFlowTest {
         for(var row:value.path("items"))result.put(row.path("deviceId").asText(),row.path("waitingDeliveries").asInt());
         return result;
     }
+    Map<String,String> firmware(JsonNode value)throws Exception {
+        var result=new LinkedHashMap<String,String>();
+        for(var row:value.path("items"))result.put(row.path("deviceId").asText(),
+            row.path("firmwareVersion").isNull()?null:row.path("firmwareVersion").asText());
+        return result;
+    }
+    void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid) {
+        fixtures.update("""
+            INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip)
+            VALUES(?,now()+(?*interval '1 second'),?,0,10,10,false,false,0,100000,50000,?,?)
+            """,deviceId,secondsFromNow,firmware,wifiSsid,wifiSsid==null?null:"192.168.1.20");
+    }
     UUID message(String upstream) {
         var id=UUID.randomUUID();
         fixtures.update("""
@@ -214,6 +226,23 @@ class DeviceListFlowTest {
         assertThat(request("GET","devices?order=sideways","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?size=101","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?q="+"x".repeat(81),"").statusCode()).isEqualTo(400);
+    }
+
+    @Test void firmwareVersionComesFromTheLatestTelemetrySample()throws Exception {
+        sample("dev-a",-3600,"0.3.0-dev","home");
+        sample("dev-a",-60,"0.4.0-dev","home");
+        var firmware=firmware(list(""));
+        assertThat(firmware).containsEntry("dev-a","0.4.0-dev");
+        // 没有遥测的设备不编造版本，卡片按空值隐藏这一行。
+        assertThat(firmware.get("dev-b")).isNull();
+        assertThat(firmware.get("dev-c")).isNull();
+        // 固件取最近一条遥测；Wi-Fi 行仍取最近一条带 Wi-Fi 的样本，两者可以来自不同样本。
+        sample("dev-a",0,"0.5.0-dev",null);
+        var online=list("?state=online");
+        var devA=online.path("items").get(0);
+        assertThat(devA.path("deviceId").asText()).isEqualTo("dev-a");
+        assertThat(devA.path("firmwareVersion").asText()).isEqualTo("0.5.0-dev");
+        assertThat(devA.path("wifiSsid").asText()).isEqualTo("home");
     }
 
     @Test void waitingDeliveriesCountOnlyUnfinishedRows()throws Exception {

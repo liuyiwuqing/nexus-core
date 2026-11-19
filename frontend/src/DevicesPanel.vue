@@ -247,6 +247,10 @@ async function submit() {
           <span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span>
           <span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span>
         </p>
+        <p v-if="device.firmwareVersion" class="device-seen">
+          <span>固件</span>
+          <strong>{{ device.firmwareVersion }}</strong>
+        </p>
         <p v-if="device.waitingDeliveries" class="device-seen">
           <span>待接收</span>
           <strong>{{ device.waitingDeliveries }} 条</strong>
