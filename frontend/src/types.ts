@@ -101,7 +101,8 @@ export interface ToolSubmission { requestKey: string; toolId: string; arguments:
 export interface RuleSubmission { requestKey: string; name: string; trigger: string; action: string; localTime?: string; zone?: string; title?: string; content?: string; conditions?:Record<string,string> }
 export interface AutomationRule { ruleId: string; name: string; trigger: string; action: string; enabled: boolean; version: number; arguments: Record<string,string>; canEdit: boolean; editBlock: string; deleted?: boolean }
 export interface RuleDeletion { rule: AutomationRule; uncertain: boolean }
-export interface WebhookSource {id:string;name:string;enabled:boolean;version:number;deviceIds:string[];received:number;lastReceivedAt:string|null}
+export interface SourceRecentEvent {messageId:string;eventType:string;title:string|null;priority:string;receivedAt:string;contentPurgedAt:string|null}
+export interface WebhookSource {id:string;name:string;enabled:boolean;version:number;deviceIds:string[];received:number;lastReceivedAt:string|null;recentEvents:SourceRecentEvent[]}
 export interface AccessSession {issued:string;pendingIssue:boolean;pendingRotation?:{tokenId:string;name:string;version:number}|null}
 export interface SourceSession {pending:{path:string;method:string;body:unknown}|null;credentials:{token:string;secret:string}|null}
 export interface RouteDefinition {name:string;enabled:boolean;source:string;eventType:string;match:string;expression:string;deviceIds:string[];priority:string;from:string;before:string;zone:string;templateId?:string|null}

@@ -156,7 +156,16 @@ void load();onUnmounted(()=>{alive=false;generation++;control?.abort();});
         </div>
         <p class="mono">POST /api/v1/hooks/{{ s.id }}</p>
         <p>范围：{{ s.deviceIds.join('、') }} · 已接收 {{ s.received }} 条</p>
-        <p class="muted">最近事件：{{ formatTime(s.lastReceivedAt) }}</p>
+        <p v-if="!s.recentEvents?.length" class="muted">最近事件：暂无</p>
+        <div v-else class="recent-events">
+          <p class="muted">最近事件</p>
+          <ul aria-label="最近事件">
+            <li v-for="event in s.recentEvents" :key="event.messageId">
+              <time :datetime="event.receivedAt">{{ formatTime(event.receivedAt) }}</time>
+              <span>{{ event.title || (event.contentPurgedAt ? '正文已清理' : event.eventType) }}</span>
+            </li>
+          </ul>
+        </div>
         <div v-if="admin" class="management-actions">
           <NButton attr-type="button" class="text-button" :disabled="busy || !!session.pending || creating" @click="begin(s)">
             编辑来源

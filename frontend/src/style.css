@@ -350,6 +350,12 @@ button.mobile-back { display: none; }
 .memory-results small { color: var(--muted); }
 .memory-results details { margin: 16px 0; }
 .record-list { display: grid; gap: var(--space-3); }
+/* 来源卡的最近事件只做接收核对：时间固定宽度，标题可换行，不引入新的卡片层级。 */
+.recent-events { margin-top: var(--space-2); }
+.recent-events ul { list-style: none; margin: var(--space-1) 0 0; padding: 0; display: grid; gap: 2px; font-size: var(--text-sm); }
+.recent-events li { display: flex; gap: var(--space-2); min-width: 0; }
+.recent-events time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.recent-events li span { min-width: 0; overflow-wrap: anywhere; }
 .record-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-2); }
 /* 标题与右侧动作挤在一起时会被压成两行断字。原来只在 ≤560 放开换行，实测 561–760 仍会把 h2
    挤成两行、跨断点还是跳变；改成无断点的最小宽度，让它在任何宽度都先让标题占满一行。 */

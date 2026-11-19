@@ -4,7 +4,7 @@
 
 ## 来源维护
 
-管理员 `GET /api/v1/sources` 返回 ID/名称/启停/版本/设备范围/接收数/最近接收时间，无令牌或签名密钥。`PUT /sources/{id}` 接收 `{name,deviceIds}`，ID 为 1–24 位小写字母数字与短横线；创建响应仅一次返回 `token`、`secret`。原创建身份与有效定义绑定，重复返回 `credentialsAvailable:false`，定义不同 409。创建响应丢失不通过重试再次暴露凭据，需核对来源、保持停用后轮换。
+管理员 `GET /api/v1/sources` 返回 ID/名称/启停/版本/设备范围/接收数/最近接收时间/最近事件，无令牌或签名密钥。`recentEvents` 为该来源最近 3 条已接收事件（`messageId`、`eventType`、`title`、`priority`、`receivedAt`、`contentPurgedAt`），按接收时间倒序；只读取 `webhook_receipts`，因此管理员“测试来源”消息不会混入。正文被保留策略清理后仍返回事件，`title` 为空且 `contentPurgedAt` 非空，管理台显示“正文已清理”。`PUT /sources/{id}` 接收 `{name,deviceIds}`，ID 为 1–24 位小写字母数字与短横线；创建响应仅一次返回 `token`、`secret`。原创建身份与有效定义绑定，重复返回 `credentialsAvailable:false`，定义不同 409。创建响应丢失不通过重试再次暴露凭据，需核对来源、保持停用后轮换。
 
 `PATCH /sources/{id}` 接收 `{name,deviceIds,enabled,expectedVersion}`，同目标/原版本重试可确认，其他版本 409。`POST /sources/{id}/credentials` 传 `{expectedVersion}`，仅停用可轮换，同时更新令牌和签名密钥并增加版本；旧凭据立即失效，不自动启用。响应丢失后不得盲用新版本重发，应读列表核对后再显式轮换。页面要求来源名确认，凭据默认遮挡，退出/关闭整页清除；不写浏览器持久存储。
 

@@ -166,6 +166,40 @@ class WebhookSourceFlowTest {
         assertThat(request("PUT","sources/"+id,json.writeValueAsString(Map.of("name","不同来源","deviceIds",List.of(d))),TOKEN).statusCode()).isEqualTo(409);
         assertThat(request("POST","sources/"+id+"/test",body,null).statusCode()).isEqualTo(401);
     }
+    @Test void recentEventsAreNewestFirstBoundedAndExcludeTestMessages() throws Exception {
+        String d=device(),id="recent-"+UUID.randomUUID().toString().substring(0,8);
+        var created=source(id,d);String token=created.path("token").asText(),secret=created.path("secret").asText();enable(id,d,1);
+        long now=java.time.Instant.now().getEpochSecond();
+        List<String> keys=new java.util.ArrayList<>();
+        for(int i=0;i<4;i++){
+            String key=UUID.randomUUID().toString();keys.add(key);
+            var accepted=hook(id,token,secret,body(key).replace("隔离通知","事件"+i),now,true);
+            assertThat(accepted.statusCode()).withFailMessage(accepted.body()).isEqualTo(202);
+        }
+        assertThat(request("POST","sources/"+id+"/test",json.writeValueAsString(Map.of("requestKey",UUID.randomUUID(),"title","来源测试","content","不进入最近事件")),TOKEN).statusCode()).isEqualTo(202);
+        for(int i=0;i<4;i++)fixtures.update("UPDATE webhook_receipts SET created_at=? WHERE source_id=? AND event_key=?::uuid",
+            java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(60L*(4-i))),id,keys.get(i));
+        var events=recentSource(get("sources"),id).path("recentEvents");
+        assertThat(events).hasSize(3);
+        assertThat(events.get(0).path("title").asText()).isEqualTo("事件3");
+        assertThat(events.get(1).path("title").asText()).isEqualTo("事件2");
+        assertThat(events.get(2).path("title").asText()).isEqualTo("事件1");
+        assertThat(events.get(0).path("messageId").asText()).isNotBlank();
+        assertThat(events.get(0).path("eventType").asText()).isEqualTo("alert.test");
+        assertThat(events.get(0).path("priority").asText()).isEqualTo("normal");
+        assertThat(events.get(0).path("receivedAt").asText()).contains("T").endsWith("Z");
+        assertThat(events.get(0).path("contentPurgedAt").isNull()).isTrue();
+        assertThat(recentSource(get("sources"),id).toString()).doesNotContain(token,secret,"来源测试","事件0");
+        UUID newest=UUID.fromString(events.get(0).path("messageId").asText());
+        fixtures.update("UPDATE inbox_messages SET content_purged_at=now(),title='' WHERE message_id=?",newest);
+        var purged=recentSource(get("sources"),id).path("recentEvents").get(0);
+        assertThat(purged.path("title").asText()).isEmpty();
+        assertThat(purged.path("contentPurgedAt").asText()).contains("T").endsWith("Z");
+    }
+    JsonNode recentSource(JsonNode list,String id){
+        for(var item:list.path("items"))if(id.equals(item.path("id").asText()))return item;
+        throw new AssertionError("source missing from list: "+id);
+    }
     @Test void rateLimitingRotationAndPayloadBoundsAreEnforced() throws Exception {
         String d=device(),id="rate-"+UUID.randomUUID().toString().substring(0,8);
         var created=source(id,d);String token=created.path("token").asText(),secret=created.path("secret").asText();enable(id,d,1);

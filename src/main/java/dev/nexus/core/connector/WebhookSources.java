@@ -36,7 +36,33 @@ public class WebhookSources {
         FROM webhook_sources s
         """;
     private Map<String,Object> view(Map<String,Object> row){row.put("deviceIds",json.readTree((String)row.get("deviceIds")));return dev.nexus.core.web.ApiRows.normalize(List.of(row)).getFirst();}
-    public List<Map<String,Object>> list(){return db.queryForList(VIEW+" ORDER BY s.created_at").stream().map(this::view).toList();}
+    private static final int RECENT_EVENT_LIMIT=3;
+    public List<Map<String,Object>> list(){
+        var rows=db.queryForList(VIEW+" ORDER BY s.created_at");
+        if(rows.isEmpty())return List.of();
+        // 最近事件来自 webhook_receipts，自然排除管理员“测试来源”消息；正文被保留策略清理后仍可显示接收时间。
+        String marks=String.join(",",java.util.Collections.nCopies(rows.size(),"?"));
+        Object[] arguments=new Object[rows.size()+1];
+        for(int i=0;i<rows.size();i++)arguments[i]=rows.get(i).get("id");
+        arguments[rows.size()]=RECENT_EVENT_LIMIT;
+        var recent=db.queryForList("""
+            SELECT "sourceId","messageId","eventType",title,priority,"receivedAt","contentPurgedAt"
+            FROM (
+                SELECT r.source_id AS "sourceId",m.message_id AS "messageId",m.event_type AS "eventType",m.title,m.priority,
+                       r.created_at AS "receivedAt",m.content_purged_at AS "contentPurgedAt",
+                       row_number() OVER (PARTITION BY r.source_id ORDER BY r.created_at DESC,m.message_id) AS rn
+                FROM webhook_receipts r JOIN inbox_messages m ON m.message_id=r.message_id
+                WHERE r.source_id IN ("""+marks+"""
+                )
+            ) ranked WHERE rn<=? ORDER BY "sourceId","receivedAt" DESC,"messageId"
+            """,arguments);
+        var bySource=recent.stream().collect(java.util.stream.Collectors.groupingBy(row->(String)row.get("sourceId"),
+            java.util.LinkedHashMap::new,java.util.stream.Collectors.toList()));
+        bySource.values().forEach(events->events.forEach(event->event.remove("sourceId")));
+        rows.forEach(row->row.put("recentEvents",dev.nexus.core.web.ApiRows.normalize(
+            bySource.getOrDefault((String)row.get("id"),List.of()))));
+        return rows.stream().map(this::view).toList();
+    }
     public Map<String,Object> get(String id){var rows=db.queryForList(VIEW+" WHERE s.source_id=?",id);if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);return view(rows.getFirst());}
     private void valid(String id,String name,List<String> devices){
         if(!id.matches("[a-z0-9][a-z0-9-]{0,23}")||name==null||name.isBlank()||name.length()>80||devices==null||devices.isEmpty()||devices.size()>32||devices.stream().anyMatch(v->v==null||!v.matches("[a-zA-Z0-9_-]{1,40}")))bad();
