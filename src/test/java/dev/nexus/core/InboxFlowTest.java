@@ -626,4 +626,58 @@ class InboxFlowTest {
         assertThat(inbox.statusCode()).isEqualTo(200);
         assertThat(inbox.body()).contains("希望增加专注模式");
     }
+
+    @Test
+    void consoleMessageTargetsOnlyChosenEnabledDevicesAndRejectsChangedReplays() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String a = "target-a-" + suffix, b = "target-b-" + suffix, paused = "target-paused-" + suffix;
+        for (String id : new String[]{a, b, paused})
+            assertThat(request("POST", "/api/v1/devices", "{\"deviceId\":\"" + id + "\",\"name\":\"" + id + "\"}", TOKEN).statusCode()).isEqualTo(201);
+        assertThat(request("PUT", "/api/v1/devices/" + paused + "/enabled", "{\"enabled\":false}", TOKEN).statusCode()).isEqualTo(204);
+
+        String eventId = UUID.randomUUID().toString();
+        var input = new java.util.LinkedHashMap<String, Object>();
+        input.put("connectorId", "manual");
+        input.put("source", "manual");
+        input.put("eventId", eventId);
+        input.put("eventType", "manual.test");
+        input.put("title", "定向测试");
+        input.put("content", "只发给选择设备");
+        input.put("priority", "high");
+        input.put("devices", java.util.List.of(a, b));
+        String targeted = json.writeValueAsString(input);
+
+        var created = request("POST", "/api/v1/messages", targeted, TOKEN);
+        assertThat(created.statusCode()).withFailMessage(created.body()).isEqualTo(201);
+        UUID id = UUID.fromString(json.readTree(created.body()).path("messageId").asText());
+        assertThat(fixtureDb.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id", String.class, id))
+            .containsExactly(a, b);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, eventId)).isEqualTo(1);
+
+        var replay = request("POST", "/api/v1/messages", targeted, TOKEN);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(replay.body()).isEqualTo(created.body());
+        input.put("devices", java.util.List.of(a));
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(409);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, id)).isEqualTo(2);
+
+        input.put("eventId", UUID.randomUUID().toString());
+        input.put("devices", java.util.List.of());
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(400);
+        input.put("devices", java.util.List.of(a, "missing-" + suffix));
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(400);
+        input.put("devices", java.util.List.of(paused));
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(400);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, input.get("eventId"))).isZero();
+
+        int enabled = fixtureDb.queryForObject("SELECT count(*) FROM devices WHERE enabled", Integer.class);
+        var broadcastInput = new java.util.LinkedHashMap<>(input);
+        broadcastInput.put("eventId", UUID.randomUUID().toString());
+        broadcastInput.remove("devices");
+        var broadcast = request("POST", "/api/v1/messages", json.writeValueAsString(broadcastInput), TOKEN);
+        assertThat(broadcast.statusCode()).isEqualTo(201);
+        UUID broadcastId = UUID.fromString(json.readTree(broadcast.body()).path("messageId").asText());
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, broadcastId)).isEqualTo(enabled);
+        assertThat(fixtureDb.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id", String.class, broadcastId)).contains(a, b);
+    }
 }

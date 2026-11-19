@@ -77,7 +77,7 @@ public class WebhookSources {
     public record Payload(UUID eventId,String eventType,String title,String content,String priority){}
     @Transactional public Map<String,Object> test(String id,UUID key,String title,String content) {
         var source=lock(id);var ids=new java.util.ArrayList<String>();json.readTree((String)source.get("device_ids")).forEach(v->ids.add(v.asText()));
-        var message=new MessageInput("webhook-test-"+id,"wh."+id,key.toString(),"source.test",title,content,null,"","","normal",null,null,Map.of("test","true"));
+        var message=new MessageInput("webhook-test-"+id,"wh."+id,key.toString(),"source.test",title,content,null,"","","normal",null,null,Map.of("test","true"),null);
         if(!validator.validate(message).isEmpty())bad();
         var result=inbox.ingestScoped(message,ids);
         return Map.of("messageId",result.messageId(),"created",result.created());
@@ -97,7 +97,7 @@ public class WebhookSources {
         Payload body;
         try{body=json.readValue(raw,Payload.class);}catch(Exception e){bad();throw new IllegalStateException(e);}
         if(body==null || body.eventId()==null)bad();
-        var message=new MessageInput("webhook-"+id,"wh."+id,body.eventId().toString(),body.eventType(),body.title(),body.content(),null,"","",body.priority(),null,null,Map.of());
+        var message=new MessageInput("webhook-"+id,"wh."+id,body.eventId().toString(),body.eventType(),body.title(),body.content(),null,"","",body.priority(),null,null,Map.of(),null);
         if(!validator.validate(message).isEmpty())bad();
         String digest=hash(raw);
         var previous=db.queryForList("SELECT body_hash,message_id FROM webhook_receipts WHERE source_id=? AND event_key=?",id,body.eventId());

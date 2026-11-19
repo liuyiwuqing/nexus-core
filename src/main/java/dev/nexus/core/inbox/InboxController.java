@@ -20,7 +20,7 @@ public class InboxController {
 
     @PostMapping
     ResponseEntity<?> create(@Valid @RequestBody MessageInput input) {
-        var result = inbox.ingest(input);
+        var result = inbox.consoleMessage(input);
         return ResponseEntity.status(result.created() ? 201 : 200).body(Map.of("messageId", result.messageId()));
     }
 

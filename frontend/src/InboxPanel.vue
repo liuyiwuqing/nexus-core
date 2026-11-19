@@ -8,7 +8,7 @@ import { Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
 import { computed, nextTick, ref, watch } from 'vue';
-import { formatTime, type Api, type Message, type MessagePriority, type MessageSubmission, type Page, type ListSearch } from './types';
+import { formatTime, type Api, type Device, type Message, type MessagePriority, type MessageSubmission, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
@@ -19,8 +19,8 @@ import StatusNote from './StatusNote.vue';
 const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
-  pending: MessageSubmission | null; uncertain: boolean;
-  create: (title: string, content: string, priority: MessagePriority) => Promise<string | null>;
+  pending: MessageSubmission | null; uncertain: boolean; devices: Device[];
+  create: (title: string, content: string, priority: MessagePriority, devices: string[]) => Promise<string | null>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
@@ -64,18 +64,25 @@ const priorities: { label: string; value: MessagePriority }[] = [
   { label: '高', value: 'high' },
   { label: '紧急', value: 'critical' },
 ];
+const targets = ref<string[]>([]);
+// 空选择表示不发送 devices 字段，保持既有路由（默认广播）。
+const enabledDevices = computed(() => props.devices.filter(device => device.enabled));
+const targetSummary = computed(() => targets.value.length
+  ? `仅发送到 ${targets.value.length} 台设备：${targets.value.map(id => enabledDevices.value.find(device => device.deviceId === id)?.name ?? id).join('、')}。`
+  : '未选择设备时按当前路由发送。');
 watch(() => props.pending, submission => {
   if (submission) {
-    title.value = submission.title; content.value = submission.content; priority.value = submission.priority; compose.value = true;
+    title.value = submission.title; content.value = submission.content; priority.value = submission.priority;
+    targets.value = [...submission.devices]; compose.value = true;
   }
 }, { immediate: true });
 const note = ref<InstanceType<typeof StatusNote> | null>(null);
 const receiptId = ref('');
 async function send() {
-  const sent = await props.create(title.value, content.value, priority.value);
+  const sent = await props.create(title.value, content.value, priority.value, targets.value);
   if (sent) {
     receiptId.value = sent;
-    title.value = ''; content.value = ''; priority.value = 'normal'; compose.value = false; return;
+    title.value = ''; content.value = ''; priority.value = 'normal'; targets.value = []; compose.value = false; return;
   }
   // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
   await nextTick(); note.value?.focus();
@@ -206,9 +213,27 @@ async function send() {
           @update:value="(value: MessagePriority) => (priority = value)"
         />
       </ConsoleField>
+      <ConsoleField
+        path="field-5"
+        :label-props="{ id: 'inboxpanel-field-5' + '-label', for: 'inboxpanel-field-5' }"
+      >
+        <template #label>目标设备</template>
+        <NSelect
+          class="device-select"
+          :value="targets"
+          :options="enabledDevices.map(device => ({ label: `${device.name}（${device.deviceId}）`, value: device.deviceId }))"
+          multiple
+          clearable
+          :max-tag-count="2"
+          placeholder="所有已启用设备"
+          :disabled="busy || !!pending"
+          :input-props="{ id: 'inboxpanel-field-5', 'aria-label': '目标设备' }"
+          @update:value="(value: string[] | null) => (targets = value ?? [])"
+        />
+      </ConsoleField>
       <StatusNote v-if="uncertain" ref="note" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>
       <div class="form-footer">
-        <span>发送到所有已启用的设备；低/普通不打扰，高亮屏不发声，紧急正常提醒。</span>
+        <span>{{ targetSummary }}低/普通不打扰，高亮屏不发声，紧急正常提醒。</span>
         <NButton type="primary" attr-type="submit" class="primary" :disabled="busy">
           {{ busy ? '正在发送…' : uncertain ? '重试同一消息' : '发送' }}
         </NButton>

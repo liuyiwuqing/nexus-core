@@ -55,6 +55,29 @@ public class InboxService {
     public IngestResult ingestScoped(MessageInput in,List<String> permitted) {
         return ingest(in,false,routing.targets(in,Instant.now()).stream().filter(t->permitted.contains(t.deviceId())).toList());
     }
+    /**
+     * 管理台测试消息：省略设备时保持既有路由/广播；显式设备只投递到这些启用设备。
+     * 同一 eventId 的重放必须保持相同设备集合，避免未知结果后的重试悄悄改发给另一批设备。
+     */
+    @Transactional
+    public IngestResult consoleMessage(MessageInput in) {
+        if (in.devices() == null) return ingest(in, false);
+        db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "console-message:" + in.eventId());
+        List<String> devices = in.devices().stream().distinct().sorted().toList();
+        if (devices.isEmpty() || devices.size() > 32) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_route");
+        for (String device : devices)
+            if (!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=? AND enabled)", Boolean.class, device)))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_route");
+        var existing = db.queryForList("SELECT message_id FROM inbox_messages WHERE connector_id=? AND upstream_event_id=?", in.connectorId(), in.eventId());
+        if (!existing.isEmpty()) {
+            UUID id = (UUID) existing.getFirst().get("message_id");
+            var original = db.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id", String.class, id);
+            if (!original.equals(devices)) throw new ResponseStatusException(HttpStatus.CONFLICT, "idempotency_conflict");
+            return new IngestResult(id, false);
+        }
+        return ingest(in, false, devices.stream().map(d -> new MessageRouting.Target(d, null, null)).toList());
+    }
+
     @Transactional
     public IngestResult targetedTest(MessageInput in, List<String> devices,UUID templateId) {
         db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "targeted-test:"+in.eventId());

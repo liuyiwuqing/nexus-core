@@ -194,7 +194,7 @@ public class HaloConnector implements InboxConnector {
                 permalink = link.toString();
         } catch (IllegalArgumentException ignored) {}
         return new MessageInput(connectorId, "halo", "comment:" + name, "comment.created", "博客新评论", content,
-            DeviceText.fit(content, 180), sender, permalink, "normal", time, null, Map.of("commentName", name));
+            DeviceText.fit(content, 180), sender, permalink, "normal", time, null, Map.of("commentName", name), null);
     }
 
     private ResponseStatusException failure(String code) {
