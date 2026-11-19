@@ -156,7 +156,7 @@ function querySuffix(kind: 'messages' | 'deliveries'): string {
   if (kind === 'deliveries' && state === 'waiting') query.set('waiting', 'true');
   else if (state) query.set(kind === 'messages' ? 'readStatus' : 'status', state);
   if (search.identity) query.set(kind === 'messages' ? 'source' : 'deviceId', search.identity);
-  // 失败原因只在投递页存在：做成同一条 querySuffix，列表与元数据导出才会筛到同一批。
+  // 最近错误只在投递页存在：做成同一条 querySuffix，列表与元数据导出才会筛到同一批。
   if (kind === 'deliveries' && deliveryReason.value) query.set('lastError', deliveryReason.value);
   if (search.receivedFrom) query.set('receivedFrom', new Date(search.receivedFrom).toISOString());
   if (search.receivedBefore) query.set('receivedBefore', new Date(search.receivedBefore).toISOString());
@@ -597,7 +597,7 @@ function filterMessages(value: Message['readStatus'] | '') {
 function filterDeliveries(value: string) {
   if (busy.value || exporting.value) return;
   deliveryStatus.value = value;
-  // 原因筛选只在失败状态有意义；换了状态还留着它就成了看不见的筛选。
+  // 换状态时清掉原因：原因筛选可以在任意状态下重新选择，但保留一个与当前状态不相干的值更容易被误读。
   if (value !== 'failed') deliveryReason.value = '';
   deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
   void refresh();
@@ -816,6 +816,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         @clear="searchDeliveries(emptySearch(), true)"
         @export="exportMetadata('deliveries')"
         @refresh="refresh"
+        @messages="tab = 'inbox'"
       />
       <ToolsPanel
         v-else-if="tab === 'tools'"

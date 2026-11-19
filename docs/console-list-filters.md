@@ -18,7 +18,7 @@
 
 表中接口均以 `/api/v1` 为前缀。省略参数表示不限制该维度，保持既有调用。空字符串、非法身份字符、未知状态、无时区或非法时间、开始不早于截止均返回 400；合法但不存在的来源/设备/原因码返回空结果。未鉴权或其他作用域令牌返回 401。
 
-`lastError` 不要求同时给 `status`：原因码也出现在 `sent`（`broker_unavailable`）和 `cancelled`（`cancelled_by_admin`）上，硬绑状态会漏掉这些行。管理台只在状态选为「投递失败」时显示原因下拉，是因为那时它最有用，不是因为接口有限制。
+`lastError` 不要求同时给 `status`：原因码也出现在 `sent`（`broker_unavailable`）和 `cancelled`（`cancelled_by_admin`）上，硬绑状态会漏掉这些行。管理台的「最近错误」筛选因此在任何状态下都可选；只有「未记录原因」（`unknown`）仍限于「投递失败」，因为在其它状态下它等于“没有 `last_error`”，会把成功行全部带进来。
 
 `waiting=true` 与设备列表的 `waitingDeliveries` 同一口径：仍在 `pending` 或 `sent` 的投递。它与单值 `status` 互斥，同时给出返回 400，避免“等待中且已失败”这类自相矛盾的查询；`false` 等同于省略。空值、其他拼写或大小写一律 400。
 
@@ -54,6 +54,7 @@ curl --fail-with-body --get "$NEXUS_BASE_URL/api/v1/messages/export" \
 ## 页面行为
 
 - 状态切换即时生效；来源/设备和时间通过“应用筛选”提交。应用或清空时将对应列表回到第 1 页；翻页、刷新、轮询与导航保留已应用条件。“清空筛选”同时清除状态、身份与时间。
+- 「最近错误」与投递状态相互独立，可在「全部」或任一状态下直接选择；切换状态会清掉已选原因，避免留下与当前状态不相干的条件。选择原因时只发送 `lastError`，不隐式附加 `status`。
 - 投递状态下拉在「全部」后提供「待接收」，等同 `waiting=true`；设备卡片上的「待接收 N 条」也可点击，直接进入带 `deviceId=<设备>` 与 `waiting=true` 的投递页。钻取看到的是该设备的全部等待行，行数应与卡片计数一致（同为读时快照，并发接收/失败后可能不同）。
 - 标记已读或重试后，仍使用当前条件。末页最后一项离开结果集时，根据新总数回到有效页并重新读取。
 - 切换条件后先清除旧行，分别呈现加载、失败与空结果；失败提供原有顶部重试，不用旧行或“无记录”冒充新结果。
@@ -61,6 +62,16 @@ curl --fail-with-body --get "$NEXUS_BASE_URL/api/v1/messages/export" \
 - 导航、退出或卸载取消在途导出，迟到响应不能下载文件；401 结束会话。退出重置所有条件。测试消息的待确认 ID/正文仍按[原规则](console-messages.md)保存在页面内存。
 
 来源和设备按标识精确输入，不引入尚不存在的来源管理或全局设备选择器。正文导出、来源→设备路由和按消息批量取消仍未提供。
+
+## CONSOLE-28 · 最近错误筛选独立可用
+
+原因筛选原只在状态为「投递失败」时出现，但 `lastError` 也留在 `pending`/`sent`（`broker_unavailable`）和 `cancelled`（`cancelled_by_admin`）行上，按失败过滤会漏掉这些记录。现在「最近错误」始终显示，可在「全部」或任一状态下直接选择；请求只带 `lastError`，不隐式附加 `status`。`unknown`（未记录原因）仍只在「投递失败」下提供，避免在其它状态下把 `last_error IS NULL` 的成功行全部带入。切换状态会清掉已选原因，行为与「清空筛选」一致。
+
+投递空列表增加「查看消息」动作，直接回到消息页；筛选条件、接口参数、数据库结构与导出规则未改。
+
+`bash tools/ci/test_list_filters_ui.sh` 50 项通过，新增覆盖：原因筛选在「全部」下只发送 `lastError`、返回 31 条失败行；非失败状态不提供 `unknown`；失败状态提供 `unknown`；清空原因恢复 37 条混合列表；重新登录同时重置状态与原因。`test_overview_ui.sh` 132 项、`test_console_states_ui.sh` 128 项、投递时间线 66 项、元数据导出 51 项、消息批量 30 项、界面主题 68 项再次通过，共 525 项浏览器检查，任务空间均关闭。浏览器夹具为回环 HTTP，不代表真实 CORE、数据库、Broker 或设备。
+
+完整 `JAVA_HOME="$(/usr/libexec/java_home -v 21)" python3 tools/run_local.py build` 退出 0：183 条中 178 通过、5 条条件跳过、0 失败/错误；JAR 的 index、DeliveryPanel 脚本/样式与 `target/frontend` 哈希一致，无旧资源。提交、推送与远程 CI 记录在[任务台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
 
 ## CONSOLE-13 验证
 

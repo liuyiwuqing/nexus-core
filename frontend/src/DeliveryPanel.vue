@@ -4,12 +4,19 @@ import ConsoleField from './ConsoleField.vue';
 import { NButton, NSelect, type SelectInst } from 'naive-ui';
 import { useAccess } from './access';
 const { operate } = useAccess();
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import DeliveryHistoryPanel from './DeliveryHistoryPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import { formatTime, deliveryNames, deliveryErrorNames, errorNames, type Api, type Delivery, type Page, type ListSearch } from './types';
-defineProps<{ data: Page<Delivery>; api: Api; busy: boolean; loading: boolean; failed: boolean; status: string; reason: string; search: ListSearch; exporting: boolean; retry: (id: string) => Promise<boolean> }>();
-const emit = defineEmits<{ page: [page: number]; filter: [value: string]; reason: [value: string]; search: [value: ListSearch]; clear: []; export: []; refresh: [] }>();
+const props = defineProps<{ data: Page<Delivery>; api: Api; busy: boolean; loading: boolean; failed: boolean; status: string; reason: string; search: ListSearch; exporting: boolean; retry: (id: string) => Promise<boolean> }>();
+const emit = defineEmits<{ page: [page: number]; filter: [value: string]; reason: [value: string]; search: [value: ListSearch]; clear: []; export: []; refresh: []; messages: [] }>();
+// 「未记录原因」只在失败筛选下有意义：其它状态下它等于"没有 last_error"，会把成功行全带进来。
+const reasonOptions = computed(() => [
+  { label: '全部原因', value: '' },
+  ...Object.entries(deliveryErrorNames)
+    .filter(([value]) => props.status === 'failed' || value !== 'unknown')
+    .map(([value, name]) => ({ label: name, value })),
+]);
 const selected = ref<string | null>(null);
 const statusSelect = ref<SelectInst | null>(null);
 function filterChanged(value: string) { selected.value = null; emit('filter', value); }
@@ -65,26 +72,26 @@ async function closeHistory() {
           :input-props="{ id: 'deliverypanel-field-1', 'aria-label': '投递状态' }"
         />
       </ConsoleField>
-      <!-- 失败原因只在状态=投递失败时出现：其它状态下这个筛选没有意义，显示出来只会误导。 -->
-      <ConsoleField v-if="status === 'failed'" path="field-2" :label-props="{ id: 'deliverypanel-field-2-label', for: 'deliverypanel-field-2' }">
-        <template #label>失败原因</template>
+      <!-- 原因筛选与状态相互独立：broker_unavailable 会留在 pending/sent 行上，取消原因也不属于失败。 -->
+      <ConsoleField path="field-2" :label-props="{ id: 'deliverypanel-field-2-label', for: 'deliverypanel-field-2' }">
+        <template #label>最近错误</template>
         <NSelect
           @keydown.esc.stop
-          aria-label="失败原因"
+          aria-label="最近错误"
           :disabled="loading || busy"
           :value="reason"
           @update:value="reasonChanged"
-          :options="[
-            { label: '全部原因', value: '' },
-            ...Object.entries(deliveryErrorNames).map(([value, name]) => ({ label: name, value: value })),
-          ]"
-          :input-props="{ id: 'deliverypanel-field-2', 'aria-label': '失败原因' }"
+          :options="reasonOptions"
+          :input-props="{ id: 'deliverypanel-field-2', 'aria-label': '最近错误' }"
         />
       </ConsoleField>
     </ListSearchForm>
     <ConsoleState v-if="loading && !data.items.length && !failed" kind="loading">正在加载投递…</ConsoleState>
     <ConsoleState v-else-if="!failed && !data.items.length && (status || reason || Object.values(search).some(Boolean))" title="没有符合条件的投递" />
-    <ConsoleState v-else-if="!failed && !data.items.length" title="还没有投递记录">消息到达后，会为已启用的设备建立投递记录。</ConsoleState>
+    <ConsoleState v-else-if="!failed && !data.items.length" title="还没有投递记录">
+      消息到达后，会为已启用的设备建立投递记录。
+      <template #actions><NButton attr-type="button" @click="emit('messages')">查看消息</NButton></template>
+    </ConsoleState>
     <div v-else-if="!failed" class="table-shell" tabindex="0" role="region" aria-label="投递记录，可用方向键横向滚动查看全部列">
       <table>
         <thead>
