@@ -116,6 +116,7 @@ public class WebhookSources {
         db.update("UPDATE webhook_sources SET tokens=?,refill_at=? WHERE source_id=?",tokens-1,Timestamp.from(now),id);
         return Map.of("id",accepted.messageId(),"status","queued","duplicate",false);
     }
+    private static final int RECEIPT_EVENT_LIMIT=500;
     public Map<String,Object> receipt(String id,UUID message,String authorization){
         // Read access is deliberately limited to messages originally accepted by this source.
         var rows=db.queryForList("SELECT token_hash,enabled FROM webhook_sources WHERE source_id=?",id);
@@ -123,7 +124,19 @@ public class WebhookSources {
         if(!MessageDigest.isEqual(hash(authorization.substring(7).getBytes(StandardCharsets.UTF_8)).getBytes(StandardCharsets.US_ASCII),((String)rows.getFirst().get("token_hash")).getBytes(StandardCharsets.US_ASCII)))unauthorized();
         if(!Boolean.TRUE.equals(rows.getFirst().get("enabled")))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"source_disabled");
         if(!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM webhook_receipts WHERE source_id=? AND message_id=?)",Boolean.class,id,message)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        return Map.of("id",message,"deliveries",db.queryForList("SELECT device_id AS \"deviceId\",status,received_at AS \"receivedAt\",displayed_at AS \"displayedAt\",read_at AS \"readAt\" FROM deliveries WHERE message_id=?",message));
+        // Public timeline projection: no lastError/nextAttemptAt (internal broker and scheduling state).
+        var events=dev.nexus.core.web.ApiRows.normalize(db.queryForList("""
+            SELECT d.device_id AS "deviceId",h.kind,h.previous_status AS "previousStatus",h.status,
+                   h.recorded_at AS "recordedAt",h.received_at AS "receivedAt",
+                   h.displayed_at AS "displayedAt",h.read_at AS "readAt"
+            FROM delivery_history h JOIN deliveries d ON d.event_id=h.event_id
+            WHERE d.message_id=? ORDER BY d.device_id,h.sequence LIMIT ?
+            """,message,RECEIPT_EVENT_LIMIT+1));
+        boolean truncated=events.size()>RECEIPT_EVENT_LIMIT;
+        if(truncated)events=events.subList(0,RECEIPT_EVENT_LIMIT);
+        return Map.of("id",message,
+            "deliveries",db.queryForList("SELECT device_id AS \"deviceId\",status,received_at AS \"receivedAt\",displayed_at AS \"displayedAt\",read_at AS \"readAt\" FROM deliveries WHERE message_id=? ORDER BY device_id",message),
+            "events",events,"eventsTruncated",truncated);
     }
     private void unauthorized(){throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"unauthorized");}
 }

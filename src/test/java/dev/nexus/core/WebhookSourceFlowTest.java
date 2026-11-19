@@ -110,10 +110,50 @@ class WebhookSourceFlowTest {
         assertThat(hook(id,token,secret,body,now,true).statusCode()).isEqualTo(202);
         assertThat(hook(id,token,secret,body.replace("隔离通知","改变正文"),now,true).statusCode()).isEqualTo(409);
         assertThat(request("GET","messages","",token).statusCode()).isEqualTo(401);
-        assertThat(request("GET","hooks/"+id+"/messages/"+message,"",token).statusCode()).isEqualTo(200);
+        var receipt=request("GET","hooks/"+id+"/messages/"+message,"",token);
+        assertThat(receipt.statusCode()).isEqualTo(200);
+        var timeline=json.readTree(receipt.body());
+        assertThat(timeline.path("deliveries")).hasSize(1);
+        assertThat(timeline.path("deliveries").get(0).path("deviceId").asText()).isEqualTo(device);
+        assertThat(timeline.path("events")).hasSize(1);
+        var first=timeline.path("events").get(0);
+        assertThat(first.path("deviceId").asText()).isEqualTo(device);
+        assertThat(first.path("kind").asText()).isEqualTo("created");
+        assertThat(first.path("status").asText()).isEqualTo("pending");
+        assertThat(first.path("previousStatus").isNull()).isTrue();
+        assertThat(first.path("recordedAt").asText()).contains("T").endsWith("Z");
+        assertThat(timeline.path("eventsTruncated").asBoolean()).isFalse();
+        assertThat(receipt.body()).doesNotContain("lastError","nextAttemptAt","hmac_secret",token,secret);
+        fixtures.update("UPDATE deliveries SET status='sent' WHERE message_id=?",UUID.fromString(message));
+        var advanced=json.readTree(request("GET","hooks/"+id+"/messages/"+message,"",token).body());
+        assertThat(advanced.path("deliveries").get(0).path("status").asText()).isEqualTo("sent");
+        assertThat(advanced.path("events")).hasSize(2);
+        assertThat(advanced.path("events").get(1).path("kind").asText()).isEqualTo("state_changed");
+        assertThat(advanced.path("events").get(1).path("previousStatus").asText()).isEqualTo("pending");
+        assertThat(advanced.path("events").get(1).path("status").asText()).isEqualTo("sent");
         assertThat(request("GET","hooks/"+id+"/messages/"+UUID.randomUUID(),"",token).statusCode()).isEqualTo(404);
         assertThat(fixtures.queryForObject("SELECT count(*) FROM webhook_receipts WHERE source_id=?",Integer.class,id)).isEqualTo(1);
         assertThat(request("POST","sources/"+id+"/credentials","{\"expectedVersion\":2}",TOKEN).statusCode()).isEqualTo(409);
+    }
+    @Test void receiptTimelineIsScopedBoundedAndHidesInternalDetails() throws Exception {
+        String device=device(),id="time-"+UUID.randomUUID().toString().substring(0,8);
+        var created=source(id,device);String token=created.path("token").asText(),secret=created.path("secret").asText();enable(id,device,1);
+        long now=java.time.Instant.now().getEpochSecond();
+        var accepted=hook(id,token,secret,body(UUID.randomUUID().toString()),now,true);
+        assertThat(accepted.statusCode()).withFailMessage(accepted.body()).isEqualTo(202);
+        UUID message=UUID.fromString(json.readTree(accepted.body()).path("id").asText());
+        UUID event=fixtures.queryForObject("SELECT event_id FROM deliveries WHERE message_id=?",UUID.class,message);
+        fixtures.update("""
+            INSERT INTO delivery_history(event_id,kind,previous_status,status,attempts,next_attempt_at)
+            SELECT ?,'detail_changed','pending','pending',0,now() FROM generate_series(1,501)
+            """,event);
+        var receipt=json.readTree(request("GET","hooks/"+id+"/messages/"+message,"",token).body());
+        assertThat(receipt.path("events")).hasSize(500);
+        assertThat(receipt.path("eventsTruncated").asBoolean()).isTrue();
+        assertThat(receipt.path("events").get(499).path("kind").asText()).isEqualTo("detail_changed");
+        String other=device(),otherId="time-"+UUID.randomUUID().toString().substring(0,8);
+        var second=source(otherId,other);enable(otherId,other,1);
+        assertThat(request("GET","hooks/"+otherId+"/messages/"+message,"",second.path("token").asText()).statusCode()).isEqualTo(404);
     }
     @Test void sourceTestStaysOutsideProductionOverviewAndOriginalCreationIsBound() throws Exception {
         String d=device(),id="test-"+UUID.randomUUID().toString().substring(0,8);source(id,d);

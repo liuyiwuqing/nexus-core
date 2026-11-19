@@ -25,7 +25,7 @@ X-Nexus-Signature: sha256=<64 位小写十六进制 HMAC>
 
 成功 `202 {id,status:"queued",duplicate}`。相同来源 UUID/原始字节重试返回相同 ID，不增加消息或投递；相同 UUID 不同字节 409。重试时可更新签名时间，但必须保留原 eventId 与完全相同的 JSON 字节。禁止在重试期间重新序列化产生不同字节。401 未通过令牌/签名/时间窗，403 停用，400 内容错误，413 超长；新事件按每秒一令牌、桶容量 20 且滚动 60 秒最多 60 条限制，429 返回 `Retry-After:60`。已接受的相同事件重放不重复扣额。凭据/限流检查与原始回执绑定在来源行锁事务内，入库和投递一起提交。
 
-`GET /api/v1/hooks/{id}/messages/{messageUUID}` 使用同来源 Bearer，只返回属于该来源的设备状态/收到/展示/已读，不含其他来源消息或管理员正文。找不到或越界 404。`queued` 表示已入库，不保证选中设备在线、上屏或已读；无匹配目标仍可接受消息并保留空投递。
+`GET /api/v1/hooks/{id}/messages/{messageUUID}` 使用同来源 Bearer，只返回属于该来源的消息，不含其他来源消息或管理员正文。响应包含 `deliveries`（每台设备当前 `deviceId`/`status`/`receivedAt`/`displayedAt`/`readAt`，按设备 ID 排序）与 `events`（投递事件时间线：`deviceId`、`kind`、`previousStatus`、`status`、`recordedAt` 及当时的收到/展示/已读时间）。事件按 `deviceId`、发生顺序排列，时间均为 ISO-8601 UTC；`kind` 与管理员投递历史同源，但只包含公开时间线字段，不返回 `lastError`、下次尝试时间或操作人。单次最多 500 条事件，超出时按上述顺序截断并返回 `eventsTruncated:true`。找不到、越权或其他来源消息 404，停用 403。`queued` 表示已入库，不保证选中设备在线、上屏或已读；无匹配目标仍可接受消息并保留空投递。
 
 ## 测试与统计
 
@@ -33,6 +33,6 @@ X-Nexus-Signature: sha256=<64 位小写十六进制 HMAC>
 
 ## 验证及边界
 
-`WebhookSourceFlowTest` 与 `ConsoleOverviewFlowTest` 验证真实 HTTP/独立 PostgreSQL：令牌作用域、停用、HMAC/时间窗、幂等/冲突、设备范围、来源只读回执、限流/Retry-After、大小上限、轮换和旧版本拒绝、测试统计排除。实际 Vue `bash tools/ci/test_sources_ui.sh` 的 34 次检查通过，覆盖凭据遮挡/关闭、状态/轮换、名称确认、创建响应丢失、固定身份重试、导航、失败恢复、401 和 390px；截图已查看。页面只用 RAM HTTP，不代表真实签名发送方、生产库或设备。
+`WebhookSourceFlowTest`（4 项）与 `ConsoleOverviewFlowTest` 验证真实 HTTP/独立 PostgreSQL：令牌作用域、停用、HMAC/时间窗、幂等/冲突、设备范围、来源只读回执、回执事件时间线（创建/状态推进、跨来源 404、500 条截断、不暴露内部字段）、限流/Retry-After、大小上限、轮换和旧版本拒绝、测试统计排除。实际 Vue `bash tools/ci/test_sources_ui.sh` 的 34 次检查通过，覆盖凭据遮挡/关闭、状态/轮换、名称确认、创建响应丢失、固定身份重试、导航、失败恢复、401 和 390px；截图已查看。页面只用 RAM HTTP，不代表真实签名发送方、生产库或设备。
 
 V17 仅在隔离库验证；生产来源未建立、凭据未轮换、消息未发送。RSS、天气等拉取连接器不属于本切片，不将当前 Halo/Webhook 两种能力称为全部来源完成。项目特有契约沉淀在本文和可执行检查，不更新共享 Skill。
