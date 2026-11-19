@@ -96,7 +96,10 @@ public class DeviceController {
             SELECT d.device_id AS "deviceId",d.name,d.enabled,d.last_seen AS "lastSeen",
                    (d.online AND d.last_seen > now()-interval '90 seconds') AS online,d.created_at AS "createdAt",
                    t.wifi_ip AS "wifiIp",t.wifi_rssi AS "wifiRssi",t.wifi_ssid AS "wifiSsid",
-                   t.observed_at AS "telemetryAt",f.firmware_version AS "firmwareVersion",
+                   t.observed_at AS "telemetryAt",
+                   -- 健康回读晚于最近遥测时，目标版本就是正在运行的镜像；回滚后该行不再是 healthy，自动退回遥测。
+                   CASE WHEN o.ota_version IS NOT NULL AND (f.received_at IS NULL OR f.received_at<=o.updated_at)
+                        THEN o.ota_version ELSE f.firmware_version END AS "firmwareVersion",
                    COALESCE(w.waiting,0) AS "waitingDeliveries"
             FROM devices d
             LEFT JOIN LATERAL (
@@ -105,9 +108,14 @@ public class DeviceController {
                 ORDER BY observed_at DESC LIMIT 1
             ) t ON true
             LEFT JOIN LATERAL (
-                SELECT firmware_version FROM device_telemetry_samples s
+                SELECT firmware_version,received_at FROM device_telemetry_samples s
                 WHERE s.device_id=d.device_id ORDER BY observed_at DESC LIMIT 1
             ) f ON true
+            LEFT JOIN LATERAL (
+                SELECT target->>'version' AS ota_version,updated_at FROM device_ota_deployments o
+                WHERE o.device_id=d.device_id AND o.status='healthy'
+                ORDER BY updated_at DESC LIMIT 1
+            ) o ON true
             LEFT JOIN (
                 SELECT device_id,count(*) AS waiting FROM deliveries
                 WHERE status IN ('pending','sent') GROUP BY device_id

@@ -96,9 +96,17 @@ class DeviceListFlowTest {
     }
     void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid) {
         fixtures.update("""
-            INSERT INTO device_telemetry_samples(device_id,observed_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip)
-            VALUES(?,now()+(?*interval '1 second'),?,0,10,10,false,false,0,100000,50000,?,?)
-            """,deviceId,secondsFromNow,firmware,wifiSsid,wifiSsid==null?null:"192.168.1.20");
+            INSERT INTO device_telemetry_samples(device_id,observed_at,received_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip)
+            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),?,0,10,10,false,false,0,100000,50000,?,?)
+            """,deviceId,secondsFromNow,secondsFromNow,firmware,wifiSsid,wifiSsid==null?null:"192.168.1.20");
+    }
+    void ota(String deviceId,String version,String status,int secondsFromNow)throws Exception {
+        String release="release-"+version,target=json.writeValueAsString(Map.of("version",version));
+        fixtures.update("INSERT INTO ota_releases(release_id,manifest,target,identity) VALUES(?,'{}'::jsonb,?::jsonb,'{}'::jsonb) ON CONFLICT(release_id) DO NOTHING",release,target);
+        fixtures.update("""
+            INSERT INTO device_ota_deployments(device_id,request_id,release_id,initial_boot_id,target,status,updated_at)
+            VALUES(?,?,?,?,?::jsonb,?,now()+(?*interval '1 second'))
+            """,deviceId,UUID.randomUUID().toString(),release,"boot-list",target,status,secondsFromNow);
     }
     UUID message(String upstream) {
         var id=UUID.randomUUID();
@@ -243,6 +251,19 @@ class DeviceListFlowTest {
         assertThat(devA.path("deviceId").asText()).isEqualTo("dev-a");
         assertThat(devA.path("firmwareVersion").asText()).isEqualTo("0.5.0-dev");
         assertThat(devA.path("wifiSsid").asText()).isEqualTo("home");
+    }
+
+    @Test void healthyOtaConfirmationUpdatesFirmwareBeforeTheNextTelemetry()throws Exception {
+        sample("dev-a",-600,"0.4.0-dev",null);
+        sample("dev-b",-600,"0.4.0-dev",null);
+        // 健康回读证明设备已在新镜像上启动；版本立即可见，不必等下一拍遥测。
+        ota("dev-a","0.5.0-dev","healthy",-60);
+        // 回滚后的部署不再是 healthy，不能冒充运行版本。
+        ota("dev-b","0.6.0-dev","rolled_back",-60);
+        assertThat(firmware(list(""))).containsEntry("dev-a","0.5.0-dev").containsEntry("dev-b","0.4.0-dev");
+        // 健康确认之后设备又上报了另一版本（例如回滚后继续运行旧镜像），以后收到的遥测为准。
+        sample("dev-a",0,"0.4.0-dev",null);
+        assertThat(firmware(list(""))).containsEntry("dev-a","0.4.0-dev");
     }
 
     @Test void waitingDeliveriesCountOnlyUnfinishedRows()throws Exception {

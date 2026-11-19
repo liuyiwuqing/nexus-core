@@ -232,13 +232,13 @@ CONSOLE-25 最终：22 组浏览器 1038 次检查通过（状态矩阵 125，�
 
 验证（2026-11-19，本机 macOS/Docker）：`DeviceListFlowTest` 新增 1 项——`pending`/`sent` 计入、`received`/`displayed`/`read`/`failed`/`expired` 不计，状态筛选与分页不改变每台设备自己的计数；该类 6 项通过。完整 `python3 tools/run_local.py build` 退出 0：175 项中 170 通过、5 项条件跳过、0 失败/错误，JAR 的 27 份前端与 27 份迁移逐字节匹配当前输出。04 概览浏览器专项 125 项覆盖离线样机显示「待接收 2 条」与 0 值不显示；角色 43 项、事件 21 项回归通过。首轮浏览器断言按连续文本「待接收 2 条」匹配失败——模板把标签与数量渲染成相邻节点，`innerText` 无空格——改为分别断言两段文本后复跑通过。浏览器均为实际编译 Vue + 回环 RAM 夹具，不连接真实 CORE、数据库、Broker 或设备。
 
-## 设备固件版本（DEVICE-FIRMWARE-01）
+## 设备固件版本（DEVICE-FIRMWARE-01 / DEVICE-FIRMWARE-02）
 
-设备卡片在 Wi-Fi 行后显示「固件 <version>」，数据来自该设备最近一条遥测样本的 `firmwareVersion`；没有任何遥测时 `GET /api/v1/devices` 返回 `null`，卡片不渲染这一行。它与 Wi-Fi 行各自取数：Wi-Fi 仍取最近一条带 SSID/IP 的样本，因此两者可能来自不同时间的样本。
+设备卡片在 Wi-Fi 行后显示「固件 <version>」。版本取两处证据中更晚的一处：最近一条遥测样本的 `firmwareVersion`，以及最近一次状态为 `healthy` 的 OTA 部署目标版本（`device_ota_deployments.target->>'version'`）。健康回读晚于最近遥测（按服务端 `received_at`）时使用 OTA 目标版本；否则用遥测。回滚后的部署不再是 `healthy`，自动退回遥测，不需要额外状态。两处都没有时 `GET /api/v1/devices` 返回 `null`，卡片不渲染这一行。它与 Wi-Fi 行各自取数：Wi-Fi 仍取最近一条带 SSID/IP 的样本，因此两者可能来自不同时间的样本。
 
-固件版本是读时快照，不保证等于设备正在运行的最新镜像（OTA 安装后要等设备下一次遥测）。设备列表沿用 `device_telemetry_samples` 的 `(device_id, observed_at)` 主键取每台设备最新一行，不新增索引或迁移，不改变 OTA、配置或投递状态机。
+这是读时快照，不保证等于设备此刻运行的镜像：健康回读只证明设备曾在新镜像上通过自检，之后若手动降级且未上报，页面要到下一拍遥测才知道。设备列表沿用 `device_telemetry_samples` 的 `(device_id, observed_at)` 主键与 `device_ota_deployments` 的 `(device_id, request_id)` 前缀索引，不新增索引或迁移，不改变 OTA、配置或投递状态机。
 
-验证（2026-11-19，本机 macOS/Docker）：`DeviceListFlowTest` 新增 1 项——两条遥测取最新固件，无遥测设备为 `null`；再插入一条无 Wi-Fi 的更新样本后固件更新，而 Wi-Fi 仍取上一条带 Wi-Fi 的样本；该类 7 项通过。完整 `python3 tools/run_local.py build` 退出 0：176 项中 171 通过、5 项条件跳过、0 失败/错误，JAR 的 27 份前端与 27 份迁移逐字节匹配当前输出。04 概览浏览器专项 126 项覆盖离线样机显示「固件 0.4.0-dev」与无遥测设备不显示固件行；首轮断言的“固件”文案先后被页头说明和“固件升级”按钮误命中，最终限定为 `.device-seen` 信息行；同轮把概览卸载检查改为等上一轮刷新结束后再点按钮，消除读取中禁用造成的既有竞态。
+验证（2026-11-19，本机 macOS/Docker）：`DeviceListFlowTest` 共 8 项通过。DEVICE-FIRMWARE-01 覆盖两条遥测取最新固件、无遥测为 `null`、无 Wi-Fi 的更新样本只更新固件；DEVICE-FIRMWARE-02 新增 1 项覆盖健康回读晚于遥测时显示目标版本、随后收到旧版本遥测时退回遥测、`rolled_back` 部署不提供版本。完整 `python3 tools/run_local.py build` 退出 0：178 项中 173 通过、5 项条件跳过、0 失败/错误，打包 27 份前端静态资源。04 概览浏览器 132 项覆盖离线样机显示「固件 0.4.0-dev」与无遥测设备不显示固件行。
 
 ## 设备待接收钻取（DEVICE-QUEUE-DRILL-01）
 
