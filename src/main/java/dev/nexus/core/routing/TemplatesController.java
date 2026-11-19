@@ -16,7 +16,7 @@ public class TemplatesController {
     public TemplatesController(MessageTemplates templates){this.templates=templates;}
     public record Save(@Min(0) int expectedVersion,@NotNull MessageTemplates.Definition definition){}
     public record Preview(@NotNull MessageTemplates.Definition definition,@NotNull @Valid MessageInput message){}
-    @GetMapping Map<String,Object> list(){return Map.of("items",templates.list(),"variables",templates.variables(),"capabilities",Map.of("sound","none","durationSeconds",8,"titleBytes",96,"summaryBytes",180));}
+    @GetMapping Map<String,Object> list(){return Map.of("items",templates.list(),"variables",templates.variables(),"capabilities",Map.of("sounds",java.util.List.of("none","chime","alert"),"minDurationSeconds",5,"maxDurationSeconds",30,"titleBytes",96,"summaryBytes",180));}
     @GetMapping("/{id}") Map<String,Object> get(@PathVariable UUID id){return templates.get(id);}
     @PutMapping("/{id}") Map<String,Object> save(@PathVariable UUID id,@Valid @RequestBody Save input){return templates.save(id,input.expectedVersion(),input.definition());}
     @DeleteMapping("/{id}") ResponseEntity<?> delete(@PathVariable UUID id,@RequestParam int expectedVersion){templates.delete(id,expectedVersion);return ResponseEntity.noContent().build();}

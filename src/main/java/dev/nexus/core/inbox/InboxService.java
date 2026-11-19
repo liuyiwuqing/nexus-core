@@ -106,7 +106,7 @@ public class InboxService {
         // Message and outbox are committed together, including during a process restart.
         for (var target : targets==null?routing.targets(in,now):targets) {
             var rendered=target.templateId()==null?null:templates.render(target.templateId(),in);
-            db.update("INSERT INTO deliveries(event_id,message_id,device_id,priority_override,title_override,summary_override,event_type_override,template_id,template_version) VALUES(?,?,?,?,?,?,?,?,?)", UUID.randomUUID(), id, target.deviceId(),target.priority(),rendered==null?null:rendered.title(),rendered==null?null:rendered.summary(),rendered==null?null:rendered.eventType(),target.templateId(),rendered==null?null:rendered.version());
+            db.update("INSERT INTO deliveries(event_id,message_id,device_id,priority_override,title_override,summary_override,event_type_override,template_id,template_version,sound,duration_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)", UUID.randomUUID(), id, target.deviceId(),target.priority(),rendered==null?null:rendered.title(),rendered==null?null:rendered.summary(),rendered==null?null:rendered.eventType(),target.templateId(),rendered==null?null:rendered.version(),rendered==null?null:rendered.sound(),rendered==null?null:rendered.durationMs());
         }
         events.messageReceived(id, in.source(), publicComment ? "public_comment" : "internal");
         return new IngestResult(id, true);

@@ -44,7 +44,8 @@ public class DeliveryService {
     public List<Map<String,Object>> claim() {
         var rows = db.queryForList("""
             SELECT d.event_id,d.device_id,d.message_id,d.attempts,COALESCE(d.title_override,m.title) AS title,COALESCE(d.summary_override,m.summary) AS summary,
-                m.source,COALESCE(d.event_type_override,m.event_type) AS event_type,COALESCE(d.priority_override,m.priority) AS priority,m.expires_at
+                m.source,COALESCE(d.event_type_override,m.event_type) AS event_type,COALESCE(d.priority_override,m.priority) AS priority,m.expires_at,
+                d.sound,d.duration_ms
             FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)
             WHERE d.status IN ('pending','sent') AND d.next_attempt_at<=now() AND m.expires_at>now()
               AND m.read_at IS NULL AND v.enabled AND d.attempts<?

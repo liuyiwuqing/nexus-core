@@ -16,15 +16,17 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class MessageTemplates {
     public record Definition(String name,String title,String summary,String icon,String sound,int durationSeconds){}
-    public record Rendered(String title,String summary,String eventType,int version){}
+    public record Rendered(String title,String summary,String eventType,int version,String sound,int durationMs){}
     private static final Pattern VARIABLE=Pattern.compile("\\{([a-zA-Z]+)}");
     private static final List<String> VARIABLES=List.of("source","eventType","title","content","summary","sender");
+    private static final List<String> SOUNDS=List.of("none","chime","alert");
     private final JdbcTemplate db;private final ObjectMapper json;
     public MessageTemplates(JdbcTemplate db,ObjectMapper json){this.db=db;this.json=json;}
     private void invalid(){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_template");}
     private void validate(Definition d){
         if(d==null||d.name()==null||d.name().isBlank()||d.name().length()>80||d.title()==null||d.title().isBlank()||d.title().length()>512||d.summary()==null||d.summary().isBlank()||d.summary().length()>8192
-            ||!List.of("text","comment","alert","growth","system").contains(d.icon()==null?"":d.icon())||!"none".equals(d.sound())||d.durationSeconds()!=8)invalid();
+            ||!List.of("text","comment","alert","growth","system").contains(d.icon()==null?"":d.icon())||!SOUNDS.contains(d.sound()==null?"":d.sound())
+            ||d.durationSeconds()<5||d.durationSeconds()>30)invalid();
         for(String text:List.of(d.title(),d.summary())) {
             var matcher=VARIABLE.matcher(text);while(matcher.find())if(!VARIABLES.contains(matcher.group(1)))invalid();
             if(VARIABLE.matcher(text).replaceAll("").matches("(?s).*[{}].*"))invalid();
@@ -66,11 +68,11 @@ public class MessageTemplates {
         return output.toString();
     }
     public Rendered render(UUID id,MessageInput in){
-        if(id==null)return new Rendered(in.title(),in.summary()==null?in.content():in.summary(),in.eventType(),0);
+        if(id==null)return new Rendered(in.title(),in.summary()==null?in.content():in.summary(),in.eventType(),0,"none",8000);
         var row=get(id);if(Boolean.TRUE.equals(row.get("deleted")))throw new ResponseStatusException(HttpStatus.GONE,"template_deleted");
         var definition=json.treeToValue((tools.jackson.databind.JsonNode)row.get("definition"),Definition.class);
         return render(definition,in,(Integer)row.get("version"));
     }
-    public Rendered render(Definition d,MessageInput in,int version){validate(d);return new Rendered(DeviceText.fit(renderText(d.title(),in),96),DeviceText.fit(renderText(d.summary(),in),180),d.icon().equals("text")?"template.text":d.icon()+".template",version);}
+    public Rendered render(Definition d,MessageInput in,int version){validate(d);return new Rendered(DeviceText.fit(renderText(d.title(),in),96),DeviceText.fit(renderText(d.summary(),in),180),d.icon().equals("text")?"template.text":d.icon()+".template",version,d.sound(),d.durationSeconds()*1000);}
     public List<String> variables(){return VARIABLES;}
 }

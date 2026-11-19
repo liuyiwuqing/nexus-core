@@ -67,10 +67,11 @@ class MessageTemplateFlowTest {
     }
 
 
-    Map<String,Object> template(String title,String summary) {return Map.of("name","模板","title",title,"summary",summary,"icon","comment","sound","none","durationSeconds",8);}
+    Map<String,Object> template(String title,String summary) {return displayTemplate("none",8,title,summary);}
+    Map<String,Object> displayTemplate(String sound,int seconds,String title,String summary) {return Map.of("name","模板","title",title,"summary",summary,"icon","comment","sound",sound,"durationSeconds",seconds);}
     String input(){return json.writeValueAsString(Map.of("connectorId","template-test","source","template-test","eventId",UUID.randomUUID(),"eventType","comment.test","title","原标题","content","很长的中文内容".repeat(80),"sender","甲"));}
     @Test void variablesAreLiteralBoundedAndCapabilitiesAreValidated() throws Exception {
-        var definition=template("{source}: {title}","{sender}：{content}");
+        var definition=displayTemplate("chime",15,"{source}: {title}","{sender}：{content}");
         String body=json.writeValueAsString(Map.of("definition",definition,"message",json.readTree(input())));
         var preview=request("POST","templates/preview",body,TOKEN);
         assertThat(preview.statusCode()).withFailMessage(preview.body()).isEqualTo(200);
@@ -78,7 +79,10 @@ class MessageTemplateFlowTest {
         assertThat(rendered.path("title").asText()).isEqualTo("template-test: 原标题");
         assertThat(rendered.path("summary").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).isLessThanOrEqualTo(180);
         assertThat(rendered.path("eventType").asText()).isEqualTo("comment.template");
-        for(var invalid:List.of(template("{missing}","text"),template("{content}","{nested:{title}}"),new java.util.HashMap<>(definition))) {
+        assertThat(rendered.path("sound").asText()).isEqualTo("chime");
+        assertThat(rendered.path("durationMs").asInt()).isEqualTo(15000);
+        for(var invalid:List.of(template("{missing}","text"),template("{content}","{nested:{title}}"),new java.util.HashMap<>(definition),
+            displayTemplate("beep",8,"{title}","text"),displayTemplate("none",4,"{title}","text"),displayTemplate("none",31,"{title}","text"))) {
             if(invalid.equals(definition))invalid.put("sound","beep");
             assertThat(request("POST","templates/preview",json.writeValueAsString(Map.of("definition",invalid,"message",json.readTree(input()))),TOKEN).statusCode()).isEqualTo(400);
         }
@@ -106,5 +110,27 @@ class MessageTemplateFlowTest {
         assertThat(request("DELETE","templates/"+id+"?expectedVersion=2","",TOKEN).statusCode()).isEqualTo(204);
         assertThat(request("PUT","templates/"+id,definition,TOKEN).statusCode()).isEqualTo(410);
         fixtures.update("UPDATE routing_policy SET mode='broadcast'");
+    }
+    @Test void targetedTestSnapshotsTemplateSoundAndDuration() throws Exception {
+        String device="template-display-pet";
+        assertThat(request("POST","devices",json.writeValueAsString(Map.of("deviceId",device,"name",device)),TOKEN).statusCode()).isEqualTo(201);
+        String id=UUID.randomUUID().toString();
+        var definition=json.writeValueAsString(Map.of("expectedVersion",0,"definition",displayTemplate("chime",15,"{title}","{sender}：{content}")));
+        assertThat(request("PUT","templates/"+id,definition,TOKEN).statusCode()).isEqualTo(200);
+        String requestKey=UUID.randomUUID().toString();
+        String body=json.writeValueAsString(Map.of("requestKey",requestKey,"deviceIds",List.of(device),"title","定向提醒","content","请查看模板显示选项","priority","high","templateId",id));
+        var accepted=request("POST","routing/test",body,TOKEN);
+        assertThat(accepted.statusCode()).withFailMessage(accepted.body()).isEqualTo(201);
+        String message=json.readTree(accepted.body()).path("messageId").asText();
+        var snapshot=fixtures.queryForMap("SELECT sound,duration_ms FROM deliveries WHERE message_id=? AND device_id=?",UUID.fromString(message),device);
+        assertThat(snapshot).containsEntry("sound","chime").containsEntry("duration_ms",15000);
+        var replay=request("POST","routing/test",body,TOKEN);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(replay.body()).path("messageId").asText()).isEqualTo(message);
+        var updated=json.writeValueAsString(Map.of("expectedVersion",1,"definition",displayTemplate("alert",30,"新 {title}","新 {summary}")));
+        assertThat(request("PUT","templates/"+id,updated,TOKEN).statusCode()).isEqualTo(200);
+        assertThat(request("POST","routing/test",body,TOKEN).statusCode()).isEqualTo(200);
+        var unchanged=fixtures.queryForMap("SELECT sound,duration_ms,title_override FROM deliveries WHERE message_id=? AND device_id=?",UUID.fromString(message),device);
+        assertThat(unchanged).containsEntry("sound","chime").containsEntry("duration_ms",15000).containsEntry("title_override","定向提醒");
     }
 }

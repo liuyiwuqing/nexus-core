@@ -4,14 +4,15 @@ import ConsoleDisclosure from './ConsoleDisclosure.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
-import { NButton, NInput, NSelect } from 'naive-ui';
+import { NButton, NInput, NInputNumber, NSelect } from 'naive-ui';
 import { nextTick, onUnmounted, ref } from 'vue';
 import { useAccess } from './access';
 import type { Api, MessageTemplate, TemplateDefinition, TemplateSession } from './types';
 import StatusNote from './StatusNote.vue';
 const {operate}=useAccess();
 const props=defineProps<{api:Api;busy:boolean;session:TemplateSession;mutate:(a:()=>Promise<unknown>,n:string)=>Promise<boolean>}>();
-const items=ref<MessageTemplate[]>([]),variables=ref<string[]>([]),loading=ref(false),error=ref(''),preview=ref<{title:string;summary:string;eventType:string}|null>(null),example=ref('这是一条模板预览内容。');
+const items=ref<MessageTemplate[]>([]),variables=ref<string[]>([]),loading=ref(false),error=ref(''),preview=ref<{title:string;summary:string;eventType:string;sound:string;durationMs:number}|null>(null),example=ref('这是一条模板预览内容。');
+const SOUND_LABELS:Record<string,string>={none:'无提示音',chime:'提示音',alert:'警报音'};
 const deleting=ref<MessageTemplate|null>(null),deleteName=ref('');
 /* 关闭草稿会整块卸载表单，焦点落到 body；把它交给"创建模板"这个重开入口。
    该按钮在只读角色下不存在，所以只在存在时转移。 */
@@ -23,7 +24,7 @@ async function load(){c?.abort();const control=new AbortController();c=control;c
 function edit(t?:MessageTemplate){const s=props.session;s.id=t?.templateId||crypto.randomUUID();s.version=t?.version||0;s.draft=t?clone(t.definition):{name:'',title:'{title}',summary:'{summary}',icon:'text',sound:'none',durationSeconds:8};s.pending=null;s.uncertain=false;preview.value=null;}
 async function save(){const s=props.session;if(!s.draft||props.busy)return;const body=s.pending||{expectedVersion:s.version,definition:clone(s.draft)};s.pending=body;const ok=await props.mutate(async()=>{const result=await props.api<MessageTemplate>(`templates/${s.id}`,'PUT',body);if(result.templateId!==s.id||result.deleted)throw new Error('未确认模板保存结果');},'模板已保存，仅影响新投递。');if(alive){if(ok){s.draft=null;s.pending=null;s.uncertain=false;}else s.uncertain=true;await load();}}
 async function check(){const s=props.session;await props.mutate(async()=>{const result=await props.api<MessageTemplate>(`templates/${s.id}`);if(s.pending&&!result.deleted&&Object.entries(s.pending.definition).every(([k,v])=>result.definition[k as keyof TemplateDefinition]===v)){if(alive){s.draft=null;s.pending=null;s.uncertain=false;}}else throw new Error('当前模板不同，请关闭草稿后重新读取。');},'已核对模板。');if(alive)await load();}
-async function render(t?:MessageTemplate){const d=t?.definition||props.session.draft;if(!d)return;await props.mutate(async()=>{const result=await props.api<{title:string;summary:string;eventType:string}>('templates/preview','POST',{definition:d,message:{connectorId:'preview',source:'preview',eventId:crypto.randomUUID(),eventType:'manual.test',title:'预览标题',content:example.value,summary:example.value,sender:'示例用户'}});if(alive)preview.value=result;},'预览已生成，未发送消息。');}
+async function render(t?:MessageTemplate){const d=t?.definition||props.session.draft;if(!d)return;await props.mutate(async()=>{const result=await props.api<{title:string;summary:string;eventType:string;sound:string;durationMs:number}>('templates/preview','POST',{definition:d,message:{connectorId:'preview',source:'preview',eventId:crypto.randomUUID(),eventType:'manual.test',title:'预览标题',content:example.value,summary:example.value,sender:'示例用户'}});if(alive)preview.value=result;},'预览已生成，未发送消息。');}
 async function remove(){const t=deleting.value;if(!t||deleteName.value!==t.definition.name)return;await props.mutate(async()=>{await props.api(`templates/${t.templateId}?expectedVersion=${t.version}`,'DELETE');if(alive)deleting.value=null;},'模板已删除，已有投递保持原快照。');if(alive)await load();}
 void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
 </script>
@@ -125,9 +126,54 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
             :input-props="{ id: 'templatespanel-field-4', 'aria-label': '卡片类型' }"
           />
         </ConsoleField>
+        <ConsoleField
+          class="spaced"
+          path="field-7"
+          :rule="
+            fieldRule(() => session.draft?.durationSeconds, {
+              required: true,
+              number: true,
+              min: 5,
+              max: 30,
+              step: 1,
+              disabled: () => busy || loading || !!session.pending,
+            })
+          "
+          :label-props="{ id: 'templatespanel-field-7' + '-label', for: 'templatespanel-field-7' }"
+        >
+          <template #label>显示时长（秒）</template>
+          <NInputNumber
+            :disabled="busy || loading || !!session.pending"
+            v-model:value="session.draft.durationSeconds"
+            :min="5"
+            :max="30"
+            :step="1"
+            :precision="0"
+            :show-button="false"
+            :input-props="{ required: true, id: 'templatespanel-field-7', 'aria-label': '显示时长（秒）' }"
+          />
+        </ConsoleField>
+        <ConsoleField
+          class="spaced"
+          path="field-8"
+          :label-props="{ id: 'templatespanel-field-8' + '-label', for: 'templatespanel-field-8' }"
+        >
+          <template #label>提示音</template>
+          <NSelect
+            @keydown.esc.stop
+            :disabled="busy || loading || !!session.pending"
+            v-model:value="session.draft.sound"
+            :options="[
+              { label: '无提示音', value: 'none' },
+              { label: '提示音', value: 'chime' },
+              { label: '警报音', value: 'alert' },
+            ]"
+            :input-props="{ id: 'templatespanel-field-8', 'aria-label': '提示音' }"
+          />
+        </ConsoleField>
       </div>
       <p class="scope-note">
-        变量：{{ variables.map((v) => '{' + v + '}').join('、') }}。当前设备契约为无提示音、显示 8 秒，标题 96 字节、摘要 180 字节。
+        变量：{{ variables.map((v) => '{' + v + '}').join('、') }}。显示 5–30 秒、无/提示/警报音；旧设备固件需先升级才能接收这些字段。标题 96 字节、摘要 180 字节。
       </p>
       <div class="form-footer">
         <NButton attr-type="button" class="text-button" :disabled="busy" @click="closeDraft">关闭模板草稿</NButton>
@@ -147,6 +193,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
           <span class="badge">版本 {{ t.version }}</span>
         </div>
         <p>{{ t.definition.title }}</p>
+        <p class="muted">{{ SOUND_LABELS[t.definition.sound] }} · {{ t.definition.durationSeconds }} 秒</p>
         <div class="management-actions">
           <NButton attr-type="button" class="text-button" :disabled="busy" @click="render(t)">预览此模板</NButton>
           <NButton attr-type="button" v-if="operate" class="text-button" :disabled="busy || !!session.draft" @click="edit(t)">
@@ -205,7 +252,7 @@ void load();onUnmounted(()=>{alive=false;g++;c?.abort();});
       <article v-if="preview" class="record-card spaced" aria-label="模板预览结果">
         <h3>{{ preview.title }}</h3>
         <p style="white-space: pre-wrap">{{ preview.summary }}</p>
-        <span class="muted">{{ preview.eventType }} · 仅预览，未发送</span>
+        <span class="muted">{{ preview.eventType }} · {{ SOUND_LABELS[preview.sound] }} · {{ preview.durationMs / 1000 }} 秒 · 仅预览，未发送</span>
       </article>
     </div>
     </ConsoleDisclosure>
