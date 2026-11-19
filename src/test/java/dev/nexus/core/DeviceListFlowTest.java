@@ -83,6 +83,23 @@ class DeviceListFlowTest {
         for(String key:List.of("online","offline","disabled"))result.put(key,value.path("counts").path(key).asInt());
         return result;
     }
+    Map<String,Integer> waiting(JsonNode value)throws Exception {
+        var result=new LinkedHashMap<String,Integer>();
+        for(var row:value.path("items"))result.put(row.path("deviceId").asText(),row.path("waitingDeliveries").asInt());
+        return result;
+    }
+    UUID message(String upstream) {
+        var id=UUID.randomUUID();
+        fixtures.update("""
+            INSERT INTO inbox_messages(message_id,connector_id,source,upstream_event_id,event_type,title,content,summary,sender,original_url,priority,created_at,expires_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,now(),now()+interval '1 day')
+            """,id,"list-connector","rss","upstream-"+upstream,"message","标题","正文","摘要","发送者","https://example.invalid/item","normal");
+        return id;
+    }
+    void deliver(String deviceId,String status) {
+        fixtures.update("INSERT INTO deliveries(event_id,message_id,device_id,status) VALUES(?,?,?,?)",
+            UUID.randomUUID(),message(deviceId+"-"+status),deviceId,status);
+    }
 
     @BeforeEach void prepare()throws Exception {
         fixtures.execute("TRUNCATE devices CASCADE");
@@ -197,5 +214,16 @@ class DeviceListFlowTest {
         assertThat(request("GET","devices?order=sideways","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?size=101","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?q="+"x".repeat(81),"").statusCode()).isEqualTo(400);
+    }
+
+    @Test void waitingDeliveriesCountOnlyUnfinishedRows()throws Exception {
+        deliver("dev-a","pending");
+        deliver("dev-a","sent");
+        for(String status:List.of("received","displayed","read","failed","expired"))deliver("dev-b",status);
+        assertThat(waiting(list(""))).containsExactly(
+            Map.entry("dev-a",2),Map.entry("dev-b",0),Map.entry("dev-c",0));
+        // 状态筛选和分页不改变每台设备自己的未接收数。
+        assertThat(waiting(list("?state=disabled"))).containsExactly(Map.entry("dev-c",0));
+        assertThat(waiting(list("?page=2&size=1"))).containsExactly(Map.entry("dev-b",0));
     }
 }

@@ -96,13 +96,17 @@ public class DeviceController {
             SELECT d.device_id AS "deviceId",d.name,d.enabled,d.last_seen AS "lastSeen",
                    (d.online AND d.last_seen > now()-interval '90 seconds') AS online,d.created_at AS "createdAt",
                    t.wifi_ip AS "wifiIp",t.wifi_rssi AS "wifiRssi",t.wifi_ssid AS "wifiSsid",
-                   t.observed_at AS "telemetryAt"
+                   t.observed_at AS "telemetryAt",COALESCE(w.waiting,0) AS "waitingDeliveries"
             FROM devices d
             LEFT JOIN LATERAL (
                 SELECT wifi_ip,wifi_rssi,wifi_ssid,observed_at FROM device_telemetry_samples s
                 WHERE s.device_id=d.device_id AND (s.wifi_ip IS NOT NULL OR s.wifi_ssid IS NOT NULL)
                 ORDER BY observed_at DESC LIMIT 1
             ) t ON true
+            LEFT JOIN (
+                SELECT device_id,count(*) AS waiting FROM deliveries
+                WHERE status IN ('pending','sent') GROUP BY device_id
+            ) w ON w.device_id=d.device_id
             """ + filter + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?", listArgs.toArray())),
             "total", ((Number) counts.get("total")).longValue(), "matched", matched, "page", page, "size", size,
             "state", state, "q", query, "sort", sort, "order", order,

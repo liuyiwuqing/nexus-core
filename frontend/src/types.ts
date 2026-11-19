@@ -9,7 +9,8 @@ export interface Message {
   contentPurgedAt?: string | null;
 }
 export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null;
-  wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null }
+  wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null;
+  waitingDeliveries?: number }
 export interface DeviceCounts { online: number; offline: number; disabled: number }
 export interface DevicePage extends Page<Device> { matched: number; state: string; q: string; sort: string; order: string; counts: DeviceCounts }
 export interface DeviceConfig {
