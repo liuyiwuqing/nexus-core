@@ -58,7 +58,7 @@ python3 tools/run_local.py run
 
 测试消息在结果未知时保留同一请求 ID 和正文，切换导航可继续重试，收到确认后才开始下一条消息。退出/刷新页面后不恢复正文；详细行为和验证边界见 [测试消息与断线重试](docs/console-messages.md)。 加载、空结果与错误反馈使用统一紧凑样式；消息和投递读取失败集中显示一次原因与重试，字段校验、权限与未知结果核对保留，见 [状态反馈约定](docs/console-ui.md#加载空状态与错误反馈console-25)。
 
-消息可组合已读/未读、来源和收件时间，投递可组合八种状态、设备 ID 和消息收件时间；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。两页可导出当前筛选的元数据 CSV，最多 5000 条，不含标题、正文或原始 payload。HTTP 参数、时间口径与导出边界见[筛选与导出](docs/console-list-filters.md)。
+消息可组合已读/未读、来源和收件时间，投递可组合八种状态、「待接收」（pending+sent 聚合）、设备 ID 和消息收件时间；计数与分页使用同一条件，刷新/操作后保留筛选，末页变空时回到有效页。两页可导出当前筛选的元数据 CSV，最多 5000 条，不含标题、正文或原始 payload。HTTP 参数、时间口径与导出边界见[筛选与导出](docs/console-list-filters.md)。
 
 “概览”提供同一数据库快照的设备在线/离线、今日收件、当前失败率和投递积压；无投递时失败率显示 `—`。“今日”的日起算时区由 `nexus.overview.timezone`（环境变量 `NEXUS_OVERVIEW_TIMEZONE`）配置，默认 `UTC`，配置非法时启动失败；页面按响应里的 `timezone` 显示当地日期。越线的指标以告警条列在计数上方，MQTT 健康与设备在线各成一条。口径及验证入口见[运行概览](docs/console-overview.md)。
 
@@ -209,7 +209,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /devices/{id}/management`，`POST .../config-requests`，`GET .../config-requests/{requestId}/audit` | 遥测/设置、CAS 请求与审计 |
 | `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
 | `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |
-| `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
+| `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态或 `waiting=true` 待接收、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
 | `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
 | `POST /deliveries/batch-{cancel,retry}` | 跨消息批量，请求体 `messageIds`；最多 20 条消息且合计 500 条投递，整单一个事务，任一消息不可读返回 404 且不写入；写入令牌 `CANCEL_MESSAGE_DELIVERIES_BATCH` / `RETRY_MESSAGE_DELIVERIES_BATCH` |
 | `GET /connectors`，`POST /connectors/halo/poll` | 接入健康与同步 |

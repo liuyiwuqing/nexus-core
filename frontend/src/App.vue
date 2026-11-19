@@ -152,7 +152,9 @@ function querySuffix(kind: 'messages' | 'deliveries'): string {
   const search = kind === 'messages' ? messageSearch.value : deliverySearch.value;
   const state = kind === 'messages' ? messageReadStatus.value : deliveryStatus.value;
   const query = new URLSearchParams();
-  if (state) query.set(kind === 'messages' ? 'readStatus' : 'status', state);
+  // 「待接收」是 pending+sent 的聚合，服务端用 waiting=true 表达，不能塞进单值 status。
+  if (kind === 'deliveries' && state === 'waiting') query.set('waiting', 'true');
+  else if (state) query.set(kind === 'messages' ? 'readStatus' : 'status', state);
   if (search.identity) query.set(kind === 'messages' ? 'source' : 'deviceId', search.identity);
   // 失败原因只在投递页存在：做成同一条 querySuffix，列表与元数据导出才会筛到同一批。
   if (kind === 'deliveries' && deliveryReason.value) query.set('lastError', deliveryReason.value);
@@ -475,6 +477,14 @@ const removeDevice = async (id: string) => {
   return ok;
 };
 function pullMessages(source:string){tab.value='inbox';void searchMessages({...emptySearch(),identity:source});}
+/** 设备卡片的「待接收」钻取：按该设备的 pending+sent 过滤，卡片计数与列表口径一致。 */
+function drillDeviceDeliveries(deviceId: string) {
+  deliverySearch.value = { ...emptySearch(), identity: deviceId };
+  deliveryStatus.value = 'waiting';
+  deliveryReason.value = '';
+  deliveries.value = { ...deliveries.value, items: [], total: 0, page: 1 };
+  if (tab.value === 'deliveries') void refresh(); else tab.value = 'deliveries';
+}
 /**
  * 告警钻取：先备好筛选再切页签，切页条的 watch 会带着新条件读一次，不会先读一遍全量。
  * 上一次的搜索条件必须清掉，否则"查看等待投递"会被旧筛选悄悄收窄成别的结果集。
@@ -776,6 +786,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         @sort="sortDevices"
         @size="deviceSizeChange"
         @page="devicePageChange"
+        @deliveries="drillDeviceDeliveries"
       />
       <section v-else-if="tab === 'connectors'">
         <ConnectorsPanel :items="connectors" :busy="busy" :loading="loading" :failed="readFailed" :poll="poll" :import-comment="importComment" />

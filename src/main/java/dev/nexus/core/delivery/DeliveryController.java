@@ -22,8 +22,9 @@ public class DeliveryController {
                                        @RequestParam(required=false) String deviceId,
                                        @RequestParam(required=false) String lastError,
                                        @RequestParam(required=false) String receivedFrom,
-                                       @RequestParam(required=false) String receivedBefore) {
-        return delivery.list(page, size, status, deviceId, lastError, receivedFrom, receivedBefore);
+                                       @RequestParam(required=false) String receivedBefore,
+                                       @RequestParam(required=false) String waiting) {
+        return delivery.list(page, size, status, deviceId, lastError, receivedFrom, receivedBefore, waiting);
     }
     @GetMapping("/{id}/history") Map<String,Object> history(@PathVariable UUID id,
             @RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
@@ -32,8 +33,9 @@ public class DeliveryController {
     }
     @GetMapping("/export") ResponseEntity<String> export(@RequestParam(required=false) String status,
             @RequestParam(required=false) String deviceId, @RequestParam(required=false) String lastError,
-            @RequestParam(required=false) String receivedFrom, @RequestParam(required=false) String receivedBefore) {
-        return MetadataCsv.response("deliveries-metadata.csv", delivery.export(status, deviceId, lastError, receivedFrom, receivedBefore),
+            @RequestParam(required=false) String receivedFrom, @RequestParam(required=false) String receivedBefore,
+            @RequestParam(required=false) String waiting) {
+        return MetadataCsv.response("deliveries-metadata.csv", delivery.export(status, deviceId, lastError, receivedFrom, receivedBefore, waiting),
             "eventId", "messageId", "deviceId", "status", "attempts", "messageReceivedAt", "receivedAt", "displayedAt", "readAt", "nextAttemptAt");
     }
     @PostMapping("/{id}/cancel") ResponseEntity<Void> cancel(@PathVariable UUID id) {

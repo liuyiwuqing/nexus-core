@@ -59,6 +59,7 @@ async function closeHistory() {
           @update:value="filterChanged"
           :options="[
             { label: '全部', value: '' },
+            { label: '待接收', value: 'waiting' },
             ...Object.entries(deliveryNames).map(([value, name]) => ({ label: name, value: value })),
           ]"
           :input-props="{ id: 'deliverypanel-field-1', 'aria-label': '投递状态' }"

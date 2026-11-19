@@ -127,6 +127,45 @@ class ConsoleListFilterFlowTest {
         assertThat(csv.body()).contains(timeout).doesNotContain(broker);
     }
 
+    @Test void deliveryWaitingFilterMatchesPendingAndSentForOneDevice()throws Exception {
+        // message() 会为所有启用设备建投递；先登记第二台，才能证明等待筛选没有把两台混在一起。
+        assertThat(request("POST","devices","{\"deviceId\":\"other-device\",\"name\":\"另一台设备\"}",TOKEN).statusCode()).isEqualTo(201);
+        String pending=message("等待一"), sent=message("已发送一"), failed=message("失败一"), displayed=message("已展示一");
+        fixtures.update("UPDATE deliveries SET status='displayed',last_error=NULL,next_attempt_at=now()+interval '1 day'");
+        fixtures.update("UPDATE deliveries SET status='pending' WHERE message_id=?",UUID.fromString(pending));
+        fixtures.update("UPDATE deliveries SET status='sent' WHERE message_id=?",UUID.fromString(sent));
+        fixtures.update("UPDATE deliveries SET status='failed',last_error='ack_timeout' WHERE message_id=?",UUID.fromString(failed));
+        assertThat(page("deliveries?waiting=true&size=100").path("total").asInt()).isEqualTo(4);
+        var mine=page("deliveries?deviceId=filter-device&waiting=true&size=100");
+        assertThat(mine.path("total").asInt()).isEqualTo(2);
+        assertThat(mine.path("items").size()).isEqualTo(2);
+        var ids=new java.util.ArrayList<String>();
+        for(var item:mine.path("items")) {
+            assertThat(item.path("deviceId").asText()).isEqualTo("filter-device");
+            assertThat(item.path("status").asText()).isIn("pending","sent");
+            ids.add(item.path("messageId").asText());
+        }
+        assertThat(ids).containsExactlyInAnyOrder(pending,sent);
+        // 另一台设备看到同一批消息自己的行，而不是第一台的结果。
+        var other=page("deliveries?deviceId=other-device&waiting=true&size=100");
+        assertThat(other.path("total").asInt()).isEqualTo(2);
+        var otherIds=new java.util.ArrayList<String>();
+        for(var item:other.path("items")) {
+            assertThat(item.path("deviceId").asText()).isEqualTo("other-device");
+            otherIds.add(item.path("messageId").asText());
+        }
+        assertThat(otherIds).containsExactlyInAnyOrder(pending,sent);
+        // false 是"不限制"，不是"只要非等待"。
+        assertThat(page("deliveries?waiting=false&size=100").path("total").asInt()).isEqualTo(8);
+        // 聚合筛选与单值状态互斥；空值和未知值同样是参数错误。
+        for(String path:new String[]{"deliveries?waiting=true&status=failed","deliveries?waiting=maybe","deliveries?waiting="})
+            assertThat(request("GET",path,"",TOKEN).statusCode()).withFailMessage(path).isEqualTo(400);
+        // 导出与列表共用同一条谓词，不能导出比列表更多的东西。
+        var csv=request("GET","deliveries/export?deviceId=filter-device&waiting=true","",TOKEN);
+        assertThat(csv.statusCode()).withFailMessage(csv.body()).isEqualTo(200);
+        assertThat(csv.body()).contains(pending,sent).doesNotContain(failed,displayed,"other-device");
+    }
+
     @Test void unknownFiltersAreRejectedAndAuthenticationIsPreserved()throws Exception {
         for(String path:new String[]{"messages?readStatus=all","messages?readStatus=","messages?readStatus=read%27%20OR%201%3D1",
                 "deliveries?status=unknown","deliveries?status=","deliveries?status=failed%27%20OR%201%3D1",

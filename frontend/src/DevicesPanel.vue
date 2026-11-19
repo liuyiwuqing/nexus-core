@@ -12,7 +12,7 @@ import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
 import { formatRelative, formatTime, type Api, type Device } from './types';
 const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean>; remove: (id: string) => Promise<boolean> }>();
-const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number] }>();
+const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number]; deliveries: [deviceId: string] }>();
 // 搜索输入本地防抖 300ms 后才请求；排序与页大小立即生效并回到第一页。
 const searchDraft = ref(props.q);
 watch(() => props.q, value => { if (value !== searchDraft.value) searchDraft.value = value; });
@@ -253,7 +253,14 @@ async function submit() {
         </p>
         <p v-if="device.waitingDeliveries" class="device-seen">
           <span>待接收</span>
-          <strong>{{ device.waitingDeliveries }} 条</strong>
+          <NButton
+            attr-type="button"
+            class="text-button device-waiting"
+            :aria-label="`查看 ${device.name} 待接收的投递`"
+            @click="emit('deliveries', device.deviceId)"
+          >
+            {{ device.waitingDeliveries }} 条
+          </NButton>
         </p>
         <ConsoleForm v-if="renameId === device.deviceId" class="device-name-form" @submit.prevent="saveName">
           <ConsoleField

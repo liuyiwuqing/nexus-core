@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import dev.nexus.core.delivery.DeliveryWorker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
@@ -53,6 +55,9 @@ class MessageDeliveryBatchFlowTest {
         p.add("nexus.mqtt.password",()->"batch-password");p.add("nexus.mqtt.allow-insecure",()->"true");p.add("nexus.mqtt.ca-cert",()->"");
         p.add("nexus.delivery.tick-ms",()->"600000");p.add("nexus.delivery.max-attempts",()->"1");
     }
+    // 投递 worker 在启动 500ms 后会先跑一拍；它会把用例刚建的行发布成 sent/attempted，
+    // 破坏“从未尝试”的前置条件。这里只关掉本类的外发，批次规则仍走真实服务与数据库。
+    @MockitoBean DeliveryWorker deliveryWorker;
     @LocalServerPort int port;
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate fixtures;

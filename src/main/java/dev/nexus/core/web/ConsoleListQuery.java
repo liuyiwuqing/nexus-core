@@ -23,12 +23,20 @@ public record ConsoleListQuery(String where, List<Object> values) {
         return window(sql, values, from, before);
     }
 
-    public static ConsoleListQuery deliveries(String status, String device, String reason, String from, String before) {
+    public static ConsoleListQuery deliveries(String status, String device, String reason, String from, String before, String waiting) {
         var sql = new StringBuilder(" WHERE 1=1");
         var values = new ArrayList<Object>();
         if (status != null) {
             require(status.matches("pending|sent|received|displayed|read|failed|expired|cancelled"));
             sql.append(" AND d.status=?"); values.add(status);
+        }
+        // 设备卡片的「待接收」是 pending+sent 的聚合；与单值 status 叠加只会得到矛盾或子集，直接拒绝。
+        if (waiting != null) {
+            require(waiting.matches("true|false"));
+            if ("true".equals(waiting)) {
+                require(status == null);
+                sql.append(" AND d.status IN ('pending','sent')");
+            }
         }
         if (device != null) {
             require(device.matches("[a-zA-Z0-9_-]{1,40}"));
