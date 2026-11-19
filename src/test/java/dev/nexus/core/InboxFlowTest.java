@@ -751,4 +751,106 @@ class InboxFlowTest {
         UUID plainId = UUID.fromString(json.readTree(plain.body()).path("messageId").asText());
         assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=? AND template_id IS NULL AND title_override IS NULL", Integer.class, plainId)).isEqualTo(enabled);
     }
+
+    @Test
+    void resendCopiesRenderedSnapshotsOnlyToEnabledTargetsAndReusesTheEventId() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String a = "resend-a-" + suffix, b = "resend-b-" + suffix;
+        for (String id : new String[]{a, b})
+            assertThat(request("POST", "/api/v1/devices", "{\"deviceId\":\"" + id + "\",\"name\":\"" + id + "\"}", TOKEN).statusCode()).isEqualTo(201);
+        String template = UUID.randomUUID().toString();
+        String definition = json.writeValueAsString(java.util.Map.of("expectedVersion", 0, "definition", java.util.Map.of(
+            "name", "重发模板", "title", "{title} · 模板", "summary", "{content}", "icon", "text", "sound", "chime", "durationSeconds", 8)));
+        assertThat(request("PUT", "/api/v1/templates/" + template, definition, TOKEN).statusCode()).isEqualTo(200);
+
+        var input = new java.util.LinkedHashMap<String, Object>();
+        input.put("connectorId", "manual");
+        input.put("source", "manual");
+        input.put("eventId", UUID.randomUUID().toString());
+        input.put("eventType", "manual.test");
+        input.put("title", "重发对象");
+        input.put("content", "复制渲染快照");
+        input.put("priority", "high");
+        input.put("devices", java.util.List.of(a, b));
+        input.put("templateId", template);
+        var created = request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN);
+        assertThat(created.statusCode()).withFailMessage(created.body()).isEqualTo(201);
+        UUID original = UUID.fromString(json.readTree(created.body()).path("messageId").asText());
+        assertThat(request("PUT", "/api/v1/devices/" + b + "/enabled", "{\"enabled\":false}", TOKEN).statusCode()).isEqualTo(204);
+
+        String resendEvent = UUID.randomUUID().toString();
+        String body = "{\"eventId\":\"" + resendEvent + "\"}";
+        var resent = request("POST", "/api/v1/messages/" + original + "/resend", body, TOKEN);
+        assertThat(resent.statusCode()).withFailMessage(resent.body()).isEqualTo(201);
+        var resentBody = json.readTree(resent.body());
+        UUID copy = UUID.fromString(resentBody.path("messageId").asText());
+        assertThat(copy).isNotEqualTo(original);
+        assertThat(resentBody.path("queued").asInt()).isEqualTo(1);
+        assertThat(resentBody.path("skipped").asInt()).isEqualTo(1);
+
+        var message = fixtureDb.queryForMap("""
+            SELECT source,event_type,title,content,priority,data_class,metadata->>'resendOf' AS resend_of,
+                   metadata->>'resendSkipped' AS resend_skipped
+            FROM inbox_messages WHERE message_id=?
+            """, copy);
+        assertThat(message.get("source")).isEqualTo("manual");
+        assertThat(message.get("event_type")).isEqualTo("manual.test");
+        assertThat(message.get("title")).isEqualTo("重发对象");
+        assertThat(message.get("content")).isEqualTo("复制渲染快照");
+        assertThat(message.get("priority")).isEqualTo("high");
+        assertThat(message.get("data_class")).isEqualTo("internal");
+        assertThat(message.get("resend_of")).isEqualTo(original.toString());
+        assertThat(message.get("resend_skipped")).isEqualTo("1");
+        var delivery = fixtureDb.queryForMap("""
+            SELECT device_id,title_override,summary_override,event_type_override,template_id::text AS template_id,
+                   template_version,sound,duration_ms
+            FROM deliveries WHERE message_id=?
+            """, copy);
+        assertThat(delivery.get("device_id")).isEqualTo(a);
+        assertThat(delivery.get("title_override")).isEqualTo("重发对象 · 模板");
+        assertThat(delivery.get("summary_override")).isEqualTo("复制渲染快照");
+        assertThat(delivery.get("event_type_override")).isEqualTo("template.text");
+        assertThat(delivery.get("template_id")).isEqualTo(template);
+        assertThat(delivery.get("template_version")).isEqualTo(1);
+        assertThat(delivery.get("sound")).isEqualTo("chime");
+        assertThat(delivery.get("duration_ms")).isEqualTo(8000);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, original)).isEqualTo(2);
+
+        var replay = request("POST", "/api/v1/messages/" + original + "/resend", body, TOKEN);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        var replayBody = json.readTree(replay.body());
+        assertThat(replayBody.path("messageId").asText()).isEqualTo(copy.toString());
+        assertThat(replayBody.path("queued").asInt()).isEqualTo(1);
+        assertThat(replayBody.path("skipped").asInt()).isEqualTo(1);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, resendEvent)).isEqualTo(1);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, copy)).isEqualTo(1);
+
+        input.put("eventId", UUID.randomUUID().toString());
+        input.put("devices", java.util.List.of(a));
+        var other = request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN);
+        assertThat(other.statusCode()).withFailMessage(other.body()).isEqualTo(201);
+        UUID otherId = UUID.fromString(json.readTree(other.body()).path("messageId").asText());
+        assertThat(request("POST", "/api/v1/messages/" + otherId + "/resend", body, TOKEN).statusCode()).isEqualTo(409);
+        assertThat(request("POST", "/api/v1/messages/" + UUID.randomUUID() + "/resend", "{\"eventId\":\"" + UUID.randomUUID() + "\"}", TOKEN).statusCode()).isEqualTo(404);
+
+        UUID empty = UUID.randomUUID();
+        fixtureDb.update("""
+            INSERT INTO inbox_messages(message_id,connector_id,source,upstream_event_id,event_type,title,content,summary,
+                sender,original_url,priority,created_at,expires_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,now(),now()+interval '1 day')
+            """, empty, "manual", "manual", UUID.randomUUID().toString(), "manual.test", "无投递", "无投递", "无投递", "", "", "normal");
+        String emptyEvent = UUID.randomUUID().toString();
+        assertThat(request("POST", "/api/v1/messages/" + empty + "/resend", "{\"eventId\":\"" + emptyEvent + "\"}", TOKEN).statusCode()).isEqualTo(409);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, emptyEvent)).isZero();
+
+        assertThat(request("PUT", "/api/v1/devices/" + a + "/enabled", "{\"enabled\":false}", TOKEN).statusCode()).isEqualTo(204);
+        String disabledEvent = UUID.randomUUID().toString();
+        assertThat(request("POST", "/api/v1/messages/" + otherId + "/resend", "{\"eventId\":\"" + disabledEvent + "\"}", TOKEN).statusCode()).isEqualTo(409);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, disabledEvent)).isZero();
+
+        fixtureDb.update("UPDATE inbox_messages SET content_purged_at=now() WHERE message_id=?", original);
+        String purgedEvent = UUID.randomUUID().toString();
+        assertThat(request("POST", "/api/v1/messages/" + original + "/resend", "{\"eventId\":\"" + purgedEvent + "\"}", TOKEN).statusCode()).isEqualTo(409);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, purgedEvent)).isZero();
+    }
 }

@@ -2,6 +2,8 @@ export interface Page<T> { items: T[]; total: number; page: number; size: number
 export interface ListSearch { identity: string; receivedFrom: string; receivedBefore: string }
 export type MessagePriority = 'low' | 'normal' | 'high' | 'critical';
 export interface MessageSubmission { readonly eventId: string; readonly title: string; readonly content: string; readonly priority: MessagePriority; readonly devices: string[]; readonly templateId: string | null }
+export interface ResendSubmission { readonly messageId: string; readonly eventId: string }
+export interface MessageResendResult { readonly messageId: string; readonly queued: number; readonly skipped: number }
 export interface Message {
   messageId: string; connectorId: string; source: string; eventType: string;
   title: string; content: string; summary: string; sender: string; originalUrl: string;
@@ -235,14 +237,14 @@ export const errorNames: Record<string, string> = {
   delivery_not_retryable: '这条投递已处理、已过期或设备已停用，不能重试。',
   delivery_not_cancellable: '这条投递已开始、已结束或无法确认从未发送，不能取消。',
   delivery_not_found: '投递记录不存在或已按保留策略删除。', cancelled_by_admin: '管理员取消投递',
-  delivery_batch_confirmation_required: '批量操作需要再次确认后才执行。', batch_too_large: '一次最多处理 20 条消息或 500 条投递，请缩小范围后重试。', message_not_found: '消息不存在或已按保留策略清除；整单未做任何修改。',
+  delivery_batch_confirmation_required: '批量操作需要再次确认后才执行。', batch_too_large: '一次最多处理 20 条消息或 500 条投递，请缩小范围后重试。', message_not_found: '消息不存在或已按保留策略清除；整单未做任何修改。', message_has_no_deliveries: '这条消息没有投递目标，不能重发。',
   ack_timeout: '设备未在重试期限内确认', broker_unavailable: '消息连接暂不可用', busy: '设备队列已满',
   storage_error: '设备存储失败', time_unavailable: '设备尚未校时', read_elsewhere: '已在消息中心标记已读',
   expired: '消息已过期', device_disabled: '设备已停用', invalid: '设备拒绝了消息格式',
   ai_not_configured: 'AI 服务尚未配置，请填写本机配置并重启 CORE。',
   memory_not_configured: '长期记忆尚未配置，请填写本机配置并重启 CORE。',
   data_policy_denied: '仅允许处理经 Halo 核验的公开评论。',
-  content_retention_expired: '内容已超过保留期限，不能继续分析或导出。',
+  content_retention_expired: '内容已超过保留期限，不能继续分析、导出或重发。',
   analysis_required: '请先完成 AI 分析。', analysis_not_retryable: '当前分析状态不允许重试。',
   no_longer_public: '评论已不再公开，已阻止外发。', comment_changed: '评论内容已变化，需要重新核验和分析。',
   source_recheck_failed: '无法核验评论公开状态，将按重试策略处理。',

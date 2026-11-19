@@ -8,7 +8,7 @@ import { Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { formatTime, type Api, type Device, type Message, type MessagePriority, type MessageSubmission, type MessageTemplate, type Page, type ListSearch } from './types';
+import { formatTime, type Api, type Device, type Message, type MessagePriority, type MessageSubmission, type MessageResendResult, type ResendSubmission, type MessageTemplate, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
@@ -20,7 +20,9 @@ const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
   pending: MessageSubmission | null; uncertain: boolean; devices: Device[];
+  resendPending: ResendSubmission | null; resendUncertain: boolean;
   create: (title: string, content: string, priority: MessagePriority, devices: string[], templateId: string | null) => Promise<string | null>;
+  resend: (messageId: string) => Promise<MessageResendResult | null>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
@@ -28,6 +30,10 @@ const emit = defineEmits<{ page: [page: number]; filter: [value: Message['readSt
 function filterChanged(value: string) { emit('filter', value as Message['readStatus'] | ''); }
 const selectedId = ref('');
 const selected = computed(() => props.data.items.find(message => message.messageId === selectedId.value));
+// 重发确认与结果只属于当前选中的消息；切换消息后不能把上一次的确认或回执带过去。
+const resendConfirm = ref(false);
+const resendReceipt = ref<MessageResendResult | null>(null);
+watch(selectedId, () => { resendConfirm.value = false; resendReceipt.value = null; });
 // 跨消息批量只覆盖当前页：换页、筛选或消息消失后，旧选择不能悄悄作用到别的消息上。
 const MAX_SELECTION = 20;
 const selectedIds = ref<string[]>([]);
@@ -99,6 +105,11 @@ async function send() {
   }
   // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
   await nextTick(); note.value?.focus();
+}
+async function resendSelected() {
+  if (!selected.value) return;
+  const result = await props.resend(selected.value.messageId);
+  if (result) { resendConfirm.value = false; resendReceipt.value = result; }
 }
 </script>
 
@@ -390,7 +401,39 @@ async function send() {
           </NButton>
           <span v-else class="read-label">✓ 已读</span>
           <a v-if="selected.originalUrl" :href="selected.originalUrl" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
+          <NButton
+            v-if="operate && !selected.contentPurgedAt && !resendConfirm"
+            attr-type="button" class="text-button"
+            :disabled="busy"
+            @click="resendConfirm = true"
+          >
+            重发…
+          </NButton>
         </div>
+        <StatusNote v-if="resendConfirm" tone="info">
+          将新建一条消息并重新通知仍启用的原目标设备；已停用设备会跳过。
+          <template #actions>
+            <NButton type="primary" attr-type="button" class="primary" :disabled="busy" @click="resendSelected">
+              {{ busy ? '正在重发…' : resendPending?.messageId === selected.messageId ? '重试重发' : '确认重发' }}
+            </NButton>
+            <NButton attr-type="button" class="text-button" :disabled="busy" @click="resendConfirm = false">取消</NButton>
+          </template>
+        </StatusNote>
+        <StatusNote v-if="resendPending?.messageId === selected.messageId && resendUncertain" tone="warn">
+          重发结果尚未确认；再次确认会沿用同一请求编号，不会重复入队。
+        </StatusNote>
+        <section v-if="resendReceipt" id="last-resend-receipt" aria-label="重发结果">
+          <p class="scope-note">
+            已创建新的测试消息：{{ resendReceipt.queued }} 台启用设备已入队{{ resendReceipt.skipped ? `，${resendReceipt.skipped} 台已停用设备已跳过` : '' }}。
+          </p>
+          <MessageReceipts
+            :key="'resend-receipt-' + resendReceipt.messageId"
+            :message-id="resendReceipt.messageId"
+            :api="api"
+            :busy="busy"
+            title="重发消息的投递状态"
+          />
+        </section>
         <MessageReceipts
           :key="'receipt-' + selected.messageId"
           :message-id="selected.messageId"

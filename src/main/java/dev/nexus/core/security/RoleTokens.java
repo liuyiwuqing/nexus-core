@@ -76,7 +76,7 @@ public class RoleTokens {
         if(method.equals("GET"))return path.startsWith("/api/v1/")&&!path.startsWith("/api/v1/access")&&!path.startsWith("/api/v1/audit");
         if(method.equals("POST") && (path.equals("/api/v1/session")||path.equals("/api/v1/session/logout")||path.equals("/api/v1/memory/search")||path.equals("/api/v1/templates/preview")||path.matches("/api/v1/automation/rules/[a-f0-9-]{36}/preview")||path.equals("/api/v1/routing/preview")))return true;
         if(!role.equals("operator"))return false;
-        return path.equals("/api/v1/messages")&&method.equals("POST") || path.matches("/api/v1/messages/[a-f0-9-]{36}/(read|analysis(?:/retry)?)")&&method.equals("POST") ||
+        return path.equals("/api/v1/messages")&&method.equals("POST") || path.matches("/api/v1/messages/[a-f0-9-]{36}/(read|resend|analysis(?:/retry)?)")&&method.equals("POST") ||
             path.matches("/api/v1/messages/[a-f0-9-]{36}/deliveries/(?:cancel|retry)")&&method.equals("POST") ||
             path.startsWith("/api/v1/deliveries/")&&method.equals("POST") || path.startsWith("/api/v1/automation/") || path.startsWith("/api/v1/routing/") || path.startsWith("/api/v1/templates/");
     }

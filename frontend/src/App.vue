@@ -14,7 +14,7 @@ import type {PullSession} from './types';
 import { watchConsoleEvents } from './eventStream';
 import { ApiFailure, readFailure } from './failure';
 import type { Role,ConsoleSession as SessionInfo } from './access';
-import { type Message, type MessagePriority, type MessageSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type DevicePage, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
+import { type Message, type MessagePriority, type MessageSubmission, type MessageResendResult, type ResendSubmission, type ToolSubmission, type RuleSubmission, type AutomationRule, type RuleEditInput, type RuleEditSession, type RuleDeletion, type Device, type DevicePage, type Connector, type Delivery, type Status, type Page, type Tab, type ListSearch, type OverviewAlertTarget } from './types';
 // 首屏只保留外壳与默认页；其余页面按标签页拆分为独立 chunk，登录后首包不再包含全部面板。
 const DevicesPanel = asyncPanel('devices');
 const ConnectorsPanel = asyncPanel('connectors');
@@ -57,6 +57,7 @@ const devices = ref<Device[]>([]), connectors = ref<Connector[]>([]), status = r
 // 设备页单独分页：外壳下拉仍用上面的完整清单，筛选和翻页只影响设备页本身。
 const devicePage = ref<DevicePage>({ items: [], total: 0, matched: 0, page: 1, size: 24, state: '', q: '', sort: 'created', order: 'asc', counts: { online: 0, offline: 0, disabled: 0 } });
 const messageSubmission = ref<MessageSubmission | null>(null), messageUncertain = ref(false);
+const resendSubmission = ref<ResendSubmission | null>(null), resendUncertain = ref(false);
 const toolSubmission = ref<ToolSubmission | null>(null), toolUncertain = ref(false);
 const ruleSubmission = ref<RuleSubmission | null>(null), ruleUncertain = ref(false);
 const ruleEdit = ref<RuleEditSession | null>(null);
@@ -113,7 +114,7 @@ function logout() {
   messages.value = { items: [], total: 0, page: 1, size: 30 }; deliveries.value = { items: [], total: 0, page: 1, size: 30 };
   devices.value = []; connectors.value = []; status.value = null; loading.value = false; notice.value = '';
   devicePage.value = { items: [], total: 0, matched: 0, page: 1, size: 24, state: '', q: '', sort: 'created', order: 'asc', counts: { online: 0, offline: 0, disabled: 0 } };
-  messageSubmission.value = null; messageUncertain.value = false;
+  messageSubmission.value = null; messageUncertain.value = false; resendSubmission.value = null; resendUncertain.value = false;
   toolSubmission.value = null; toolUncertain.value = false; ruleSubmission.value = null; ruleUncertain.value = false;
   ruleEdit.value = null;
   ruleDeletion.value = null;
@@ -332,6 +333,39 @@ async function createMessage(title: string, content: string, priority: MessagePr
     }
   }, '测试消息已保存并进入投递队列。');
   return done ? acceptedId : null;
+}
+
+async function resendMessage(messageId: string): Promise<MessageResendResult | null> {
+  if (busy.value) return null;
+  if (resendUncertain.value && resendSubmission.value && resendSubmission.value.messageId !== messageId) {
+    error.value = '上一笔重发结果尚未确认；请先在原消息上重试，再重发其他消息。';
+    return null;
+  }
+  const currentEpoch = epoch;
+  const submission = resendUncertain.value && resendSubmission.value?.messageId === messageId
+    ? resendSubmission.value
+    : { messageId, eventId: crypto.randomUUID() };
+  resendSubmission.value = submission;
+  let result: MessageResendResult | null = null;
+  const done = await mutate(async () => {
+    try {
+      const accepted = await api<MessageResendResult>(`messages/${messageId}/resend`, 'POST', { eventId: submission.eventId });
+      if (!accepted || typeof accepted.messageId !== 'string' || !accepted.messageId ||
+          typeof accepted.queued !== 'number' || typeof accepted.skipped !== 'number')
+        throw new Error('Invalid resend acknowledgment');
+      result = { messageId: accepted.messageId, queued: accepted.queued, skipped: accepted.skipped };
+      if (currentEpoch === epoch) { resendSubmission.value = null; resendUncertain.value = false; }
+    } catch (failure) {
+      if (currentEpoch === epoch) {
+        // 与新建消息相同：408/5xx/连接失败可能已落库，重试必须沿用同一 eventId。
+        const rejected = failure instanceof ApiFailure && failure.status >= 400 && failure.status < 500 && failure.status !== 408;
+        if (rejected) resendSubmission.value = null;
+        resendUncertain.value = !rejected;
+      }
+      throw failure;
+    }
+  }, '重发已创建新的测试消息。');
+  return done ? result : null;
 }
 async function createTool(toolId: string, args: Record<string,string>): Promise<boolean> {
   if (busy.value) return false;
@@ -755,8 +789,11 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :exporting="exporting === 'messages'"
         :pending="messageSubmission"
         :uncertain="messageUncertain"
+        :resend-pending="resendSubmission"
+        :resend-uncertain="resendUncertain"
         :devices="devices"
         :create="createMessage"
+        :resend="resendMessage"
         :mark-read="markRead"
         :api="api"
         :mutate="mutate"

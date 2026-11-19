@@ -4,7 +4,9 @@ import dev.nexus.core.web.MetadataCsv;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +34,15 @@ public class InboxController {
                             @RequestParam(required=false) String receivedFrom,
                             @RequestParam(required=false) String receivedBefore) {
         return inbox.list(page, size, readStatus, source, receivedFrom, receivedBefore);
+    }
+
+    public record ResendInput(@NotBlank @Size(max=160) String eventId) {}
+
+    @PostMapping("/{id}/resend")
+    ResponseEntity<?> resend(@PathVariable UUID id, @Valid @RequestBody ResendInput input) {
+        var result = inbox.resend(id, input.eventId());
+        return ResponseEntity.status(result.created() ? 201 : 200)
+            .body(Map.of("messageId", result.messageId(), "queued", result.queued(), "skipped", result.skipped()));
     }
 
     @PostMapping("/{id}/read")

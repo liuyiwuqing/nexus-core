@@ -183,6 +183,70 @@ public class InboxService {
         return rows;
     }
 
+    public record ResendResult(UUID messageId, boolean created, int queued, int skipped) {}
+
+    /**
+     * 管理台重发：复制原消息的逐设备渲染快照，新建一条内部手动消息，只投递到仍启用的原目标设备。
+     * 同一 eventId 的重放返回同一新消息；同一 eventId 指向另一条原消息时拒绝。
+     */
+    @Transactional
+    public ResendResult resend(UUID sourceId, String eventId) {
+        db.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "resend:" + eventId);
+        var existing = db.queryForList("""
+            SELECT message_id, metadata->>'resendOf' AS resend_of, metadata->>'resendSkipped' AS resend_skipped
+            FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?
+            """, eventId);
+        if (!existing.isEmpty()) {
+            var row = existing.getFirst();
+            if (!sourceId.toString().equals(row.get("resend_of")))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "idempotency_conflict");
+            UUID id = (UUID) row.get("message_id");
+            int queued = db.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, id);
+            int skipped = row.get("resend_skipped") == null ? 0 : Integer.parseInt(row.get("resend_skipped").toString());
+            return new ResendResult(id, false, queued, skipped);
+        }
+        var sourceRows = db.queryForList("""
+            SELECT event_type,title,content,summary,sender,original_url,priority,content_purged_at
+            FROM inbox_messages WHERE message_id=?
+            """, sourceId);
+        if (sourceRows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "message_not_found");
+        var source = sourceRows.getFirst();
+        if (source.get("content_purged_at") != null)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "content_retention_expired");
+        var snapshots = db.queryForList("""
+            SELECT d.device_id,d.priority_override,d.title_override,d.summary_override,d.event_type_override,
+                   d.template_id,d.template_version,d.sound,d.duration_ms,dev.enabled
+            FROM deliveries d JOIN devices dev ON dev.device_id=d.device_id
+            WHERE d.message_id=? ORDER BY d.device_id
+            """, sourceId);
+        if (snapshots.isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "message_has_no_deliveries");
+        var enabled = snapshots.stream().filter(row -> Boolean.TRUE.equals(row.get("enabled"))).toList();
+        if (enabled.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "no_enabled_devices");
+        int skipped = snapshots.size() - enabled.size();
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.now();
+        var metadata = Map.of("resendOf", sourceId.toString(), "resendSkipped", Integer.toString(skipped));
+        db.update("""
+            INSERT INTO inbox_messages(message_id,connector_id,source,upstream_event_id,event_type,title,content,summary,
+                sender,original_url,priority,created_at,expires_at,metadata,data_class)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,'internal')
+            """, id, "manual", "manual", eventId, source.get("event_type"), source.get("title"), source.get("content"),
+            source.get("summary"), source.get("sender"), source.get("original_url"), source.get("priority"),
+            Timestamp.from(now), Timestamp.from(now.plus(1, ChronoUnit.DAYS)), json.writeValueAsString(metadata));
+        for (var row : enabled) {
+            db.update("""
+                INSERT INTO deliveries(event_id,message_id,device_id,priority_override,title_override,summary_override,
+                    event_type_override,template_id,template_version,sound,duration_ms)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, UUID.randomUUID(), id, row.get("device_id"), row.get("priority_override"),
+                row.get("title_override"), row.get("summary_override"), row.get("event_type_override"),
+                row.get("template_id"), row.get("template_version"), row.get("sound"), row.get("duration_ms"));
+        }
+        events.messageReceived(id, "manual", "internal");
+        return new ResendResult(id, true, enabled.size(), skipped);
+    }
+
     @Transactional
     public void markRead(UUID id) {
         if (db.update("UPDATE inbox_messages SET read_at=COALESCE(read_at,now()) WHERE message_id=?", id) == 0)
