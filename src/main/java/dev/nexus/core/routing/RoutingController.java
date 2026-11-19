@@ -32,7 +32,7 @@ public class RoutingController {
     @DeleteMapping("/rules/{id}") ResponseEntity<Void> delete(@PathVariable UUID id,@RequestParam int expectedVersion){routing.delete(id,expectedVersion);return ResponseEntity.noContent().build();}
     @PostMapping("/preview") Map<String,Object> preview(@Valid @RequestBody MessageInput input){return routing.preview(input);}
     @PostMapping("/test") ResponseEntity<?> test(@Valid @RequestBody Test input){
-        var result=inbox.targetedTest(new MessageInput("targeted-test","manual-test",input.requestKey().toString(),"manual.test",input.title(),input.content(),null,"","",input.priority(),null,null,Map.of("test","true"),null),input.deviceIds(),input.templateId());
+        var result=inbox.targetedTest(new MessageInput("targeted-test","manual-test",input.requestKey().toString(),"manual.test",input.title(),input.content(),null,"","",input.priority(),null,null,Map.of("test","true"),null,null),input.deviceIds(),input.templateId());
         return ResponseEntity.status(result.created()?201:200).body(Map.of("messageId",result.messageId()));
     }
 }

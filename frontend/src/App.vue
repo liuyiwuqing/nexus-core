@@ -302,19 +302,20 @@ async function mutate(action: () => Promise<unknown>, success: string): Promise<
   } finally { busy.value = false; }
 }
 
-async function createMessage(title: string, content: string, priority: MessagePriority, devices: string[]): Promise<string | null> {
+async function createMessage(title: string, content: string, priority: MessagePriority, devices: string[], templateId: string | null): Promise<string | null> {
   if (busy.value) return null;
   const currentEpoch = epoch;
-  // HTTP 结果未知时，重试必须保持同一逻辑提交；导航不能丢掉去重身份或目标设备。
-  const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content, priority, devices: [...devices] };
+  // HTTP 结果未知时，重试必须保持同一逻辑提交；导航不能丢掉去重身份、目标设备或模板。
+  const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content, priority, devices: [...devices], templateId };
   messageSubmission.value = submission;
   let acceptedId = '';
   const done = await mutate(async () => {
     try {
-      const { devices: targets, ...message } = submission;
+      const { devices: targets, templateId: template, ...message } = submission;
       const accepted = await api<{ messageId: string }>('messages', 'POST', {
         connectorId: 'manual', source: 'manual', eventType: 'manual.test', ...message,
         ...(targets.length ? { devices: targets } : {}),
+        ...(template ? { templateId: template } : {}),
       });
       if (!accepted || typeof accepted.messageId !== 'string' || !accepted.messageId)
         throw new Error('Invalid message acknowledgment');

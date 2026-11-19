@@ -14,7 +14,7 @@ public class DeviceNoticeAction implements AutomationAction {
     public String id() { return "notify_device"; }
     public Map<String,Object> enqueue(UUID executionId, JsonNode event, JsonNode arguments) {
         var result = inbox.ingest(new MessageInput("automation", "automation", executionId.toString(), "automation.notice",
-            arguments.path("title").asText(), arguments.path("content").asText(), null, "NEXUS", "", "normal", null, null, Map.of(), null));
+            arguments.path("title").asText(), arguments.path("content").asText(), null, "NEXUS", "", "normal", null, null, Map.of(), null, null));
         return Map.of("messageId", result.messageId(), "outcome", "delivery_queued");
     }
 }

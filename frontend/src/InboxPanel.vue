@@ -7,8 +7,8 @@ import { NButton, NCheckbox, NInput, NSelect } from 'naive-ui';
 import { Plus } from '@lucide/vue';
 import { useAccess } from './access';
 const { admin, operate } = useAccess();
-import { computed, nextTick, ref, watch } from 'vue';
-import { formatTime, type Api, type Device, type Message, type MessagePriority, type MessageSubmission, type Page, type ListSearch } from './types';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { formatTime, type Api, type Device, type Message, type MessagePriority, type MessageSubmission, type MessageTemplate, type Page, type ListSearch } from './types';
 import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
@@ -20,7 +20,7 @@ const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
   pending: MessageSubmission | null; uncertain: boolean; devices: Device[];
-  create: (title: string, content: string, priority: MessagePriority, devices: string[]) => Promise<string | null>;
+  create: (title: string, content: string, priority: MessagePriority, devices: string[], templateId: string | null) => Promise<string | null>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
@@ -65,6 +65,19 @@ const priorities: { label: string; value: MessagePriority }[] = [
   { label: '紧急', value: 'critical' },
 ];
 const targets = ref<string[]>([]);
+const templateId = ref<string | null>(null);
+// 模板加载失败不阻塞发送；下拉保持为空即按原始文本发送。
+const templates = ref<MessageTemplate[]>([]);
+let disposed = false;
+onMounted(async () => {
+  try {
+    const page = await props.api<{ items: MessageTemplate[] }>('templates');
+    if (!disposed) templates.value = page.items;
+  } catch { /* 发送仍可使用原始文本 */ }
+});
+onUnmounted(() => { disposed = true; });
+const templateOptions = computed(() => templates.value.filter(template => !template.deleted)
+  .map(template => ({ label: template.definition.name, value: template.templateId })));
 // 空选择表示不发送 devices 字段，保持既有路由（默认广播）。
 const enabledDevices = computed(() => props.devices.filter(device => device.enabled));
 const targetSummary = computed(() => targets.value.length
@@ -73,16 +86,16 @@ const targetSummary = computed(() => targets.value.length
 watch(() => props.pending, submission => {
   if (submission) {
     title.value = submission.title; content.value = submission.content; priority.value = submission.priority;
-    targets.value = [...submission.devices]; compose.value = true;
+    targets.value = [...submission.devices]; templateId.value = submission.templateId; compose.value = true;
   }
 }, { immediate: true });
 const note = ref<InstanceType<typeof StatusNote> | null>(null);
 const receiptId = ref('');
 async function send() {
-  const sent = await props.create(title.value, content.value, priority.value, targets.value);
+  const sent = await props.create(title.value, content.value, priority.value, targets.value, templateId.value);
   if (sent) {
     receiptId.value = sent;
-    title.value = ''; content.value = ''; priority.value = 'normal'; targets.value = []; compose.value = false; return;
+    title.value = ''; content.value = ''; priority.value = 'normal'; targets.value = []; templateId.value = null; compose.value = false; return;
   }
   // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
   await nextTick(); note.value?.focus();
@@ -229,6 +242,22 @@ async function send() {
           :disabled="busy || !!pending"
           :input-props="{ id: 'inboxpanel-field-5', 'aria-label': '目标设备' }"
           @update:value="(value: string[] | null) => (targets = value ?? [])"
+        />
+      </ConsoleField>
+      <ConsoleField
+        path="field-6"
+        :label-props="{ id: 'inboxpanel-field-6' + '-label', for: 'inboxpanel-field-6' }"
+      >
+        <template #label>模板</template>
+        <NSelect
+          class="template-select"
+          :value="templateId"
+          :options="templateOptions"
+          clearable
+          placeholder="原始文本"
+          :disabled="busy || !!pending"
+          :input-props="{ id: 'inboxpanel-field-6', 'aria-label': '模板' }"
+          @update:value="(value: string | null) => (templateId = value)"
         />
       </ConsoleField>
       <StatusNote v-if="uncertain" ref="note" tone="warn">发送结果尚未确认。请重试同一消息，确认前无法修改内容。</StatusNote>

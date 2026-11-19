@@ -680,4 +680,75 @@ class InboxFlowTest {
         assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, broadcastId)).isEqualTo(enabled);
         assertThat(fixtureDb.queryForList("SELECT device_id FROM deliveries WHERE message_id=? ORDER BY device_id", String.class, broadcastId)).contains(a, b);
     }
+
+    @Test
+    void consoleMessageRendersChosenTemplateForExplicitOrRoutedTargetsAndRejectsChangedReplays() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String device = "template-target-" + suffix;
+        assertThat(request("POST", "/api/v1/devices", "{\"deviceId\":\"" + device + "\",\"name\":\"" + device + "\"}", TOKEN).statusCode()).isEqualTo(201);
+        String first = UUID.randomUUID().toString(), second = UUID.randomUUID().toString();
+        String definition = json.writeValueAsString(java.util.Map.of("expectedVersion", 0, "definition", java.util.Map.of(
+            "name", "测试模板", "title", "{title} · 模板", "summary", "{content}", "icon", "text", "sound", "chime", "durationSeconds", 8)));
+        assertThat(request("PUT", "/api/v1/templates/" + first, definition, TOKEN).statusCode()).isEqualTo(200);
+        assertThat(request("PUT", "/api/v1/templates/" + second, definition, TOKEN).statusCode()).isEqualTo(200);
+
+        String eventId = UUID.randomUUID().toString();
+        var input = new java.util.LinkedHashMap<String, Object>();
+        input.put("connectorId", "manual");
+        input.put("source", "manual");
+        input.put("eventId", eventId);
+        input.put("eventType", "manual.test");
+        input.put("title", "模板消息");
+        input.put("content", "按模板渲染");
+        input.put("priority", "normal");
+        input.put("devices", java.util.List.of(device));
+        input.put("templateId", first);
+        String targeted = json.writeValueAsString(input);
+        var created = request("POST", "/api/v1/messages", targeted, TOKEN);
+        assertThat(created.statusCode()).withFailMessage(created.body()).isEqualTo(201);
+        UUID id = UUID.fromString(json.readTree(created.body()).path("messageId").asText());
+        var row = fixtureDb.queryForMap("SELECT device_id,title_override,summary_override,event_type_override,template_id::text AS template_id,template_version,sound,duration_ms FROM deliveries WHERE message_id=?", id);
+        assertThat(row.get("device_id")).isEqualTo(device);
+        assertThat(row.get("title_override")).isEqualTo("模板消息 · 模板");
+        assertThat(row.get("summary_override")).isEqualTo("按模板渲染");
+        assertThat(row.get("event_type_override")).isEqualTo("template.text");
+        assertThat(row.get("template_id")).isEqualTo(first);
+        assertThat(row.get("template_version")).isEqualTo(1);
+        assertThat(row.get("sound")).isEqualTo("chime");
+        assertThat(row.get("duration_ms")).isEqualTo(8000);
+
+        var replay = request("POST", "/api/v1/messages", targeted, TOKEN);
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(replay.body()).isEqualTo(created.body());
+        input.put("templateId", second);
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(409);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, id)).isEqualTo(1);
+
+        input.put("eventId", UUID.randomUUID().toString());
+        input.put("templateId", UUID.randomUUID().toString());
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(input), TOKEN).statusCode()).isEqualTo(400);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM inbox_messages WHERE connector_id='manual' AND upstream_event_id=?", Integer.class, input.get("eventId"))).isZero();
+
+        int enabled = fixtureDb.queryForObject("SELECT count(*) FROM devices WHERE enabled", Integer.class);
+        var routedInput = new java.util.LinkedHashMap<>(input);
+        routedInput.put("eventId", UUID.randomUUID().toString());
+        routedInput.put("templateId", first);
+        routedInput.remove("devices");
+        var routed = request("POST", "/api/v1/messages", json.writeValueAsString(routedInput), TOKEN);
+        assertThat(routed.statusCode()).withFailMessage(routed.body()).isEqualTo(201);
+        UUID routedId = UUID.fromString(json.readTree(routed.body()).path("messageId").asText());
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Integer.class, routedId)).isEqualTo(enabled);
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=? AND template_id=?::uuid AND title_override='模板消息 · 模板'", Integer.class, routedId, first)).isEqualTo(enabled);
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(routedInput), TOKEN).statusCode()).isEqualTo(200);
+        routedInput.put("templateId", second);
+        assertThat(request("POST", "/api/v1/messages", json.writeValueAsString(routedInput), TOKEN).statusCode()).isEqualTo(409);
+
+        var plainInput = new java.util.LinkedHashMap<>(routedInput);
+        plainInput.put("eventId", UUID.randomUUID().toString());
+        plainInput.remove("templateId");
+        var plain = request("POST", "/api/v1/messages", json.writeValueAsString(plainInput), TOKEN);
+        assertThat(plain.statusCode()).isEqualTo(201);
+        UUID plainId = UUID.fromString(json.readTree(plain.body()).path("messageId").asText());
+        assertThat(fixtureDb.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=? AND template_id IS NULL AND title_override IS NULL", Integer.class, plainId)).isEqualTo(enabled);
+    }
 }

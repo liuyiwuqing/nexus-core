@@ -123,7 +123,7 @@ public class PullConnectors {
                     if(db.update("INSERT INTO pull_connector_seen(connector_id,config_hash,event_hash) VALUES(?,?,?) ON CONFLICT DO NOTHING",id,configuration,key)==0)continue;
                     if(++history>20000)throw new ResponseStatusException(HttpStatus.CONFLICT,"pull_history_limit");
                     if(baseline||item.published()!=null&&item.published().isBefore(((Timestamp)current.get("baseline_at")).toInstant()))continue;
-                    var message=new MessageInput("pull-"+id,feed.kind()+"."+id,hash(feed.url().toString()+"\n"+item.key()),feed.kind().equals("rss")?"feed.item":"weather.updated",item.title(),item.content(),null,feed.name(),item.url(),"normal",null,null,Map.of("provider",feed.kind(),"pullId",id),null);
+                    var message=new MessageInput("pull-"+id,feed.kind()+"."+id,hash(feed.url().toString()+"\n"+item.key()),feed.kind().equals("rss")?"feed.item":"weather.updated",item.title(),item.content(),null,feed.name(),item.url(),"normal",null,null,Map.of("provider",feed.kind(),"pullId",id),null,null);
                     if(inbox.ingestScoped(message,feed.devices()).created())received++;
                 }
                 db.update("UPDATE pull_connector_state SET baseline_at=COALESCE(baseline_at,now()),last_success_at=now(),last_error=NULL,last_received=?,lease_id=NULL,lease_until=NULL WHERE connector_id=? AND config_hash=?",received,id,configuration);

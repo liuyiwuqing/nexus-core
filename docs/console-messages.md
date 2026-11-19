@@ -1,6 +1,6 @@
 # 管理台测试消息与断线重试
 
-2026-11-13。此页记录当前管理台的测试发送行为，不扩展消息路由或写入契约；2026-11-19 新增的投递状态是只读快照，同日补充的优先级与目标设备选择复用既有字段。
+2026-11-13。此页记录当前管理台的测试发送行为，不扩展消息路由或写入契约；2026-11-19 新增的投递状态是只读快照，同日补充的优先级、目标设备与模板选择复用既有字段。
 
 “发送测试消息”以 `manual / manual.test` 和所选优先级发送；未选择目标设备时保持既有路由（默认广播到所有已启用设备），默认 `normal`。创建接口为 `POST /api/v1/messages`，`priority` 原本就接受 `low|normal|high|critical`，成功返回 `{messageId}`；首次为 HTTP 201，同一 `connectorId + eventId` 重放为 HTTP 200、返回原消息。消息和投递在原事务中保存，既有 API、鉴权和数据库结构保持。
 
@@ -30,6 +30,16 @@
 
 未知结果时目标设备与标题、正文、优先级一起冻结，导航切回后恢复同一选择；确认成功后清空回默认，明确 4xx 拒绝保留可编辑草稿与已选设备。重试沿用冻结集合，即使前端选项已变化。
 
+## 模板选择（CONSOLE-31）
+
+2026-11-19。表单新增可选“模板”，选项来自 `GET /api/v1/templates` 的未删除模板；默认“原始文本”，此时不发送 `templateId`，保持原始标题与正文。请求体新增可选 `templateId`，服务端在创建投递时按模板渲染逐设备快照：
+
+- 模板必须存在且未删除，否则返回 400 `invalid_template`，不写消息与投递。渲染复用 `MessageTemplates.render`：`{title}`/`{content}` 等变量、标题 96 字节与摘要 180 字节截断、模板声音与显示时长，事件类型为 `template.<icon>`。
+- 与 `devices` 独立组合：显式设备 + 模板只写这些设备的快照；省略设备时按既有路由计算目标后应用同一模板；两者都省略与旧请求完全一致。
+- 同一 `connectorId + eventId` 的重放必须保持同一模板：在 advisory lock 内比对原投递的 `template_id`（NULL 也算一种值），不同返回 409 `idempotency_conflict`。显式设备集合仍按 CONSOLE-30 比对；没有投递记录时不追加模板比对。
+- 模板只是创建时快照；之后修改或删除模板不改已有投递。显式模板不代表设备在线、已展示或已读。
+- 未知结果时模板与标题、正文、优先级、目标设备一起冻结，导航切回后恢复同一选择；确认成功后清空回“原始文本”，明确 4xx 拒绝保留可编辑草稿与已选模板。重试沿用冻结模板，即使页面上改了选项。
+
 ## 投递状态（TEST-SEND-RECEIPT-01）
 
 2026-11-19。测试发送获得有效 `messageId` 后，消息页在表单下方显示这条消息的逐设备投递状态；任意消息的详情也显示同一只读视图。读取接口为 `GET /api/v1/messages/{messageId}/deliveries`（`page` 从 1 开始，`size` 默认 `100`、上限 `100`），返回：
@@ -43,8 +53,8 @@
 
 ## 验证
 
-配套 `04-ai-desktop-pet/tools/ci/test_message_compose_ui.sh` 构建真实 Vue 页面，在回环 HTTP 边界注入“保存后断线”“保存前断线”、拒绝、503 和无效确认。旧页面已复现两请求、两消息、不同 ID；修复后 33 项浏览器检查通过，覆盖单消息去重、冻结正文、导航恢复、明确拒绝后新提交、退出/401 清理与 390px 布局；2026-11-19 新增投递状态后为 36 项，CONSOLE-29 补充优先级选择/冻结/恢复/默认值后为 44 项，CONSOLE-30 增加目标设备选择、停用设备不出现、冻结/导航恢复与默认复位后为 57 项，另含状态摘要、回执时间、刷新重读与消息批量/管理台/筛选/表单回归。HTTP 夹具不代表真实 CORE、数据库、Broker 或设备。
+配套 `04-ai-desktop-pet/tools/ci/test_message_compose_ui.sh` 构建真实 Vue 页面，在回环 HTTP 边界注入“保存后断线”“保存前断线”、拒绝、503 和无效确认。旧页面已复现两请求、两消息、不同 ID；修复后 33 项浏览器检查通过，覆盖单消息去重、冻结正文、导航恢复、明确拒绝后新提交、退出/401 清理与 390px 布局；2026-11-19 新增投递状态后为 36 项，CONSOLE-29 补充优先级选择/冻结/恢复/默认值后为 44 项，CONSOLE-30 增加目标设备选择、停用设备不出现、冻结/导航恢复与默认复位后为 57 项，CONSOLE-31 增加模板选择、冻结/导航恢复与默认复位后为 67 项，另含状态摘要、回执时间、刷新重读与消息批量/管理台/筛选/表单回归。HTTP 夹具不代表真实 CORE、数据库、Broker 或设备。
 
 既有管理 38、OTA 22、成长 18 项浏览器回归也通过。`python3 tools/run_local.py build` 退出 0：前端类型检查/构建、Maven verify 与 JAR 打包通过；64 条中 59 通过、5 条环境条件跳过、0 失败/错误（2026-11-19 当前完整套件为 182 条中 177 通过、5 条条件跳过）。跳过的是三个可选实际 C 回环、真实模型与固定桥接联调，不计作本轮通过。
 
-其中公开 HTTP/真实数据库回归 `acceptedMessageCanBeRetrievedAndReplayDoesNotCreateAnotherMessage` 验证 201/200 返回同一消息；`consoleMessageTargetsOnlyChosenEnabledDevicesAndRejectsChangedReplays` 验证省略设备仍广播、定向设备只写选定投递、空/未知/停用列表 400 且不落库、同 `eventId` 改变设备集合 409；`InboxFlowTest` 15 项通过。消息筛选浏览器回归 50 项重跑通过（早前两次分别在选项打开与 390px 断言处超时，未复现于最终运行）。本轮未重跑 `tools/run_local.py build` 或 JAR 哈希核对，也没有执行生产部署或真实设备投递。配套提交记录见 [04 任务台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
+其中公开 HTTP/真实数据库回归 `acceptedMessageCanBeRetrievedAndReplayDoesNotCreateAnotherMessage` 验证 201/200 返回同一消息；`consoleMessageTargetsOnlyChosenEnabledDevicesAndRejectsChangedReplays` 验证省略设备仍广播、定向设备只写选定投递、空/未知/停用列表 400 且不落库、同 `eventId` 改变设备集合 409；`consoleMessageRendersChosenTemplateForExplicitOrRoutedTargetsAndRejectsChangedReplays` 验证模板快照、显式设备/按路由组合、同模板重放 200、换模板 409、未知模板 400 不落库与省略模板保持原文；`InboxFlowTest` 16 项通过。消息筛选浏览器回归 50 项重跑通过（早前两次分别在选项打开与 390px 断言处超时，未复现于最终运行）。本轮未重跑 `tools/run_local.py build` 或 JAR 哈希核对，也没有执行生产部署或真实设备投递。配套提交记录见 [04 任务台账](../../04-ai-desktop-pet/docs/18-requirements-and-progress.md)。
