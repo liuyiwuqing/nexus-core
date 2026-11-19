@@ -225,6 +225,35 @@ class MessageDeliveryBatchFlowTest {
         assertThat(json.readTree(huge.body()).path("error").asText()).isEqualTo("batch_too_large");
     }
 
+    @Test void messageDeliveriesExposePerDeviceSnapshotsToEveryReadRole()throws Exception {
+        String message=message();
+        var events=events(message);
+        var listed=get("messages/"+message+"/deliveries");
+        assertThat(listed.path("messageId").asText()).isEqualTo(message);
+        assertThat(listed.path("total").asInt()).isEqualTo(3);
+        assertThat(listed.path("counts").path("pending").asInt()).isEqualTo(3);
+        assertThat(listed.path("counts").has("read")).isFalse();
+        assertThat(listed.path("items").size()).isEqualTo(3);
+        assertThat(listed.path("items").get(0).path("deviceId").asText()).isEqualTo("batch-a");
+        // Ack progress is a read-time snapshot; counts cover devices outside the requested page.
+        fixtures.update("UPDATE deliveries SET status='read',received_at=now()-interval '2 minute',displayed_at=now()-interval '1 minute',read_at=now() WHERE event_id=?",events.get("batch-b"));
+        var page=get("messages/"+message+"/deliveries?page=2&size=1");
+        assertThat(page.path("total").asInt()).isEqualTo(3);
+        assertThat(page.path("items").size()).isEqualTo(1);
+        assertThat(page.path("items").get(0).path("deviceId").asText()).isEqualTo("batch-b");
+        assertThat(page.path("items").get(0).path("status").asText()).isEqualTo("read");
+        assertThat(page.path("items").get(0).path("receivedAt").asText()).isNotBlank();
+        assertThat(page.path("items").get(0).path("displayedAt").asText()).isNotBlank();
+        assertThat(page.path("items").get(0).path("readAt").asText()).isNotBlank();
+        assertThat(page.path("counts").path("read").asInt()).isEqualTo(1);
+        assertThat(page.path("counts").path("pending").asInt()).isEqualTo(2);
+        for(String role:List.of("viewer","operator"))
+            assertThat(request("GET","messages/"+message+"/deliveries","",role(role)).statusCode()).isEqualTo(200);
+        var unknown=request("GET","messages/"+UUID.randomUUID()+"/deliveries","",TOKEN);
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(json.readTree(unknown.body()).path("error").asText()).isEqualTo("message_not_found");
+    }
+
     private Map<String,String> skipReasons(String message)throws Exception {
         var result=new java.util.LinkedHashMap<String,String>();
         for(var item:batch(message,"cancel",true,null,TOKEN).path("skipped"))result.put(item.path("deviceId").asText(),item.path("reason").asText());

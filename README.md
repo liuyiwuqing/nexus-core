@@ -212,6 +212,7 @@ python3 tools/upgrade_broker_policy.py --apply
 | `GET /devices/{id}/telemetry?from&to&bucket` | 只读遥测历史；原始点或 `1m`–`1d` 聚合桶 |
 | `GET/POST /devices/{id}/credentials`，`POST .../credentials/{rotate,revoke}` | 设备 MQTT 凭据台账、一次性密钥与 ACL 片段；CORE 不写 Broker 配置 |
 | `GET /deliveries`，`GET /deliveries/{id}/history`，`POST /deliveries/{id}/retry`、`.../cancel` | 投递状态/历史（可按状态或 `waiting=true` 待接收、设备、失败原因、收件窗口筛选）、失败重试与受限取消 |
+| `GET /messages/{id}/deliveries` | 单条消息的逐设备投递状态只读快照；`counts` 覆盖全部分页，`items` 最多 100 条，未知消息 404 |
 | `POST /messages/{id}/deliveries/{cancel,retry}` | 按消息批量撤销未开始投递/重试失败投递；`dryRun` 只读预演、写入需确认令牌 |
 | `POST /deliveries/batch-{cancel,retry}` | 跨消息批量，请求体 `messageIds`；最多 20 条消息且合计 500 条投递，整单一个事务，任一消息不可读返回 404 且不写入；写入令牌 `CANCEL_MESSAGE_DELIVERIES_BATCH` / `RETRY_MESSAGE_DELIVERIES_BATCH` |
 | `POST /devices/{id}/deliveries/cancel` | 单设备待发队列：只读预演 pending+sent 中从未开始发送的投递并列出保留原因；写入需 `confirm=CANCEL_DEVICE_DELIVERIES`，超过 500 条返回 409；管理员专用 |

@@ -6,6 +6,7 @@ import dev.nexus.core.web.MetadataCsv;
 import dev.nexus.core.inbox.InboxService;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -129,6 +130,25 @@ public class DeliveryService {
             """+"("+CAN_CANCEL+") AS \"canCancel\" FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)"+
             filter.where()+" ORDER BY m.received_at DESC,d.event_id LIMIT ? OFFSET ?", filter.parameters(size, (page - 1) * size))),
             "total", db.queryForObject("SELECT count(*) FROM deliveries d JOIN inbox_messages m USING(message_id)"+filter.where(), Long.class, filter.parameters()), "page", page, "size", size);
+    }
+
+    /** Read-only per-device snapshot of one message; counts cover every page. */
+    public Map<String,Object> forMessage(UUID messageId, int page, int size) {
+        if (db.queryForList("SELECT 1 FROM inbox_messages WHERE message_id=?", Integer.class, messageId).isEmpty())
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "message_not_found");
+        var counts = new LinkedHashMap<String,Integer>();
+        for (var row : db.queryForList("SELECT status,count(*) AS total FROM deliveries WHERE message_id=? GROUP BY status", messageId))
+            counts.put((String) row.get("status"), ((Number) row.get("total")).intValue());
+        return Map.of("messageId", messageId,
+            "items", ApiRows.normalize(db.queryForList("""
+                SELECT d.event_id AS "eventId",d.device_id AS "deviceId",d.status,d.attempts,
+                       d.last_error AS "lastError",d.next_attempt_at AS "nextAttemptAt",d.received_at AS "receivedAt",
+                       d.displayed_at AS "displayedAt",d.read_at AS "readAt"
+                FROM deliveries d WHERE d.message_id=? ORDER BY d.device_id LIMIT ? OFFSET ?
+                """, messageId, size, (page - 1) * size)),
+            "counts", counts,
+            "total", db.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Long.class, messageId),
+            "page", page, "size", size);
     }
 
     public List<Map<String,Object>> export(String status, String deviceId, String reason, String from, String before, String waiting) {

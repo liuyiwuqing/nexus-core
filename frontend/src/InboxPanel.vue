@@ -13,13 +13,14 @@ import AnalysisPanel from './AnalysisPanel.vue';
 import ListSearchForm from './ListSearchForm.vue';
 import MessageDeliveryBatch from './MessageDeliveryBatch.vue';
 import MessageMultiBatch from './MessageMultiBatch.vue';
+import MessageReceipts from './MessageReceipts.vue';
 
 import StatusNote from './StatusNote.vue';
 const props = defineProps<{
   data: Page<Message>; loading: boolean; busy: boolean; failed: boolean; readStatus: Message['readStatus'] | '';
   search: ListSearch; exporting: boolean;
   pending: MessageSubmission | null; uncertain: boolean;
-  create: (title: string, content: string) => Promise<boolean>;
+  create: (title: string, content: string) => Promise<string | null>;
   markRead: (id: string) => Promise<boolean>;
   api: Api; mutate: (action: () => Promise<unknown>, notice: string) => Promise<boolean>;
 }>();
@@ -60,8 +61,11 @@ watch(() => props.pending, submission => {
   if (submission) { title.value = submission.title; content.value = submission.content; compose.value = true; }
 }, { immediate: true });
 const note = ref<InstanceType<typeof StatusNote> | null>(null);
+const receiptId = ref('');
 async function send() {
-  if (await props.create(title.value, content.value)) {
+  const sent = await props.create(title.value, content.value);
+  if (sent) {
+    receiptId.value = sent;
     title.value = ''; content.value = ''; compose.value = false; return;
   }
   // 失败/未确认时按钮已 disabled 过一轮，焦点在 body；把它交回提示，键盘用户不必从头 Tab。
@@ -187,6 +191,17 @@ async function send() {
         </NButton>
       </div>
     </ConsoleForm>
+    <MessageReceipts
+      v-if="receiptId"
+      id="last-send-receipt"
+      :key="receiptId"
+      :message-id="receiptId"
+      :api="api"
+      :busy="busy"
+      title="刚发送消息的投递状态"
+      closable
+      @close="receiptId = ''"
+    />
     <ConsoleState v-if="loading && !data.items.length && !failed" kind="loading">正在加载消息…</ConsoleState>
     <ConsoleState v-else-if="!failed && !data.items.length && (readStatus || Object.values(search).some(Boolean))" title="没有符合条件的消息" />
     <ConsoleState v-else-if="!failed && !data.items.length" title="暂无消息">
@@ -299,6 +314,12 @@ async function send() {
           <span v-else class="read-label">✓ 已读</span>
           <a v-if="selected.originalUrl" :href="selected.originalUrl" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
         </div>
+        <MessageReceipts
+          :key="'receipt-' + selected.messageId"
+          :message-id="selected.messageId"
+          :api="api"
+          :busy="busy"
+        />
         <MessageDeliveryBatch
           v-if="operate"
           :key="selected.messageId"

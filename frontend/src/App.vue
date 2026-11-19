@@ -302,19 +302,21 @@ async function mutate(action: () => Promise<unknown>, success: string): Promise<
   } finally { busy.value = false; }
 }
 
-async function createMessage(title: string, content: string): Promise<boolean> {
-  if (busy.value) return false;
+async function createMessage(title: string, content: string): Promise<string | null> {
+  if (busy.value) return null;
   const currentEpoch = epoch;
   // HTTP 结果未知时，重试必须保持同一逻辑提交；导航不能丢掉去重身份。
   const submission = messageSubmission.value ?? { eventId: crypto.randomUUID(), title, content };
   messageSubmission.value = submission;
-  return mutate(async () => {
+  let acceptedId = '';
+  const done = await mutate(async () => {
     try {
       const accepted = await api<{ messageId: string }>('messages', 'POST', {
         connectorId: 'manual', source: 'manual', eventType: 'manual.test', priority: 'normal', ...submission,
       });
       if (!accepted || typeof accepted.messageId !== 'string' || !accepted.messageId)
         throw new Error('Invalid message acknowledgment');
+      acceptedId = accepted.messageId;
       if (currentEpoch === epoch) { messageSubmission.value = null; messageUncertain.value = false; }
     } catch (failure) {
       if (currentEpoch === epoch) {
@@ -326,6 +328,7 @@ async function createMessage(title: string, content: string): Promise<boolean> {
       throw failure;
     }
   }, '测试消息已保存并进入投递队列。');
+  return done ? acceptedId : null;
 }
 async function createTool(toolId: string, args: Record<string,string>): Promise<boolean> {
   if (busy.value) return false;
