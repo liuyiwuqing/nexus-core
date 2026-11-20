@@ -2,7 +2,7 @@
 import ConsoleState from './ConsoleState.vue';
 import StatusNote from './StatusNote.vue';
 import { NButton } from 'naive-ui';
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { readFailure } from './failure';
 import {
   deliveryErrorNames, deliveryNames, errorNames, formatTime,
@@ -10,41 +10,95 @@ import {
 } from './types';
 
 // 只读快照：动作（撤销/重试）仍走批量接口或投递页，这里不提供状态之外的推断。
+// auto 只给刚发送/刚重发的消息：还有 pending/sent 时每 3 秒静默重读，全部终态后停止。
 const props = defineProps<{
-  messageId: string; api: Api; busy: boolean; title?: string; closable?: boolean;
+  messageId: string; api: Api; busy: boolean; title?: string; closable?: boolean; auto?: boolean;
 }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<MessageDeliveries | null>(null);
 const loading = ref(false);
 const loadError = ref('');
+const POLL_INTERVAL_MS = 3000;
+const MAX_SILENT_FAILURES = 3;
 let alive = true;
 let generation = 0;
 let controller: AbortController | undefined;
+let timer: ReturnType<typeof setTimeout> | undefined;
+let silentFailures = 0;
 
-async function load() {
+const pending = computed(() => !!data.value
+  && (data.value.counts.pending ?? 0) + (data.value.counts.sent ?? 0) > 0);
+
+function clearTimer() {
+  if (timer) clearTimeout(timer);
+  timer = undefined;
+}
+
+function schedule() {
+  clearTimer();
+  if (!props.auto || !alive || !pending.value || document.visibilityState === 'hidden') return;
+  timer = setTimeout(() => { timer = undefined; void load(true); }, POLL_INTERVAL_MS);
+}
+
+async function load(silent = false) {
   if (loading.value) return;
   controller?.abort();
   controller = new AbortController();
   const current = ++generation;
-  loading.value = true;
-  loadError.value = '';
+  let retry = true;
+  if (!silent) {
+    loading.value = true;
+    loadError.value = '';
+    silentFailures = 0;
+  }
   try {
     const value = await props.api<MessageDeliveries>(
       `messages/${encodeURIComponent(props.messageId)}/deliveries?page=1&size=100`, 'GET', undefined, controller.signal,
     );
     if (!alive || current !== generation) return;
     data.value = value;
+    silentFailures = 0;
   } catch (failure) {
     if (!alive || current !== generation || (failure instanceof DOMException && failure.name === 'AbortError')) return;
-    data.value = null;
-    loadError.value = readFailure(failure, '投递状态读取失败，请重试。');
+    if (silent) {
+      // 后台刷新失败不覆盖已显示状态；连续失败后停下，仍可手动刷新。
+      silentFailures += 1;
+      if (silentFailures >= MAX_SILENT_FAILURES) retry = false;
+    } else {
+      data.value = null;
+      loadError.value = readFailure(failure, '投递状态读取失败，请重试。');
+    }
   } finally {
-    if (alive && current === generation) loading.value = false;
+    if (alive && current === generation) {
+      if (!silent) loading.value = false;
+      if (retry) schedule();
+    }
   }
 }
 
-watch(() => props.messageId, () => { data.value = null; void load(); });
-onUnmounted(() => { alive = false; generation++; controller?.abort(); });
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    clearTimer();
+  } else if (props.auto && alive && !loading.value) {
+    void load(true);
+  }
+}
+
+watch(() => props.messageId, () => {
+  data.value = null;
+  loadError.value = '';
+  silentFailures = 0;
+  clearTimer();
+  void load();
+});
+onMounted(() => document.addEventListener('visibilitychange', onVisibilityChange));
+onUnmounted(() => {
+  alive = false;
+  generation++;
+  clearTimer();
+  controller?.abort();
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+});
 void load();
 
 const statusOrder = ['pending', 'sent', 'received', 'displayed', 'read', 'failed', 'expired', 'cancelled'];

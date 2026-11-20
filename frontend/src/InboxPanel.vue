@@ -288,6 +288,7 @@ async function resendSelected() {
       :busy="busy"
       title="刚发送消息的投递状态"
       closable
+      auto
       @close="receiptId = ''"
     />
     <ConsoleState v-if="loading && !data.items.length && !failed" kind="loading">正在加载消息…</ConsoleState>
@@ -432,6 +433,7 @@ async function resendSelected() {
             :api="api"
             :busy="busy"
             title="重发消息的投递状态"
+            auto
           />
         </section>
         <MessageReceipts
