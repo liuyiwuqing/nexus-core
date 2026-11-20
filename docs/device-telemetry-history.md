@@ -147,7 +147,7 @@
 }
 ```
 
-`observedAt` 为记录该事件的样本时间，`disconnectedAt` 为设备上报的断线时刻（可能缺失）。原因码为 ESP-IDF `wifi_err_reason_t`，服务端只透传数字，名称由管理台映射；未知码直接显示数字。设备不存在返回 404 `device_not_found`，`limit` 非整数或越界返回 400 `invalid_disconnect_limit`。
+`observedAt` 为记录该事件的样本时间，`disconnectedAt` 为设备上报的断线时刻（可能缺失）。原因码为 ESP-IDF `wifi_err_reason_t`，服务端只透传数字，名称由管理台映射；未知码直接显示数字。设备不存在返回 404 `device_not_found`，`limit` 非整数或越界返回 400 `invalid_disconnect_limit`。管理台的「最近断线 → 导出 CSV」复用该接口的 `limit=100`，在浏览器生成文件，不新增服务端导出接口或落盘。
 
 ## 配置
 

@@ -131,6 +131,10 @@ function pickRange(id: RangeId) {
 }
 const disconnects = ref<TelemetryDisconnects | null>(null), disconnectsLoading = ref(false), disconnectsError = ref('');
 const disconnectsPath = `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=20`;
+// 导出读取上限 100 条，不受列表当前 20 条限制；仍由同一只读接口返回，不在服务端生成文件。
+const disconnectExportLimit = 100;
+const exportingDisconnects = ref(false), disconnectExportError = ref('');
+let disconnectExportRead: AbortController | undefined;
 // 没有断线原因、也读不到列表时不渲染整段，避免给未断线设备增加空区块。
 const disconnectVisible = computed(() => !!data.value?.telemetry?.wifiDisconnectReason || !!disconnectsError.value
   || !!disconnects.value?.items.length);
@@ -151,16 +155,23 @@ async function loadDisconnects() {
 watch(() => data.value?.telemetry?.wifiDisconnectedAt, (next, previous) => {
   if (previous !== undefined && next !== previous) void loadDisconnects();
 });
+function csvCell(item: unknown) {
+  const text = item === null || item === undefined ? '' : String(item);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+function downloadCsv(name: string, lines: string[]) {
+  const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = name;
+  document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function exportHistory() {
   const value = history.value;
   if (!value?.points.length) return;
   const header = ['采样时间', '接收时间', '样本数', '固件版本', '配置版本', '音量%', '亮度%', '静音', '免打扰', '未读',
     '可用内存(B)', '桶内最小(B)', '桶内最大(B)', '启动以来最小(B)', '音频欠载', '推理最长(ms)', '显示最长(ms)', '音频异常',
     'Wi-Fi IP', '信号(dBm)', 'SSID', '信道', '信道宽度(MHz)', 'BSSID', '断线原因', '断线时间'];
-  const cell = (item: unknown) => {
-    const text = item === null || item === undefined ? '' : String(item);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
   const lines = ['\uFEFF' + header.join(','), ...value.points.map(point => [
     point.observedAt, point.receivedAt, point.count, point.firmwareVersion, point.configRevision,
     point.volume, point.brightness, point.muted, point.dnd, point.unread,
@@ -168,13 +179,27 @@ function exportHistory() {
     point.audioUnderruns, point.inferenceMaxMs, point.displayMaxMs, point.audioFaulted,
     point.wifiIp, point.wifiRssi, point.wifiSsid, point.wifiChannel, point.wifiChannelWidth, point.wifiBssid,
     point.wifiDisconnectReason, point.wifiDisconnectedAt,
-  ].map(cell).join(','))];
-  const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `telemetry-${props.device.deviceId}-${range.value}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}.csv`;
-  document.body.appendChild(link); link.click(); link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  ].map(csvCell).join(','))];
+  downloadCsv(`telemetry-${props.device.deviceId}-${range.value}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}.csv`, lines);
+}
+async function exportDisconnects() {
+  if (exportingDisconnects.value) return;
+  exportingDisconnects.value = true; disconnectExportError.value = '';
+  disconnectExportRead?.abort(); disconnectExportRead = new AbortController();
+  try {
+    const value = await props.api<TelemetryDisconnects>(
+      `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=${disconnectExportLimit}`,
+      'GET', undefined, disconnectExportRead.signal);
+    if (!alive) return;
+    if (!value.items.length) { disconnectExportError.value = '保留期内没有可导出的断线记录。'; return; }
+    const header = ['记录时间', '断线时刻', '原因码', '原因名称'];
+    const lines = ['\uFEFF' + header.join(','), ...value.items.map(item =>
+      [item.observedAt, item.disconnectedAt, item.reason, wifiDisconnectName(item.reason)].map(csvCell).join(','))];
+    downloadCsv(`disconnects-${props.device.deviceId}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}.csv`, lines);
+  } catch (failure) {
+    if (alive && !(failure instanceof DOMException && failure.name === 'AbortError'))
+      disconnectExportError.value = readFailure(failure, '断线记录导出失败，请稍后重试。');
+  } finally { if (alive) exportingDisconnects.value = false; }
 }
 function refreshAll() { void refresh(); void loadHistory(); void loadDisconnects(); }
 async function submit() {
@@ -223,7 +248,7 @@ onMounted(() => {
 onUnmounted(() => {
   alive = false; generation++; historyGeneration++; disconnectGeneration++;
   clearInterval(interval); clearInterval(historyTimer);
-  read?.abort(); historyRead?.abort(); disconnectRead?.abort();
+  read?.abort(); historyRead?.abort(); disconnectRead?.abort(); disconnectExportRead?.abort();
 });
 </script>
 
@@ -520,7 +545,13 @@ onUnmounted(() => {
               {{ item.disconnectedAt ? `记录于 ${formatTime(item.observedAt)}` : '设备当时尚未对时，按上报时刻排序' }}
             </p>
           </div>
-          <p class="management-hint">保留 {{ disconnects.retentionDays }} 天，最多 {{ disconnects.limit }} 条。</p>
+          <ConsoleState v-if="disconnectExportError" kind="error" compact>{{ disconnectExportError }}</ConsoleState>
+          <div class="history-heading disconnect-export-row">
+            <p class="management-hint">保留 {{ disconnects.retentionDays }} 天，列表最多 {{ disconnects.limit }} 条，导出最多 {{ disconnectExportLimit }} 条。</p>
+            <NButton attr-type="button" class="text-button disconnect-export" :disabled="exportingDisconnects" @click="exportDisconnects">
+              {{ exportingDisconnects ? '正在导出…' : '导出 CSV' }}
+            </NButton>
+          </div>
         </template>
       </ConsoleDisclosure>
       <ConsoleDisclosure v-if="data.configRequests.length" label="最近配置记录" class="management-history" :level="3"
