@@ -94,11 +94,20 @@ class DeviceListFlowTest {
             row.path("firmwareVersion").isNull()?null:row.path("firmwareVersion").asText());
         return result;
     }
+    Map<String,Integer> unread(JsonNode value)throws Exception {
+        var result=new LinkedHashMap<String,Integer>();
+        for(var row:value.path("items"))result.put(row.path("deviceId").asText(),
+            row.path("deviceUnread").isNull()?null:row.path("deviceUnread").asInt());
+        return result;
+    }
     void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid) {
+        sample(deviceId,secondsFromNow,firmware,wifiSsid,0);
+    }
+    void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid,int unread) {
         fixtures.update("""
             INSERT INTO device_telemetry_samples(device_id,observed_at,received_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip)
-            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),?,0,10,10,false,false,0,100000,50000,?,?)
-            """,deviceId,secondsFromNow,secondsFromNow,firmware,wifiSsid,wifiSsid==null?null:"192.168.1.20");
+            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),?,0,10,10,false,false,?,100000,50000,?,?)
+            """,deviceId,secondsFromNow,secondsFromNow,firmware,unread,wifiSsid,wifiSsid==null?null:"192.168.1.20");
     }
     void ota(String deviceId,String version,String status,int secondsFromNow)throws Exception {
         String release="release-"+version,target=json.writeValueAsString(Map.of("version",version));
@@ -251,6 +260,19 @@ class DeviceListFlowTest {
         assertThat(devA.path("deviceId").asText()).isEqualTo("dev-a");
         assertThat(devA.path("firmwareVersion").asText()).isEqualTo("0.5.0-dev");
         assertThat(devA.path("wifiSsid").asText()).isEqualTo("home");
+    }
+
+    @Test void deviceUnreadComesFromTheLatestTelemetrySample()throws Exception {
+        sample("dev-a",-3600,"0.3.0-dev","home",5);
+        sample("dev-a",-60,"0.4.0-dev","home",2);
+        var deviceUnread=unread(list(""));
+        assertThat(deviceUnread).containsEntry("dev-a",2);
+        // 没有遥测的设备不编造队列深度，卡片按空值隐藏这一行。
+        assertThat(deviceUnread.get("dev-b")).isNull();
+        assertThat(deviceUnread.get("dev-c")).isNull();
+        // 最新样本上报 0 表示设备队列已清空，不能回退到旧样本的 5。
+        sample("dev-a",0,"0.4.0-dev",null,0);
+        assertThat(unread(list(""))).containsEntry("dev-a",0);
     }
 
     @Test void healthyOtaConfirmationUpdatesFirmwareBeforeTheNextTelemetry()throws Exception {

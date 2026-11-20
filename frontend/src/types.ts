@@ -13,7 +13,7 @@ export interface Message {
 }
 export interface Device { deviceId: string; name: string; enabled: boolean; online: boolean; lastSeen: string | null;
   wifiIp?: string | null; wifiRssi?: number | null; wifiSsid?: string | null; telemetryAt?: string | null;
-  firmwareVersion?: string | null; waitingDeliveries?: number }
+  firmwareVersion?: string | null; waitingDeliveries?: number; deviceUnread?: number | null }
 export interface DeviceCounts { online: number; offline: number; disabled: number }
 export interface DeviceQueueItem { eventId: string; deviceId: string; status: string; attempts: number; reason?: string }
 export interface DeviceQueuePlan {

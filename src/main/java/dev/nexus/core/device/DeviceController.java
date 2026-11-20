@@ -100,6 +100,7 @@ public class DeviceController {
                    -- 健康回读晚于最近遥测时，目标版本就是正在运行的镜像；回滚后该行不再是 healthy，自动退回遥测。
                    CASE WHEN o.ota_version IS NOT NULL AND (f.received_at IS NULL OR f.received_at<=o.updated_at)
                         THEN o.ota_version ELSE f.firmware_version END AS "firmwareVersion",
+                   f.unread AS "deviceUnread",
                    COALESCE(w.waiting,0) AS "waitingDeliveries"
             FROM devices d
             LEFT JOIN LATERAL (
@@ -108,7 +109,7 @@ public class DeviceController {
                 ORDER BY observed_at DESC LIMIT 1
             ) t ON true
             LEFT JOIN LATERAL (
-                SELECT firmware_version,received_at FROM device_telemetry_samples s
+                SELECT firmware_version,received_at,unread FROM device_telemetry_samples s
                 WHERE s.device_id=d.device_id ORDER BY observed_at DESC LIMIT 1
             ) f ON true
             LEFT JOIN LATERAL (

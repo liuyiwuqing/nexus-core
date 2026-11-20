@@ -263,6 +263,10 @@ async function submit() {
           <span>固件</span>
           <strong>{{ device.firmwareVersion }}</strong>
         </p>
+        <p v-if="device.deviceUnread" class="device-seen">
+          <span>设备未读</span>
+          <strong>{{ device.deviceUnread }} 条</strong>
+        </p>
         <p v-if="device.waitingDeliveries" class="device-seen">
           <span>待接收</span>
           <NButton
