@@ -4,7 +4,7 @@ import ConsoleForm from './ConsoleForm.vue';
 import ConsoleField from './ConsoleField.vue';
 import OverviewTrend from './OverviewTrend.vue';
 import StatusNote from './StatusNote.vue';
-import { NButton, NInputNumber } from 'naive-ui';
+import { NButton, NInputNumber, NSelect } from 'naive-ui';
 import { RefreshCw } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
 import { deliveryErrorNames, formatTime, type AlertThresholdAudit, type AlertThresholdAuditPage, type AlertThresholdSettings, type Api, type Overview, type OverviewAlert, type OverviewAlertTarget } from './types';
@@ -69,6 +69,14 @@ const editingThresholds = ref(false), thresholdSettings = ref<AlertThresholdSett
 const thresholdError = ref(''), thresholdBusy = ref(false);
 const auditRows = ref<AlertThresholdAudit[]>([]), auditTotal = ref(0);
 const auditHasMore = ref(false), auditBusy = ref(false), auditError = ref('');
+type AuditRange = 'all' | '24h' | '7d' | '30d';
+const auditRange = ref<AuditRange>('all');
+const auditRangeOptions: { label: string; value: AuditRange }[] = [
+  { label: '全部时间', value: 'all' }, { label: '近 24 小时', value: '24h' },
+  { label: '近 7 天', value: '7d' }, { label: '近 30 天', value: '30d' },
+];
+const auditRangeLabel = computed(() => auditRangeOptions.find(option => option.value === auditRange.value)?.label ?? '全部时间');
+const AUDIT_WINDOWS: Record<AuditRange, number> = { all: 0, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
 let thresholdGeneration = 0;
 const thresholdDraft = ref<ThresholdDraft>({ failureRate: null, failureRateMinSample: null, backlogPending: null, onlineMin: null });
 function draftOf(thresholds: Overview['thresholds']): ThresholdDraft {
@@ -83,7 +91,7 @@ function applyThresholds(result: AlertThresholdSettings) {
 async function openThresholds() {
   const current = ++thresholdGeneration;
   editingThresholds.value = true; thresholdError.value = ''; thresholdSettings.value = null;
-  auditRows.value = []; auditTotal.value = 0; auditHasMore.value = false; auditError.value = '';
+  auditRows.value = []; auditTotal.value = 0; auditHasMore.value = false; auditError.value = ''; auditRange.value = 'all';
   try {
     const result = await props.api<AlertThresholdSettings>('overview/thresholds', 'GET');
     if (current === thresholdGeneration) applyThresholds(result);
@@ -94,6 +102,27 @@ async function openThresholds() {
 function closeThresholds() {
   thresholdGeneration++; editingThresholds.value = false; thresholdError.value = '';
   auditRows.value = []; auditTotal.value = 0; auditHasMore.value = false; auditBusy.value = false; auditError.value = '';
+  auditRange.value = 'all';
+}
+/** 时间范围只影响审计列表；总数与 hasMore 由服务端按同一范围计算。 */
+function auditQuery(before?: number): string {
+  const params = new URLSearchParams({ size: '20' });
+  if (before !== undefined) params.set('before', String(before));
+  const window = AUDIT_WINDOWS[auditRange.value];
+  if (window) params.set('from', new Date(Date.now() - window).toISOString());
+  return params.toString();
+}
+async function loadAuditRange() {
+  if (!editingThresholds.value) return;
+  const current = thresholdGeneration;
+  auditBusy.value = true; auditError.value = '';
+  try {
+    const page = await props.api<AlertThresholdAuditPage>(`overview/thresholds/audit?${auditQuery()}`, 'GET');
+    if (current !== thresholdGeneration) return;
+    auditRows.value = page.items; auditTotal.value = page.total; auditHasMore.value = page.hasMore;
+  } catch (failure) {
+    if (current === thresholdGeneration) auditError.value = readFailure(failure, '变更审计读取失败，请重试。');
+  } finally { if (current === thresholdGeneration) auditBusy.value = false; }
 }
 async function loadOlderAudit() {
   if (auditBusy.value || !auditRows.value.length) return;
@@ -101,7 +130,7 @@ async function loadOlderAudit() {
   const before = auditRows.value[auditRows.value.length - 1].sequence;
   auditBusy.value = true; auditError.value = '';
   try {
-    const page = await props.api<AlertThresholdAuditPage>(`overview/thresholds/audit?before=${before}`, 'GET');
+    const page = await props.api<AlertThresholdAuditPage>(`overview/thresholds/audit?${auditQuery(before)}`, 'GET');
     if (current !== thresholdGeneration) return;
     const known = new Set(auditRows.value.map(item => item.sequence));
     auditRows.value = [...auditRows.value, ...page.items.filter(item => !known.has(item.sequence))];
@@ -124,6 +153,7 @@ async function saveThresholds() {
         backlogPending: draft.backlogPending, onlineMin: draft.onlineMin },
     });
     applyThresholds(result);
+    if (auditRange.value !== 'all') await loadAuditRange();
     await load();
   } catch (failure) { thresholdError.value = readFailure(failure, '阈值保存失败，请重试。'); }
   finally { thresholdBusy.value = false; }
@@ -210,7 +240,11 @@ async function saveThresholds() {
         </ConsoleField>
       </div>
       <div v-if="thresholdSettings" class="threshold-audit">
-        <p class="overview-caption">变更审计（已显示 {{ auditRows.length }} / 共 {{ auditTotal }} 条，最新在前）</p>
+        <div class="threshold-audit-head">
+          <p class="overview-caption">变更审计（已显示 {{ auditRows.length }} / 共 {{ auditTotal }} 条，最新在前<span v-if="auditRange !== 'all'"> · {{ auditRangeLabel }}</span>）</p>
+          <NSelect v-model:value="auditRange" :options="auditRangeOptions" size="small" class="audit-range"
+                   :disabled="auditBusy" :input-props="{ 'aria-label': '变更审计时间范围' }" @update:value="loadAuditRange" />
+        </div>
         <ol v-if="auditRows.length">
           <li v-for="item in auditRows" :key="item.sequence">
             <span class="threshold-audit-version">v{{ item.fromVersion }} → v{{ item.toVersion }}</span>
@@ -219,7 +253,7 @@ async function saveThresholds() {
             <span class="threshold-audit-values">失败率 ≥ {{ percent(item.failureRate) }} · 样本 {{ item.failureRateMinSample }} · 积压 {{ item.backlogPending }} · 在线 ≥ {{ item.onlineMin }}</span>
           </li>
         </ol>
-        <p v-else class="overview-caption">还没有变更记录。</p>
+        <p v-else class="overview-caption">{{ auditRange === 'all' ? '还没有变更记录。' : '该时间范围内还没有变更记录。' }}</p>
         <StatusNote v-if="auditError" tone="danger">{{ auditError }}</StatusNote>
         <NButton v-if="auditHasMore" attr-type="button" class="text-button" :disabled="auditBusy" @click="loadOlderAudit">
           {{ auditBusy ? '正在读取更早变更…' : '加载更早变更' }}
@@ -264,6 +298,8 @@ async function saveThresholds() {
 .threshold-fields :deep(.n-form-item) { margin-bottom: 0; }
 .threshold-actions { display: flex; gap: var(--space-2); }
 .threshold-audit { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--divider); }
+.threshold-audit-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.audit-range { width: 132px; }
 .threshold-audit ol { display: grid; gap: var(--space-1); margin: var(--space-1) 0; padding: 0; list-style: none; }
 .threshold-audit li { display: flex; flex-wrap: wrap; gap: 2px var(--space-2); padding: var(--space-1) 0;
   border-bottom: 1px solid var(--divider); color: var(--ink-2); font-size: var(--text-sm); }

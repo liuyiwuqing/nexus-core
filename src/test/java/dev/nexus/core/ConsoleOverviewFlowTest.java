@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.nexus.core.web.OverviewController;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -310,6 +313,42 @@ class ConsoleOverviewFlowTest {
         assertThat(thresholdAudit("?before=0",TOKEN).statusCode()).isEqualTo(400);
         assertThat(thresholdAudit("?size=0",TOKEN).statusCode()).isEqualTo(400);
         assertThat(thresholdAudit("?size=101",TOKEN).statusCode()).isEqualTo(400);
+    }
+
+    @Test void thresholdAuditFiltersByStartTimeWithoutLosingPaging()throws Exception {
+        awaitReady();
+        for(int days:new int[]{0,1,3,10,40})
+            fixtures.update("""
+                INSERT INTO alert_threshold_audit(actor,from_version,to_version,failure_rate,
+                    failure_rate_min_sample,backlog_pending,online_min,recorded_at)
+                VALUES(?,?,?,?,?,?,?,now()-(?||' days')::interval)
+                ""","tester",0,1,0.1,20,100,1,days);
+
+        String recent=URLEncoder.encode(Instant.now().minus(7,ChronoUnit.DAYS).toString(),StandardCharsets.UTF_8);
+        var filtered=json.readTree(thresholdAudit("?from="+recent,TOKEN).body());
+        assertThat(filtered.path("total").asInt()).isEqualTo(3);
+        assertThat(filtered.path("items").size()).isEqualTo(3);
+        assertThat(filtered.path("hasMore").asBoolean()).isFalse();
+
+        // 时间范围与游标组合：总数仍按范围计算，翻页只返回范围内更早的行。
+        var first=json.readTree(thresholdAudit("?from="+recent+"&size=2",TOKEN).body());
+        assertThat(first.path("total").asInt()).isEqualTo(3);
+        assertThat(first.path("items").size()).isEqualTo(2);
+        assertThat(first.path("hasMore").asBoolean()).isTrue();
+        long oldest=first.path("items").get(1).path("sequence").asLong();
+        var older=json.readTree(thresholdAudit("?from="+recent+"&before="+oldest,TOKEN).body());
+        assertThat(older.path("total").asInt()).isEqualTo(3);
+        assertThat(older.path("items").size()).isEqualTo(1);
+        assertThat(older.path("hasMore").asBoolean()).isFalse();
+
+        // 起点在全部记录之后：返回空页而不是回退到无筛选的总数。
+        String future=URLEncoder.encode(Instant.now().plus(1,ChronoUnit.DAYS).toString(),StandardCharsets.UTF_8);
+        var none=json.readTree(thresholdAudit("?from="+future,TOKEN).body());
+        assertThat(none.path("total").asInt()).isZero();
+        assertThat(none.path("items").size()).isZero();
+        assertThat(none.path("hasMore").asBoolean()).isFalse();
+
+        assertThat(thresholdAudit("?from=not-a-time",TOKEN).statusCode()).isEqualTo(400);
     }
 
     HttpResponse<String> thresholdAudit(String query,String token)throws Exception {

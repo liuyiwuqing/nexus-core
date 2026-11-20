@@ -1,6 +1,10 @@
 package dev.nexus.core.web;
 
 import dev.nexus.core.web.OverviewAlerts.Thresholds;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +57,7 @@ public class AlertThresholds {
                 value.put("updatedBy",r.getString("updatedBy"));
                 value.put("updatedAt",r.getTimestamp("updatedAt").toInstant());
                 value.put("history",history());
-                value.put("historyTotal",auditTotal());
+                value.put("historyTotal",auditTotal(null));
                 return value;
             });
     }
@@ -66,27 +70,52 @@ public class AlertThresholds {
     /**
      * 审计按 {@code sequence} 向前翻页：{@code before} 是当前已加载最旧一行的序号，
      * 新写入只会出现在更大序号一侧，因此翻页不会因并发保存而重复或跳过。
+     * {@code from} 为可选的 ISO-8601 起始时刻（含），用于只看最近一段时间的变更；
+     * 总数与 hasMore 都按同一时间范围计算。
      */
-    public Map<String,Object> audit(Long before,int size) {
+    public Map<String,Object> audit(Long before,int size,String from) {
         if (size < 1 || size > AUDIT_MAX || (before != null && before < 1))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_request");
-        List<Map<String,Object>> items = before == null
-            ? db.queryForList("SELECT " + AUDIT_COLUMNS
-                + " FROM alert_threshold_audit ORDER BY sequence DESC LIMIT ?",size)
-            : db.queryForList("SELECT " + AUDIT_COLUMNS
-                + " FROM alert_threshold_audit WHERE sequence<? ORDER BY sequence DESC LIMIT ?",before,size);
-        boolean hasMore = !items.isEmpty() && db.queryForObject(
-            "SELECT exists(SELECT 1 FROM alert_threshold_audit WHERE sequence<?)",
-            Boolean.class,((Number)items.getLast().get("sequence")).longValue());
+        Instant since = parseSince(from);
+        StringBuilder sql = new StringBuilder("SELECT ").append(AUDIT_COLUMNS)
+            .append(" FROM alert_threshold_audit WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        if (before != null) { sql.append(" AND sequence<?"); args.add(before); }
+        if (since != null) { sql.append(" AND recorded_at>=?"); args.add(Timestamp.from(since)); }
+        sql.append(" ORDER BY sequence DESC LIMIT ?");
+        args.add(size);
+        List<Map<String,Object>> items = db.queryForList(sql.toString(),args.toArray());
+        boolean hasMore = false;
+        if (!items.isEmpty()) {
+            long oldest = ((Number)items.getLast().get("sequence")).longValue();
+            hasMore = since == null
+                ? Boolean.TRUE.equals(db.queryForObject(
+                    "SELECT exists(SELECT 1 FROM alert_threshold_audit WHERE sequence<?)",Boolean.class,oldest))
+                : Boolean.TRUE.equals(db.queryForObject(
+                    "SELECT exists(SELECT 1 FROM alert_threshold_audit WHERE sequence<? AND recorded_at>=?)",
+                    Boolean.class,oldest,Timestamp.from(since)));
+        }
         Map<String,Object> value = new LinkedHashMap<>();
         value.put("items",items);
-        value.put("total",auditTotal());
+        value.put("total",auditTotal(since));
         value.put("hasMore",hasMore);
         return value;
     }
 
-    private long auditTotal() {
-        Long total = db.queryForObject("SELECT count(*) FROM alert_threshold_audit",Long.class);
+    private static Instant parseSince(String from) {
+        if (from == null || from.isBlank()) return null;
+        try {
+            return Instant.parse(from.trim());
+        } catch (DateTimeParseException failure) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_request");
+        }
+    }
+
+    private long auditTotal(Instant since) {
+        Long total = since == null
+            ? db.queryForObject("SELECT count(*) FROM alert_threshold_audit",Long.class)
+            : db.queryForObject("SELECT count(*) FROM alert_threshold_audit WHERE recorded_at>=?",
+                Long.class,Timestamp.from(since));
         return total == null ? 0 : total;
     }
 

@@ -18,11 +18,12 @@ public class AlertThresholdsController {
     @GetMapping("/api/v1/overview/thresholds")
     Map<String,Object> read() { return thresholds.read(); }
 
-    /** 更早的变更按 sequence 向前翻；省略 before 时与 GET 阈值里的最新 20 条一致。 */
+    /** 更早的变更按 sequence 向前翻；省略 before 时与 GET 阈值里的最新 20 条一致。from 只看该时刻之后（含）。 */
     @GetMapping("/api/v1/overview/thresholds/audit")
     Map<String,Object> audit(@RequestParam(required=false) Long before,
-                             @RequestParam(defaultValue="20") int size) {
-        return thresholds.audit(before,size);
+                             @RequestParam(defaultValue="20") int size,
+                             @RequestParam(required=false) String from) {
+        return thresholds.audit(before,size,from);
     }
 
     @PutMapping("/api/v1/overview/thresholds")
