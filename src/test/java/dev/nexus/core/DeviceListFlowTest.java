@@ -132,6 +132,13 @@ class DeviceListFlowTest {
         fixtures.update("INSERT INTO deliveries(event_id,message_id,device_id,status) VALUES(?,?,?,?)",
             UUID.randomUUID(),message(deviceId+"-"+status),deviceId,status);
     }
+    void disconnectSample(String deviceId,int secondsFromNow,int reason) {
+        fixtures.update("""
+            INSERT INTO device_telemetry_samples(device_id,observed_at,received_at,firmware_version,config_revision,volume,brightness,
+                muted,dnd,unread,free_heap,min_free_heap,wifi_disconnect_reason)
+            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),'0.4.1',0,10,10,false,false,0,100000,50000,?)
+            """,deviceId,secondsFromNow,secondsFromNow,reason);
+    }
 
     @BeforeEach void prepare()throws Exception {
         fixtures.execute("TRUNCATE devices CASCADE");
@@ -140,6 +147,15 @@ class DeviceListFlowTest {
         fixtures.update("UPDATE devices SET online=true,last_seen=now() WHERE device_id IN ('dev-a','dev-c')");
         fixtures.update("UPDATE devices SET online=false,last_seen=NULL WHERE device_id='dev-b'");
         fixtures.update("UPDATE devices SET enabled=false WHERE device_id='dev-c'");
+    }
+
+    @Test void wifiDisconnectsCountOnlySamplesWithin24Hours()throws Exception {
+        disconnectSample("dev-a",-3600,2);
+        disconnectSample("dev-a",-90000,2);
+        disconnectSample("dev-b",-60,4);
+        var counts=new java.util.LinkedHashMap<String,Integer>();
+        for(var row:list("").path("items"))counts.put(row.path("deviceId").asText(),row.path("wifiDisconnects24h").asInt());
+        assertThat(counts).containsEntry("dev-a",1).containsEntry("dev-b",1).containsEntry("dev-c",0);
     }
 
     @Test void defaultRequestKeepsTheLegacyShapeAndCountsEveryState()throws Exception {

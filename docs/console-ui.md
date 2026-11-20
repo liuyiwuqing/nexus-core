@@ -295,3 +295,11 @@ CONSOLE-25 最终：22 组浏览器 1038 次检查通过（状态矩阵 125，�
 页面在名称缺失时回退显示 ID；概览的积压、失败率与设备待接收钻取会带着筛选进入同一列表，因此都能看到名称。名称是读取时快照，重命名后下次刷新更新。
 
 验证（2026-11-20，本机 macOS/Docker）：`ConsoleListFilterFlowTest` 投递筛选用例新增 `deviceName` 断言并通过；`npm run check` 与 `npm run build` 通过。04 概览浏览器专项新增 1 项断言（投递行同时显示名称与 ID），共 141 项通过；管理台 94 项回归保持通过。夹具为真实 Vue 产物 + 回环 RAM HTTP，不连接真实 CORE、PostgreSQL、Broker 或设备。
+
+## 设备卡片 24 小时断线次数（DEVICE-DISCONNECTS-01）
+
+设备卡片此前只能从状态面板的断线历史逐条确认网络稳定性。`GET /api/v1/devices` 新增只读字段 `wifiDisconnects24h`：读取时按设备统计最近 24 小时 `wifi_disconnect_reason IS NOT NULL` 的遥测样本，与「网络趋势」使用同一批历史数据；没有断线时为 0。
+
+卡片只在计数大于 0 时于 Wi-Fi 行追加「24 小时断线 N 次」，为 0 或没有遥测时不占位，避免日常噪声。该计数不改变状态、排序、筛选或分页，也不等同于断线事件列表的保留策略；断线原因与具体时刻仍在状态历史中查看。
+
+验证（2026-11-20，本机 macOS/Docker）：`DeviceListFlowTest` 新增 24 小时窗口用例（1 小时前与 25 小时前各一条，仅前者计数；无断线设备为 0）并通过，共 11 项；`npm run check` 与 `npm run build` 通过。04 管理台浏览器专项新增 1 项断言、共 95 项通过，既有名称、排序、队列、遥测与凭据检查保持通过。夹具为真实 Vue 产物 + 回环 RAM HTTP，不连接真实 CORE、PostgreSQL、Broker 或设备。

@@ -103,7 +103,8 @@ public class DeviceController {
                    CASE WHEN o.ota_version IS NOT NULL AND (f.received_at IS NULL OR f.received_at<=o.updated_at)
                         THEN o.ota_version ELSE f.firmware_version END AS "firmwareVersion",
                    f.unread AS "deviceUnread",
-                   COALESCE(w.waiting,0) AS "waitingDeliveries"
+                   COALESCE(w.waiting,0) AS "waitingDeliveries",
+                   dc.disconnect_count AS "wifiDisconnects24h"
             FROM devices d
             LEFT JOIN LATERAL (
                 SELECT wifi_ip,wifi_rssi,wifi_ssid,observed_at FROM device_telemetry_samples s
@@ -123,6 +124,12 @@ public class DeviceController {
                 SELECT device_id,count(*) AS waiting FROM deliveries
                 WHERE status IN ('pending','sent') GROUP BY device_id
             ) w ON w.device_id=d.device_id
+            -- 只数最近 24 小时的断线样本，与卡片“网络趋势”同一批历史数据。
+            LEFT JOIN LATERAL (
+                SELECT count(*) AS disconnect_count FROM device_telemetry_samples s
+                WHERE s.device_id=d.device_id AND s.wifi_disconnect_reason IS NOT NULL
+                  AND s.observed_at > now()-interval '24 hours'
+            ) dc ON true
             """ + filter + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?", listArgs.toArray())),
             "total", ((Number) counts.get("total")).longValue(), "matched", matched, "page", page, "size", size,
             "state", state, "q", query, "sort", sort, "order", order,

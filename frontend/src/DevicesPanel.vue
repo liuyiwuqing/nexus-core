@@ -269,6 +269,7 @@ async function submit() {
           <strong>{{ device.wifiSsid || device.wifiIp }}</strong>
           <span v-if="device.wifiSsid && device.wifiIp">{{ device.wifiIp }}</span>
           <span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span>
+          <span v-if="device.wifiDisconnects24h">· 24 小时断线 {{ device.wifiDisconnects24h }} 次</span>
           <span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span>
           <NButton
             attr-type="button"
