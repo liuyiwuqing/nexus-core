@@ -152,7 +152,7 @@ async function saveThresholds() {
         <div data-metric="messages"><dt>今日收件</dt><dd>{{ snapshot.today.messages }}<small> 条</small></dd></div>
         <div data-metric="backlog"><dt>投递积压</dt><dd>{{ snapshot.backlog.pending + snapshot.backlog.sent }}<small> 条</small></dd></div>
       </dl>
-      <p class="overview-caption">共 {{ snapshot.devices.total }} 台设备 · 停用 {{ snapshot.devices.disabled }} 台（可仍在线）</p>
+      <p class="overview-caption">共 {{ snapshot.devices.total }} 台设备 · <button type="button" class="overview-stat" data-stat="disabled" @click="emit('drill', { tab: 'devices', status: 'disabled' })">停用 {{ snapshot.devices.disabled }} 台<span class="sr-only">，按已停用筛选设备</span></button>（可仍在线）</p>
 
       <div class="overview-grid">
         <article class="record-card">
@@ -242,7 +242,7 @@ async function saveThresholds() {
 <style scoped>
 .overview-stats { margin-bottom: var(--space-3); }
 /* 计数保持数字排版，不套按钮边框；悬停/键盘聚焦时才显示为可点击的链接。 */
-.overview-stat { display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: left; }
+.overview-stat { display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: left; vertical-align: baseline; }
 .overview-stat:hover, .overview-stat:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 .overview-alerts { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
 .overview-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
