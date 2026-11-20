@@ -18,6 +18,7 @@ const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
 // 复合控件允许编辑中暂时为空；API 仍只接收有效分钟数与毫秒数。
 const timeDraft = ref({ startMinute: '', endMinute: '' }), duration = ref<number | null>(null);
+const durationSummary = computed(() => duration.value == null ? '时长未知' : `${duration.value} 秒上限`);
 const loading = ref(false), sending = ref(false), loadError = ref(''), submitError = ref(''), notice = ref('');
 const baseline = ref(''), formRevision = ref(0);
 type Submission = { requestId: string; expectedRevision: number; config: DeviceConfig };
@@ -305,7 +306,7 @@ onUnmounted(() => {
             <NCheckbox class="checkbox-label" v-model:checked="form.dnd.allowCritical" :disabled="disabled" :aria-disabled="disabled">免打扰时允许紧急提醒</NCheckbox>
           </div>
           <ConsoleDisclosure label="更多设置" class="management-options" :level="3"
-            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${duration ?? '—'} 秒上限${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
+            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${durationSummary}${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
             :force-open="!!uncertain || !!submitError || staleDraft">
           <NCheckbox class="checkbox-label" v-model:checked="form.dnd.enabled" :disabled="disabled" :aria-disabled="disabled">定时免打扰</NCheckbox>
           <div v-if="form.dnd.enabled" class="form-columns">
