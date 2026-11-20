@@ -146,8 +146,9 @@ async function saveThresholds() {
         </li>
       </ul>
       <dl class="pet-stats overview-stats">
-        <div data-metric="online"><dt>设备在线</dt><dd>{{ snapshot.devices.online }}<small> 台</small></dd></div>
-        <div data-metric="offline"><dt>设备离线</dt><dd>{{ snapshot.devices.offline }}<small> 台</small></dd></div>
+        <!-- 在线/离线计数本身就是设备页已有的状态筛选入口，直接跳过去看是哪些设备。 -->
+        <div data-metric="online"><dt>设备在线</dt><dd><button type="button" class="overview-stat" data-stat="online" @click="emit('drill', { tab: 'devices', status: 'online' })">{{ snapshot.devices.online }}<small> 台</small><span class="sr-only">，按在线筛选设备</span></button></dd></div>
+        <div data-metric="offline"><dt>设备离线</dt><dd><button type="button" class="overview-stat" data-stat="offline" @click="emit('drill', { tab: 'devices', status: 'offline' })">{{ snapshot.devices.offline }}<small> 台</small><span class="sr-only">，按离线筛选设备</span></button></dd></div>
         <div data-metric="messages"><dt>今日收件</dt><dd>{{ snapshot.today.messages }}<small> 条</small></dd></div>
         <div data-metric="backlog"><dt>投递积压</dt><dd>{{ snapshot.backlog.pending + snapshot.backlog.sent }}<small> 条</small></dd></div>
       </dl>
@@ -240,6 +241,9 @@ async function saveThresholds() {
 
 <style scoped>
 .overview-stats { margin-bottom: var(--space-3); }
+/* 计数保持数字排版，不套按钮边框；悬停/键盘聚焦时才显示为可点击的链接。 */
+.overview-stat { display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: left; }
+.overview-stat:hover, .overview-stat:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 .overview-alerts { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
 .overview-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink-2); font-size: var(--text-sm); }
 .overview-alert--error { border-color: var(--danger-border); background: var(--danger-soft); }
