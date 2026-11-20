@@ -11,7 +11,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import DeviceManagementPanel from './DeviceManagementPanel.vue';
 import DeviceQueuePanel from './DeviceQueuePanel.vue';
 import RemoteOtaPanel from './RemoteOtaPanel.vue';
-import { formatRelative, formatTime, type Api, type Device } from './types';
+import { formatRelative, formatTime, type Api, type Device, type TelemetryMetric } from './types';
 const props = defineProps<{ items: Device[]; total: number; matched: number; onlineCount: number; page: number; size: number; state: string; q: string; sort: string; order: string; busy: boolean; loading: boolean; failed: boolean; api: Api; register: (id: string, name: string) => Promise<boolean>; enable: (id: string, enabled: boolean) => Promise<boolean>; rename: (id: string, name: string, expectedName: string) => Promise<boolean>; remove: (id: string) => Promise<boolean> }>();
 const emit = defineEmits<{ filterState: [value: string]; search: [value: string]; sort: [sort: string, order: string]; size: [size: number]; page: [page: number]; deliveries: [deviceId: string]; queueChanged: [] }>();
 // 搜索输入本地防抖 300ms 后才请求；排序与页大小立即生效并回到第一页。
@@ -48,6 +48,9 @@ const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
 const queueId = ref('');
+// 网络趋势请求：按钮只切换请求序号，让同一张已展开的设置面板也能切回网络指标并展开历史。
+let trendSeq = 0;
+const trend = ref<{ deviceId: string; metric: TelemetryMetric; seq: number } | null>(null);
 const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
 const deleteId = ref(''), deleteDraft = ref(''), deleteSaving = ref(false);
@@ -77,16 +80,23 @@ async function saveName() {
 async function manage(id: string) {
   deleteId.value = ''; queueId.value = '';
   if (selectedId.value === id) { await closeManagement(id); return; }
-  otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
+  trend.value = null; otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
+}
+// 从卡片信号直达遥测历史的网络趋势；面板已开时只切指标并展开历史，不丢弃未提交的设置。
+async function showNetworkTrend(device: Device) {
+  deleteId.value = ''; queueId.value = ''; otaId.value = '';
+  trend.value = { deviceId: device.deviceId, metric: 'network', seq: ++trendSeq };
+  selectedId.value = device.deviceId;
+  await nextTick(); document.getElementById('device-management-panel')?.focus();
 }
 async function upgrade(id: string) {
-  deleteId.value = ''; queueId.value = '';
+  deleteId.value = ''; queueId.value = ''; trend.value = null;
   if (otaId.value === id) { await closeOta(); return; }
   selectedId.value = ''; otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus();
 }
 // 撤销待发与设置/升级/删除互斥，避免同一张卡里出现多组撤销确认。
 async function openQueue(device: Device) {
-  selectedId.value = ''; otaId.value = ''; deleteId.value = '';
+  selectedId.value = ''; otaId.value = ''; deleteId.value = ''; trend.value = null;
   if (queueId.value === device.deviceId) { await closeQueue(); return; }
   queueId.value = device.deviceId; await nextTick(); document.getElementById('device-queue-panel')?.focus();
 }
@@ -95,10 +105,10 @@ async function closeQueue() {
   document.getElementById('device-queue-' + id)?.focus();
 }
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
-async function closeManagement(id: string) { selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
+async function closeManagement(id: string) { trend.value = null; selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
 // 删除是不可逆操作：必须输入完整设备名称，且只对从未使用、未被引用的设备开放。
 async function askDelete(device: Device) {
-  selectedId.value = ''; otaId.value = ''; queueId.value = '';
+  selectedId.value = ''; otaId.value = ''; queueId.value = ''; trend.value = null;
   deleteId.value = device.deviceId; deleteDraft.value = ''; await nextTick();
   document.getElementById('devicespanel-field-4')?.focus();
 }
@@ -260,6 +270,16 @@ async function submit() {
           <span v-if="device.wifiSsid && device.wifiIp">{{ device.wifiIp }}</span>
           <span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span>
           <span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span>
+          <NButton
+            attr-type="button"
+            :id="'device-trend-' + device.deviceId"
+            class="text-button device-trend"
+            :aria-expanded="selectedId === device.deviceId && trend?.deviceId === device.deviceId"
+            aria-controls="device-management-panel"
+            @click="showNetworkTrend(device)"
+          >
+            网络趋势
+          </NButton>
         </p>
         <p v-if="device.firmwareVersion" class="device-seen">
           <span>固件</span>
@@ -420,6 +440,7 @@ async function submit() {
           :device="device"
           :api="api"
           :busy="busy"
+          :history-focus="trend?.deviceId === device.deviceId ? trend : null"
           @close="closeManagement(device.deviceId)"
         />
         <RemoteOtaPanel

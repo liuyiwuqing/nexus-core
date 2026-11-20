@@ -13,7 +13,8 @@ import { errorNames, formatRelative, formatTime, wifiDisconnectName, type Api, t
 import StatusNote from './StatusNote.vue';
 import TelemetryChart from './TelemetryChart.vue';
 import { readFailure } from './failure';
-const props = defineProps<{ device: Device; api: Api; busy: boolean }>();
+// historyFocus 由设备卡片的「网络趋势」传入：携带指标与请求序号，同一面板再次请求时也能生效。
+const props = defineProps<{ device: Device; api: Api; busy: boolean; historyFocus?: { metric: TelemetryMetric; seq: number } | null }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
 // 复合控件允许编辑中暂时为空；API 仍只接收有效分钟数与毫秒数。
@@ -52,7 +53,22 @@ const metrics: { id: TelemetryMetric; label: string }[] = [
   { id: 'audio', label: '音频' },
   { id: 'network', label: '网络' },
 ];
-const metric = ref<TelemetryMetric>('heap');
+const metric = ref<TelemetryMetric>(props.historyFocus?.metric ?? 'heap');
+const historySection = ref<{ open: () => void } | null>(null);
+// 面板按需渲染历史区：数据未到时先记住指标，等区块挂载后再展开；只展开一次，之后允许用户收起。
+let revealPending = !!props.historyFocus;
+function revealHistory() {
+  if (!revealPending || !historySection.value) return;
+  revealPending = false;
+  historySection.value.open();
+}
+watch(() => props.historyFocus, value => {
+  if (!value) return;
+  metric.value = value.metric;
+  revealPending = true;
+  revealHistory();
+});
+watch(data, revealHistory, { flush: 'post' });
 const history = ref<TelemetryHistory | null>(null), historyLoading = ref(false), historyError = ref('');
 const lastPoint = computed(() => history.value?.points[history.value.points.length - 1] ?? null);
 // 取不到的字段整段省略，避免出现"undefined · -52 dBm"这类拼接残句。
@@ -431,7 +447,7 @@ onUnmounted(() => {
           </NButton>
         </div>
       </ConsoleForm>
-      <ConsoleDisclosure label="状态历史" summary="来自设备已上报的遥测" class="telemetry-history" aria-label="遥测历史" :level="3" :force-open="!!historyError">
+      <ConsoleDisclosure ref="historySection" label="状态历史" summary="来自设备已上报的遥测" class="telemetry-history" aria-label="遥测历史" :level="3" :force-open="!!historyError">
         <div class="history-heading">
           <div class="history-range" role="group" aria-label="历史时间范围">
             <NButton

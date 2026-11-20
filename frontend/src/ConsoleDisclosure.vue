@@ -13,6 +13,8 @@ async function toggle() {
   await nextTick();
   document.getElementById(`${id}-toggle`)?.focus();
 }
+// 外部入口（如设备卡片的网络趋势）请求展开时直接打开；之后仍允许用户自行收起。
+defineExpose({ open() { opened.value = true; } });
 </script>
 
 <template>
