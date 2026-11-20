@@ -125,7 +125,7 @@ public class DeliveryService {
     public Map<String,Object> list(int page, int size, String status, String deviceId, String reason, String from, String before, String waiting) {
         var filter = ConsoleListQuery.deliveries(status, deviceId, reason, from, before, waiting);
         return Map.of("items", ApiRows.normalize(db.queryForList("""
-            SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",d.status,d.attempts,
+            SELECT d.event_id AS "eventId",d.message_id AS "messageId",d.device_id AS "deviceId",v.name AS "deviceName",d.status,d.attempts,
                    d.last_error AS "lastError",d.received_at AS "receivedAt",d.displayed_at AS "displayedAt",d.read_at AS "readAt",
                    d.next_attempt_at AS "nextAttemptAt",m.title,m.expires_at AS "expiresAt",
             """+"("+CAN_CANCEL+") AS \"canCancel\" FROM deliveries d JOIN inbox_messages m USING(message_id) JOIN devices v USING(device_id)"+

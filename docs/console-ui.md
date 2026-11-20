@@ -287,3 +287,11 @@ CONSOLE-25 最终：22 组浏览器 1038 次检查通过（状态矩阵 125，�
 页面把设备名称作为主文本，设备 ID 以次要等宽行保留，便于支持排查；没有名称的旧夹具或异常数据仍回退显示 ID，不出现空单元格。该名称是读取时快照，重命名后刷新即更新；不影响投递状态机、回执或设备展示。
 
 验证（2026-11-20，本机 macOS/Docker）：CORE `MessageDeliveryBatchFlowTest` 新增两处分页名称断言（首行与第二页）并通过；`npm run check` 与 `npm run build` 通过。04 管理台浏览器专项新增 1 项、共 94 项通过，断言名称与 ID 同时出现；既有投递读取、失败清空与空态检查保持通过。夹具为真实 Vue 产物 + 回环 RAM HTTP，不连接真实 CORE、PostgreSQL、Broker 或设备。
+
+## 投递列表显示设备名称（DELIVERY-NAME-01）
+
+延续回执的设备名称，投递页的「消息 / 设备」列也改为名称主文本、设备 ID 次要等宽行。`GET /api/v1/deliveries` 的列表项在读取时补充 `deviceName`；筛选、分页、总数、`canCancel` 与取消/重试动作不变。导出 CSV 仍只含 `deviceId`，列契约不变，避免下载脚本因新增列失败。
+
+页面在名称缺失时回退显示 ID；概览的积压、失败率与设备待接收钻取会带着筛选进入同一列表，因此都能看到名称。名称是读取时快照，重命名后下次刷新更新。
+
+验证（2026-11-20，本机 macOS/Docker）：`ConsoleListFilterFlowTest` 投递筛选用例新增 `deviceName` 断言并通过；`npm run check` 与 `npm run build` 通过。04 概览浏览器专项新增 1 项断言（投递行同时显示名称与 ID），共 141 项通过；管理台 94 项回归保持通过。夹具为真实 Vue 产物 + 回环 RAM HTTP，不连接真实 CORE、PostgreSQL、Broker 或设备。

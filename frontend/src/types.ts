@@ -73,7 +73,7 @@ export interface OtaView {
     commands: { commandId: string; operation: string; status: string; attempts: number; expiresAt: string }[] }[];
 }
 export interface Connector { id: string; source: string; configured: boolean; enabled: boolean; state: string; lastSuccessAt?: string | null; lastError?: string | null; since?: string }
-export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; canCancel: boolean; lastError: string | null; nextAttemptAt: string; readAt: string | null }
+export interface Delivery { eventId: string; messageId: string; deviceId: string; deviceName?: string | null; title: string; status: string; attempts: number; canCancel: boolean; lastError: string | null; nextAttemptAt: string; readAt: string | null }
 /** 单条消息的逐设备只读快照；counts 覆盖全部分页，items 最多 100 条。 */
 export interface MessageDelivery {
   eventId: string; deviceId: string; deviceName?: string | null; status: string; attempts: number; lastError: string | null;

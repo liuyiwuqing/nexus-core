@@ -106,7 +106,8 @@ async function closeHistory() {
           <tr v-for="delivery in data.items" :key="delivery.eventId">
             <td>
               <strong>{{ delivery.title }}</strong>
-              <span class="cell-sub mono">{{ delivery.deviceId }}</span>
+              <span class="cell-sub">{{ delivery.deviceName || delivery.deviceId }}</span>
+              <span v-if="delivery.deviceName" class="cell-sub mono">{{ delivery.deviceId }}</span>
             </td>
             <td data-label="状态">
               <span class="badge" :class="delivery.status === 'read' ? 'success' : delivery.status === 'failed' ? 'danger' : ''">

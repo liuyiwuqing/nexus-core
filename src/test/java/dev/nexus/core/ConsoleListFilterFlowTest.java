@@ -98,6 +98,7 @@ class ConsoleListFilterFlowTest {
         assertThat(one.path("total").asInt()).isEqualTo(2);assertThat(two.path("total").asInt()).isEqualTo(2);
         assertThat(one.path("items").size()).isEqualTo(1);assertThat(two.path("items").size()).isEqualTo(1);
         assertThat(one.path("items").get(0).path("messageId").asText()).isIn(first,second);
+        assertThat(one.path("items").get(0).path("deviceName").asText()).isEqualTo("列表筛选设备");
         assertThat(two.path("items").get(0).path("messageId").asText()).isIn(first,second).isNotEqualTo(one.path("items").get(0).path("messageId").asText());
         assertThat(page("deliveries?status=expired").path("items").get(0).path("messageId").asText()).isEqualTo(expired);
         for(String state:new String[]{"pending","sent","received","read"}) {
