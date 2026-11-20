@@ -51,7 +51,7 @@ public class DeviceController {
                             @RequestParam(defaultValue="1") @Min(1) @Max(100000) int page,
                             @RequestParam(defaultValue="100") @Min(1) @Max(100) int size,
                             @RequestParam(defaultValue="") @Size(max=80) String q,
-                            @RequestParam(defaultValue="created") @Pattern(regexp="created|name|last_seen") String sort,
+                            @RequestParam(defaultValue="created") @Pattern(regexp="created|name|last_seen|signal") String sort,
                             @RequestParam(defaultValue="asc") @Pattern(regexp="asc|desc") String order) {
         String query = q.strip();
         // 搜索按字面量匹配名称或设备 ID：% 和 _ 不是通配符，两侧空白忽略。
@@ -87,6 +87,8 @@ public class DeviceController {
             case "name" -> "lower(d.name) " + direction + ", d.device_id " + direction;
             // 从未连接过的设备无论升序降序都排在最后，避免空值占据首页。
             case "last_seen" -> "d.last_seen " + direction + " NULLS LAST, d.device_id " + direction;
+            // 信号取最近一条带网络信息的遥测；没有信号值的设备同样排在最后。
+            case "signal" -> "t.wifi_rssi " + direction + " NULLS LAST, d.device_id " + direction;
             default -> "d.created_at " + direction + ", d.device_id " + direction;
         };
         var listArgs = new ArrayList<Object>(searchArgs);

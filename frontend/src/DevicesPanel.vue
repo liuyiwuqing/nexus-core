@@ -36,6 +36,8 @@ const sortOptions = [
   { label: '名称：Z→A', value: 'name_desc' },
   { label: '最近连接：近的在前', value: 'last_seen_desc' },
   { label: '最近连接：远的在前', value: 'last_seen_asc' },
+  { label: '信号：强→弱', value: 'signal_desc' },
+  { label: '信号：弱→强', value: 'signal_asc' },
 ];
 function updateSort(value: string) {
   const index = value.lastIndexOf('_');

@@ -104,10 +104,13 @@ class DeviceListFlowTest {
         sample(deviceId,secondsFromNow,firmware,wifiSsid,0);
     }
     void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid,int unread) {
+        sample(deviceId,secondsFromNow,firmware,wifiSsid,unread,null);
+    }
+    void sample(String deviceId,int secondsFromNow,String firmware,String wifiSsid,int unread,Integer wifiRssi) {
         fixtures.update("""
-            INSERT INTO device_telemetry_samples(device_id,observed_at,received_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip)
-            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),?,0,10,10,false,false,?,100000,50000,?,?)
-            """,deviceId,secondsFromNow,secondsFromNow,firmware,unread,wifiSsid,wifiSsid==null?null:"192.168.1.20");
+            INSERT INTO device_telemetry_samples(device_id,observed_at,received_at,firmware_version,config_revision,volume,brightness,muted,dnd,unread,free_heap,min_free_heap,wifi_ssid,wifi_ip,wifi_rssi)
+            VALUES(?,now()+(?*interval '1 second'),now()+(?*interval '1 second'),?,0,10,10,false,false,?,100000,50000,?,?,?)
+            """,deviceId,secondsFromNow,secondsFromNow,firmware,unread,wifiSsid,wifiSsid==null?null:"192.168.1.20",wifiRssi);
     }
     void ota(String deviceId,String version,String status,int secondsFromNow)throws Exception {
         String release="release-"+version,target=json.writeValueAsString(Map.of("version",version));
@@ -239,7 +242,8 @@ class DeviceListFlowTest {
         assertThat(second.path("size").asInt()).isEqualTo(1);
         assertThat(second.path("sort").asText()).isEqualTo("created");
         assertThat(second.path("order").asText()).isEqualTo("desc");
-        assertThat(request("GET","devices?sort=signal","").statusCode()).isEqualTo(400);
+        assertThat(request("GET","devices?sort=signal","").statusCode()).isEqualTo(200);
+        assertThat(request("GET","devices?sort=uptime","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?order=sideways","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?size=101","").statusCode()).isEqualTo(400);
         assertThat(request("GET","devices?q="+"x".repeat(81),"").statusCode()).isEqualTo(400);
@@ -273,6 +277,16 @@ class DeviceListFlowTest {
         // 最新样本上报 0 表示设备队列已清空，不能回退到旧样本的 5。
         sample("dev-a",0,"0.4.0-dev",null,0);
         assertThat(unread(list(""))).containsEntry("dev-a",0);
+    }
+
+    @Test void signalSortUsesTheLatestNetworkSnapshotAndKeepsUnknownLast()throws Exception {
+        sample("dev-a",-60,"0.4.0-dev","home",0,-70);
+        sample("dev-b",-60,"0.4.0-dev","home",0,-40);
+        // dev-a 的更新样本才是排序依据，旧样本不能继续参与。
+        sample("dev-a",-30,"0.4.0-dev","home",0,-90);
+        // dev-c 没有带网络信息的遥测：两个方向都排在最后。
+        assertThat(ids(list("?sort=signal&order=desc"))).containsExactly("dev-b","dev-a","dev-c");
+        assertThat(ids(list("?sort=signal&order=asc"))).containsExactly("dev-a","dev-b","dev-c");
     }
 
     @Test void healthyOtaConfirmationUpdatesFirmwareBeforeTheNextTelemetry()throws Exception {
