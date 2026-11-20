@@ -481,6 +481,7 @@ class DeviceManagementFlowTest {
             assertThat(all.path("deviceId").asText()).isEqualTo(id);
             assertThat(all.path("limit").asInt()).isEqualTo(20);
             assertThat(all.path("retentionDays").asInt()).isEqualTo(30);
+            assertThat(all.path("reason").isNull()).isTrue();
             var items=all.path("items");
             assertThat(items.size()).isEqualTo(3);
             assertThat(items.get(0).path("reason").asInt()).isEqualTo(202);
@@ -492,6 +493,18 @@ class DeviceManagementFlowTest {
             assertThat(Instant.parse(items.get(2).path("disconnectedAt").asText()).getEpochSecond()).isEqualTo(base-60);
             assertThat(json.readTree(request("GET",path+"?limit=2","",TOKEN).body()).path("items").size()).isEqualTo(2);
             for(String query:new String[]{"limit=0","limit=101","limit=abc"})
+                assertThat(request("GET",path+"?"+query,"",TOKEN).statusCode()).withFailMessage(query).isEqualTo(400);
+            // 原因在事件识别之后过滤：202 的两条事件不会被其它原因合并，也不影响 201。
+            var reason202=json.readTree(request("GET",path+"?reason=202","",TOKEN).body());
+            assertThat(reason202.path("reason").asInt()).isEqualTo(202);
+            assertThat(reason202.path("items").size()).isEqualTo(2);
+            for(var item:reason202.path("items")) assertThat(item.path("reason").asInt()).isEqualTo(202);
+            var reason201=json.readTree(request("GET",path+"?reason=201","",TOKEN).body());
+            assertThat(reason201.path("items").size()).isEqualTo(1);
+            assertThat(reason201.path("items").get(0).path("reason").asInt()).isEqualTo(201);
+            assertThat(json.readTree(request("GET",path+"?reason=999","",TOKEN).body()).path("items").size()).isZero();
+            assertThat(json.readTree(request("GET",path+"?limit=1&reason=202","",TOKEN).body()).path("items").size()).isEqualTo(1);
+            for(String query:new String[]{"reason=-1","reason=65536","reason=abc"})
                 assertThat(request("GET",path+"?"+query,"",TOKEN).statusCode()).withFailMessage(query).isEqualTo(400);
             d.disconnect();
         }

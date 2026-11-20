@@ -15,7 +15,7 @@ public class DeviceTelemetryController {
         return service.query(device,from,to,bucket);
     }
     @GetMapping("/disconnects") Map<String,Object> disconnects(@PathVariable String device,
-        @RequestParam(required=false) String limit) {
-        return service.disconnects(device,limit);
+        @RequestParam(required=false) String limit,@RequestParam(required=false) String reason) {
+        return service.disconnects(device,limit,reason);
     }
 }

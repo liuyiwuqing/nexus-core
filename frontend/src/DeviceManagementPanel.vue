@@ -5,7 +5,7 @@ import DeviceCredentialsSection from './DeviceCredentialsSection.vue';
 import ConsoleField from './ConsoleField.vue';
 import { fieldRule } from './formRules';
 import ConsoleForm from './ConsoleForm.vue';
-import { NButton, NCheckbox, NAutoComplete, NInputNumber, NSlider, NTimePicker } from 'naive-ui';
+import { NButton, NCheckbox, NAutoComplete, NInputNumber, NSelect, NSlider, NTimePicker } from 'naive-ui';
 import { useAccess } from './access';
 const { admin } = useAccess();
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -130,22 +130,40 @@ function pickRange(id: RangeId) {
   range.value = id; history.value = null; void loadHistory();
 }
 const disconnects = ref<TelemetryDisconnects | null>(null), disconnectsLoading = ref(false), disconnectsError = ref('');
-const disconnectsPath = `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=20`;
+const ALL_DISCONNECT_REASONS = 'all';
+const disconnectReason = ref<number | 'all'>(ALL_DISCONNECT_REASONS);
+// 只提供本次打开面板后历史中出现过的原因；筛选后仍保留已见原因，便于直接切换而不是先清空。
+const seenDisconnectReasons = ref<number[]>([]);
+const disconnectReasonOptions = computed(() => [{ label: '全部原因', value: ALL_DISCONNECT_REASONS },
+  ...[...seenDisconnectReasons.value].sort((a, b) => a - b).map(code => ({ label: wifiDisconnectName(code), value: code }))]);
+const disconnectsPath = computed(() => {
+  const base = `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=20`;
+  return disconnectReason.value === ALL_DISCONNECT_REASONS ? base : `${base}&reason=${disconnectReason.value}`;
+});
 // 导出读取上限 100 条，不受列表当前 20 条限制；仍由同一只读接口返回，不在服务端生成文件。
 const disconnectExportLimit = 100;
 const exportingDisconnects = ref(false), disconnectExportError = ref('');
 let disconnectExportRead: AbortController | undefined;
-// 没有断线原因、也读不到列表时不渲染整段，避免给未断线设备增加空区块。
+// 没有断线原因、也读不到列表时不渲染整段，避免给未断线设备增加空区块；筛选后为空时仍保留入口以便清除。
 const disconnectVisible = computed(() => !!data.value?.telemetry?.wifiDisconnectReason || !!disconnectsError.value
-  || !!disconnects.value?.items.length);
+  || disconnectReason.value !== ALL_DISCONNECT_REASONS || !!disconnects.value?.items.length);
+const disconnectSummaryText = computed(() => {
+  const count = disconnects.value?.items.length ?? 0;
+  if (disconnectReason.value !== ALL_DISCONNECT_REASONS) return `${count} 条 · 已筛选`;
+  return count ? `${count} 条` : '来自设备已上报的遥测';
+});
+const disconnectReasonLabel = computed(() => disconnectReason.value === ALL_DISCONNECT_REASONS ? '' : wifiDisconnectName(disconnectReason.value));
 watch([data, disconnects], revealFocus, { flush: 'post' });
 let disconnectGeneration = 0, disconnectRead: AbortController | undefined;
 async function loadDisconnects() {
   disconnectRead?.abort(); disconnectRead = new AbortController(); const current = ++disconnectGeneration;
   disconnectsLoading.value = true; disconnectsError.value = '';
   try {
-    const value = await props.api<TelemetryDisconnects>(disconnectsPath, 'GET', undefined, disconnectRead.signal);
-    if (alive && current === disconnectGeneration) disconnects.value = value;
+    const value = await props.api<TelemetryDisconnects>(disconnectsPath.value, 'GET', undefined, disconnectRead.signal);
+    if (alive && current === disconnectGeneration) {
+      disconnects.value = value;
+      for (const item of value.items) if (!seenDisconnectReasons.value.includes(item.reason)) seenDisconnectReasons.value.push(item.reason);
+    }
   } catch (failure) {
     if (alive && current === disconnectGeneration && !(failure instanceof DOMException && failure.name === 'AbortError'))
       disconnectsError.value = readFailure(failure, '断线记录读取失败，请稍后重试。');
@@ -188,10 +206,12 @@ async function exportDisconnects() {
   disconnectExportRead?.abort(); disconnectExportRead = new AbortController();
   try {
     const value = await props.api<TelemetryDisconnects>(
-      `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=${disconnectExportLimit}`,
+      `devices/${encodeURIComponent(props.device.deviceId)}/telemetry/disconnects?limit=${disconnectExportLimit}`
+        + (disconnectReason.value === ALL_DISCONNECT_REASONS ? '' : `&reason=${disconnectReason.value}`),
       'GET', undefined, disconnectExportRead.signal);
     if (!alive) return;
-    if (!value.items.length) { disconnectExportError.value = '保留期内没有可导出的断线记录。'; return; }
+    if (!value.items.length) { disconnectExportError.value = disconnectReason.value === ALL_DISCONNECT_REASONS
+      ? '保留期内没有可导出的断线记录。' : '该原因下没有可导出的断线记录。'; return; }
     const header = ['记录时间', '断线时刻', '原因码', '原因名称'];
     const lines = ['\uFEFF' + header.join(','), ...value.items.map(item =>
       [item.observedAt, item.disconnectedAt, item.reason, wifiDisconnectName(item.reason)].map(csvCell).join(','))];
@@ -530,28 +550,36 @@ onUnmounted(() => {
         </template>
       </ConsoleDisclosure>
       <ConsoleDisclosure v-if="disconnectVisible" ref="disconnectSection" label="最近断线" class="disconnect-history" :level="3"
-        :summary="disconnects?.items.length ? `${disconnects.items.length} 条` : '来自设备已上报的遥测'"
-        :force-open="!!disconnectsError">
+        :summary="disconnectSummaryText" :force-open="!!disconnectsError">
         <ConsoleState v-if="disconnectsError" kind="error" compact>{{ disconnectsError }}</ConsoleState>
         <ConsoleState v-else-if="disconnectsLoading && !disconnects" kind="loading" compact>正在读取断线记录…</ConsoleState>
-        <ConsoleState v-else-if="!disconnects?.items.length" compact>历史样本中没有断线记录。</ConsoleState>
         <template v-else>
-          <div v-for="item in disconnects.items" :key="item.observedAt + item.reason" class="management-record">
-            <div class="record-heading">
-              <span>{{ formatTime(item.disconnectedAt || item.observedAt) }}</span>
-              <span class="badge">{{ wifiDisconnectName(item.reason) }}</span>
-            </div>
-            <p class="management-hint">
-              {{ item.disconnectedAt ? `记录于 ${formatTime(item.observedAt)}` : '设备当时尚未对时，按上报时刻排序' }}
-            </p>
-          </div>
-          <ConsoleState v-if="disconnectExportError" kind="error" compact>{{ disconnectExportError }}</ConsoleState>
           <div class="history-heading disconnect-export-row">
-            <p class="management-hint">保留 {{ disconnects.retentionDays }} 天，列表最多 {{ disconnects.limit }} 条，导出最多 {{ disconnectExportLimit }} 条。</p>
+            <NSelect v-model:value="disconnectReason" :options="disconnectReasonOptions" size="small" class="disconnect-filter"
+                     :disabled="disconnectsLoading" aria-label="按原因筛选断线记录" @update:value="loadDisconnects" />
             <NButton attr-type="button" class="text-button disconnect-export" :disabled="exportingDisconnects" @click="exportDisconnects">
               {{ exportingDisconnects ? '正在导出…' : '导出 CSV' }}
             </NButton>
           </div>
+          <ConsoleState v-if="!disconnects?.items.length" compact>
+            {{ disconnectReason === ALL_DISCONNECT_REASONS ? '历史样本中没有断线记录。' : '该原因下没有断线记录。' }}
+          </ConsoleState>
+          <template v-else>
+            <div v-for="item in disconnects.items" :key="item.observedAt + item.reason" class="management-record">
+              <div class="record-heading">
+                <span>{{ formatTime(item.disconnectedAt || item.observedAt) }}</span>
+                <span class="badge">{{ wifiDisconnectName(item.reason) }}</span>
+              </div>
+              <p class="management-hint">
+                {{ item.disconnectedAt ? `记录于 ${formatTime(item.observedAt)}` : '设备当时尚未对时，按上报时刻排序' }}
+              </p>
+            </div>
+          </template>
+          <ConsoleState v-if="disconnectExportError" kind="error" compact>{{ disconnectExportError }}</ConsoleState>
+          <p class="management-hint">
+            保留 {{ disconnects?.retentionDays }} 天，列表最多 {{ disconnects?.limit }} 条，导出最多 {{ disconnectExportLimit }} 条。
+            <template v-if="disconnectReason !== ALL_DISCONNECT_REASONS">当前仅看 {{ disconnectReasonLabel }}。</template>
+          </p>
         </template>
       </ConsoleDisclosure>
       <ConsoleDisclosure v-if="data.configRequests.length" label="最近配置记录" class="management-history" :level="3"

@@ -198,9 +198,10 @@ public class TelemetryHistoryService {
      * (reason, time) pair differs from the previous sample, so a stable pair
      * that merely repeats on heartbeats is not listed twice. Samples without a
      * reason are not events, and the first sample of a device never produces a
-     * synthetic "before" event.
+     * synthetic "before" event. An optional reason filters the event list after
+     * event detection, so removing other reasons never merges or hides events.
      */
-    public Map<String,Object> disconnects(String device,String limitValue) {
+    public Map<String,Object> disconnects(String device,String limitValue,String reasonValue) {
         if(db.queryForObject("SELECT count(*) FROM devices WHERE device_id=?",Integer.class,device)==0)
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,"device_not_found");
         int limit=20;
@@ -210,8 +211,16 @@ public class TelemetryHistoryService {
         }
         if(limit<1||limit>100)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_disconnect_limit");
+        Integer reason=null;
+        if(reasonValue!=null&&!reasonValue.isBlank()) {
+            try { reason=Integer.parseInt(reasonValue.strip()); }
+            catch(NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_disconnect_reason"); }
+            if(reason<0||reason>65535)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_disconnect_reason");
+        }
         var result=new LinkedHashMap<String,Object>();
         result.put("deviceId",device);result.put("limit",limit);result.put("retentionDays",retentionDays);
+        result.put("reason",reason);
         result.put("items",ApiRows.normalize(db.queryForList("""
             SELECT observed_at AS "observedAt",reason AS "reason",disconnected_at AS "disconnectedAt"
             FROM (
@@ -223,8 +232,9 @@ public class TelemetryHistoryService {
             ) sampled
             WHERE reason IS NOT NULL
               AND (previous_reason IS DISTINCT FROM reason OR previous_at IS DISTINCT FROM disconnected_at)
+            """+(reason==null?"":" AND reason=? ")+"""
             ORDER BY observed_at DESC LIMIT ?
-            """,device,limit)));
+            """,reason==null?new Object[]{device,limit}:new Object[]{device,reason,limit})));
         return result;
     }
 

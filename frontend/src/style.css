@@ -396,6 +396,8 @@ button.mobile-back { display: none; }
 .history-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-3) var(--space-5); }
 .history-heading h3 { margin: 0; font-size: var(--text-md); }
 .history-heading p { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
+.disconnect-export-row { align-items: center; }
+.disconnect-filter { width: 168px; max-width: 100%; }
 .history-range, .history-metrics { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .history-metrics { margin-top: var(--space-3); }
 .history-export { margin-left: auto; }
