@@ -48,9 +48,10 @@ const adding = ref(false), deviceId = ref(''), name = ref('');
 const selectedId = ref('');
 const otaId = ref('');
 const queueId = ref('');
-// 网络趋势请求：按钮只切换请求序号，让同一张已展开的设置面板也能切回网络指标并展开历史。
-let trendSeq = 0;
-const trend = ref<{ deviceId: string; metric: TelemetryMetric; seq: number } | null>(null);
+// 卡片直达请求：只切换序号，让同一张已展开的设置面板也能切区块，不重挂组件、不丢草稿。
+let focusSeq = 0;
+type PanelFocus = { deviceId: string; section: 'history' | 'disconnect'; metric?: TelemetryMetric; seq: number };
+const panelFocus = ref<PanelFocus | null>(null);
 const renameId = ref(''), nameDraft = ref(''), originalName = ref('');
 const nameSaving = ref(false);
 const deleteId = ref(''), deleteDraft = ref(''), deleteSaving = ref(false);
@@ -80,23 +81,30 @@ async function saveName() {
 async function manage(id: string) {
   deleteId.value = ''; queueId.value = '';
   if (selectedId.value === id) { await closeManagement(id); return; }
-  trend.value = null; otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
+  panelFocus.value = null; otaId.value = ''; selectedId.value = id; await nextTick(); document.getElementById('device-management-panel')?.focus();
 }
 // 从卡片信号直达遥测历史的网络趋势；面板已开时只切指标并展开历史，不丢弃未提交的设置。
 async function showNetworkTrend(device: Device) {
   deleteId.value = ''; queueId.value = ''; otaId.value = '';
-  trend.value = { deviceId: device.deviceId, metric: 'network', seq: ++trendSeq };
+  panelFocus.value = { deviceId: device.deviceId, section: 'history', metric: 'network', seq: ++focusSeq };
+  selectedId.value = device.deviceId;
+  await nextTick(); document.getElementById('device-management-panel')?.focus();
+}
+// 断线次数直达“最近断线”记录；与网络趋势共用同一设置面板与请求序号。
+async function showDisconnectHistory(device: Device) {
+  deleteId.value = ''; queueId.value = ''; otaId.value = '';
+  panelFocus.value = { deviceId: device.deviceId, section: 'disconnect', seq: ++focusSeq };
   selectedId.value = device.deviceId;
   await nextTick(); document.getElementById('device-management-panel')?.focus();
 }
 async function upgrade(id: string) {
-  deleteId.value = ''; queueId.value = ''; trend.value = null;
+  deleteId.value = ''; queueId.value = ''; panelFocus.value = null;
   if (otaId.value === id) { await closeOta(); return; }
   selectedId.value = ''; otaId.value = id; await nextTick(); document.getElementById('remote-ota-panel')?.focus();
 }
 // 撤销待发与设置/升级/删除互斥，避免同一张卡里出现多组撤销确认。
 async function openQueue(device: Device) {
-  selectedId.value = ''; otaId.value = ''; deleteId.value = ''; trend.value = null;
+  selectedId.value = ''; otaId.value = ''; deleteId.value = ''; panelFocus.value = null;
   if (queueId.value === device.deviceId) { await closeQueue(); return; }
   queueId.value = device.deviceId; await nextTick(); document.getElementById('device-queue-panel')?.focus();
 }
@@ -105,10 +113,10 @@ async function closeQueue() {
   document.getElementById('device-queue-' + id)?.focus();
 }
 async function closeOta() { const id = otaId.value; otaId.value = ''; await nextTick(); document.getElementById('device-ota-' + id)?.focus(); }
-async function closeManagement(id: string) { trend.value = null; selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
+async function closeManagement(id: string) { panelFocus.value = null; selectedId.value = ''; await nextTick(); document.getElementById('device-manage-' + id)?.focus(); }
 // 删除是不可逆操作：必须输入完整设备名称，且只对从未使用、未被引用的设备开放。
 async function askDelete(device: Device) {
-  selectedId.value = ''; otaId.value = ''; queueId.value = ''; trend.value = null;
+  selectedId.value = ''; otaId.value = ''; queueId.value = ''; panelFocus.value = null;
   deleteId.value = device.deviceId; deleteDraft.value = ''; await nextTick();
   document.getElementById('devicespanel-field-4')?.focus();
 }
@@ -269,13 +277,23 @@ async function submit() {
           <strong>{{ device.wifiSsid || device.wifiIp }}</strong>
           <span v-if="device.wifiSsid && device.wifiIp">{{ device.wifiIp }}</span>
           <span v-if="device.wifiRssi !== null && device.wifiRssi !== undefined">{{ device.wifiRssi }} dBm</span>
-          <span v-if="device.wifiDisconnects24h">· 24 小时断线 {{ device.wifiDisconnects24h }} 次</span>
+          <NButton
+            v-if="device.wifiDisconnects24h"
+            attr-type="button"
+            :id="'device-disconnects-' + device.deviceId"
+            class="text-button device-disconnects"
+            :aria-expanded="selectedId === device.deviceId && panelFocus?.deviceId === device.deviceId && panelFocus.section === 'disconnect'"
+            aria-controls="device-management-panel"
+            @click="showDisconnectHistory(device)"
+          >
+            24 小时断线 {{ device.wifiDisconnects24h }} 次
+          </NButton>
           <span v-if="device.telemetryAt">· {{ formatRelative(device.telemetryAt) }}</span>
           <NButton
             attr-type="button"
             :id="'device-trend-' + device.deviceId"
             class="text-button device-trend"
-            :aria-expanded="selectedId === device.deviceId && trend?.deviceId === device.deviceId"
+            :aria-expanded="selectedId === device.deviceId && panelFocus?.deviceId === device.deviceId && panelFocus.section === 'history'"
             aria-controls="device-management-panel"
             @click="showNetworkTrend(device)"
           >
@@ -441,7 +459,7 @@ async function submit() {
           :device="device"
           :api="api"
           :busy="busy"
-          :history-focus="trend?.deviceId === device.deviceId ? trend : null"
+          :focus="panelFocus?.deviceId === device.deviceId ? panelFocus : null"
           @close="closeManagement(device.deviceId)"
         />
         <RemoteOtaPanel

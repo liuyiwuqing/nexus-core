@@ -13,8 +13,8 @@ import { errorNames, formatRelative, formatTime, wifiDisconnectName, type Api, t
 import StatusNote from './StatusNote.vue';
 import TelemetryChart from './TelemetryChart.vue';
 import { readFailure } from './failure';
-// historyFocus 由设备卡片的「网络趋势」传入：携带指标与请求序号，同一面板再次请求时也能生效。
-const props = defineProps<{ device: Device; api: Api; busy: boolean; historyFocus?: { metric: TelemetryMetric; seq: number } | null }>();
+// focus 由设备卡片的「网络趋势」「断线次数」传入：携带目标区块与请求序号，同一面板再次请求时也能生效。
+const props = defineProps<{ device: Device; api: Api; busy: boolean; focus?: { section: 'history' | 'disconnect'; metric?: TelemetryMetric; seq: number } | null }>();
 const emit = defineEmits<{ close: [] }>();
 const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>(null);
 // 复合控件允许编辑中暂时为空；API 仍只接收有效分钟数与毫秒数。
@@ -53,22 +53,24 @@ const metrics: { id: TelemetryMetric; label: string }[] = [
   { id: 'audio', label: '音频' },
   { id: 'network', label: '网络' },
 ];
-const metric = ref<TelemetryMetric>(props.historyFocus?.metric ?? 'heap');
+const metric = ref<TelemetryMetric>(props.focus?.section === 'history' ? props.focus.metric ?? 'heap' : 'heap');
 const historySection = ref<{ open: () => void } | null>(null);
-// 面板按需渲染历史区：数据未到时先记住指标，等区块挂载后再展开；只展开一次，之后允许用户收起。
-let revealPending = !!props.historyFocus;
-function revealHistory() {
-  if (!revealPending || !historySection.value) return;
-  revealPending = false;
-  historySection.value.open();
+const disconnectSection = ref<{ open: () => void } | null>(null);
+// 面板按需渲染区块：目标未挂载时先记住，等数据到达后再展开；只展开一次，之后允许用户收起。
+let pendingReveal: 'history' | 'disconnect' | null = props.focus?.section ?? null;
+function revealFocus() {
+  if (!pendingReveal) return;
+  const section = pendingReveal === 'history' ? historySection.value : disconnectSection.value;
+  if (!section) return;
+  pendingReveal = null;
+  section.open();
 }
-watch(() => props.historyFocus, value => {
+watch(() => props.focus, value => {
   if (!value) return;
-  metric.value = value.metric;
-  revealPending = true;
-  revealHistory();
+  if (value.section === 'history') metric.value = value.metric ?? 'heap';
+  pendingReveal = value.section;
+  revealFocus();
 });
-watch(data, revealHistory, { flush: 'post' });
 const history = ref<TelemetryHistory | null>(null), historyLoading = ref(false), historyError = ref('');
 const lastPoint = computed(() => history.value?.points[history.value.points.length - 1] ?? null);
 // 取不到的字段整段省略，避免出现"undefined · -52 dBm"这类拼接残句。
@@ -132,6 +134,7 @@ const disconnectsPath = `devices/${encodeURIComponent(props.device.deviceId)}/te
 // 没有断线原因、也读不到列表时不渲染整段，避免给未断线设备增加空区块。
 const disconnectVisible = computed(() => !!data.value?.telemetry?.wifiDisconnectReason || !!disconnectsError.value
   || !!disconnects.value?.items.length);
+watch([data, disconnects], revealFocus, { flush: 'post' });
 let disconnectGeneration = 0, disconnectRead: AbortController | undefined;
 async function loadDisconnects() {
   disconnectRead?.abort(); disconnectRead = new AbortController(); const current = ++disconnectGeneration;
@@ -501,7 +504,7 @@ onUnmounted(() => {
           </template>
         </template>
       </ConsoleDisclosure>
-      <ConsoleDisclosure v-if="disconnectVisible" label="最近断线" class="disconnect-history" :level="3"
+      <ConsoleDisclosure v-if="disconnectVisible" ref="disconnectSection" label="最近断线" class="disconnect-history" :level="3"
         :summary="disconnects?.items.length ? `${disconnects.items.length} 条` : '来自设备已上报的遥测'"
         :force-open="!!disconnectsError">
         <ConsoleState v-if="disconnectsError" kind="error" compact>{{ disconnectsError }}</ConsoleState>
