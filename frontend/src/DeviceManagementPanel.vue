@@ -305,7 +305,7 @@ onUnmounted(() => {
             <NCheckbox class="checkbox-label" v-model:checked="form.dnd.allowCritical" :disabled="disabled" :aria-disabled="disabled">免打扰时允许紧急提醒</NCheckbox>
           </div>
           <ConsoleDisclosure label="更多设置" class="management-options" :level="3"
-            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${duration ?? '—'} 秒${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
+            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${duration ?? '—'} 秒上限${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
             :force-open="!!uncertain || !!submitError || staleDraft">
           <NCheckbox class="checkbox-label" v-model:checked="form.dnd.enabled" :disabled="disabled" :aria-disabled="disabled">定时免打扰</NCheckbox>
           <div v-if="form.dnd.enabled" class="form-columns">
