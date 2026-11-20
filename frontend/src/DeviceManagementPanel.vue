@@ -403,14 +403,14 @@ onUnmounted(() => {
               :rule="fieldRule(() => duration, { required: true, min: 5, max: 30, step: 'any', number: true, disabled: () => disabled })"
               :label-props="{ id: 'devicemanagementpanel-field-7' + '-label', for: 'devicemanagementpanel-field-7' }"
             >
-              <template #label>消息显示时长（秒）</template>
+              <template #label>消息显示时长上限（秒）</template>
               <NInputNumber
                 :disabled="disabled"
                 :value="duration"
                 @update:value="setDuration"
                 :min="5"
                 :max="30"
-                :input-props="{ required: true, id: 'devicemanagementpanel-field-7', 'aria-label': '消息显示时长（秒）' }"
+                :input-props="{ required: true, id: 'devicemanagementpanel-field-7', 'aria-label': '消息显示时长上限（秒）' }"
               />
             </ConsoleField>
           </div>
