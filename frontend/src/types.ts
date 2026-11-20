@@ -76,7 +76,7 @@ export interface Connector { id: string; source: string; configured: boolean; en
 export interface Delivery { eventId: string; messageId: string; deviceId: string; title: string; status: string; attempts: number; canCancel: boolean; lastError: string | null; nextAttemptAt: string; readAt: string | null }
 /** 单条消息的逐设备只读快照；counts 覆盖全部分页，items 最多 100 条。 */
 export interface MessageDelivery {
-  eventId: string; deviceId: string; status: string; attempts: number; lastError: string | null;
+  eventId: string; deviceId: string; deviceName?: string | null; status: string; attempts: number; lastError: string | null;
   nextAttemptAt: string; receivedAt: string | null; displayedAt: string | null; readAt: string | null;
 }
 export interface MessageDeliveries extends Page<MessageDelivery> { messageId: string; counts: Record<string, number> }

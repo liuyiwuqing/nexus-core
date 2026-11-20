@@ -142,10 +142,11 @@ public class DeliveryService {
             counts.put((String) row.get("status"), ((Number) row.get("total")).intValue());
         return Map.of("messageId", messageId,
             "items", ApiRows.normalize(db.queryForList("""
-                SELECT d.event_id AS "eventId",d.device_id AS "deviceId",d.status,d.attempts,
+                SELECT d.event_id AS "eventId",d.device_id AS "deviceId",v.name AS "deviceName",d.status,d.attempts,
                        d.last_error AS "lastError",d.next_attempt_at AS "nextAttemptAt",d.received_at AS "receivedAt",
                        d.displayed_at AS "displayedAt",d.read_at AS "readAt"
-                FROM deliveries d WHERE d.message_id=? ORDER BY d.device_id LIMIT ? OFFSET ?
+                FROM deliveries d JOIN devices v ON v.device_id=d.device_id
+                WHERE d.message_id=? ORDER BY d.device_id LIMIT ? OFFSET ?
                 """, messageId, size, (page - 1) * size)),
             "counts", counts,
             "total", db.queryForObject("SELECT count(*) FROM deliveries WHERE message_id=?", Long.class, messageId),

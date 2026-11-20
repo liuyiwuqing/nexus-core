@@ -95,7 +95,10 @@ function timeline(item: MessageDelivery) {
         </thead>
         <tbody>
           <tr v-for="item in data.items" :key="item.eventId">
-            <td class="mono">{{ item.deviceId }}</td>
+            <td>
+              <span>{{ item.deviceName || item.deviceId }}</span>
+              <span v-if="item.deviceName" class="cell-sub mono">{{ item.deviceId }}</span>
+            </td>
             <td data-label="状态">
               <span class="badge" :class="item.status === 'read' ? 'success' : item.status === 'failed' ? 'danger' : ''">
                 {{ deliveryNames[item.status] || item.status }}

@@ -105,7 +105,7 @@ class MessageDeliveryBatchFlowTest {
     @BeforeEach void prepare()throws Exception {
         fixtures.execute("TRUNCATE inbox_messages,devices CASCADE");
         for(String id:List.of("batch-a","batch-b","batch-c"))
-            assertThat(request("POST","devices",json.writeValueAsString(Map.of("deviceId",id,"name",id)),TOKEN).statusCode()).isEqualTo(201);
+            assertThat(request("POST","devices",json.writeValueAsString(Map.of("deviceId",id,"name","设备 "+id)),TOKEN).statusCode()).isEqualTo(201);
     }
 
     @Test void dryRunExplainsEverySkipAndAgreesWithSingleDeliveryEligibility()throws Exception {
@@ -235,12 +235,14 @@ class MessageDeliveryBatchFlowTest {
         assertThat(listed.path("counts").has("read")).isFalse();
         assertThat(listed.path("items").size()).isEqualTo(3);
         assertThat(listed.path("items").get(0).path("deviceId").asText()).isEqualTo("batch-a");
+        assertThat(listed.path("items").get(0).path("deviceName").asText()).isEqualTo("设备 batch-a");
         // Ack progress is a read-time snapshot; counts cover devices outside the requested page.
         fixtures.update("UPDATE deliveries SET status='read',received_at=now()-interval '2 minute',displayed_at=now()-interval '1 minute',read_at=now() WHERE event_id=?",events.get("batch-b"));
         var page=get("messages/"+message+"/deliveries?page=2&size=1");
         assertThat(page.path("total").asInt()).isEqualTo(3);
         assertThat(page.path("items").size()).isEqualTo(1);
         assertThat(page.path("items").get(0).path("deviceId").asText()).isEqualTo("batch-b");
+        assertThat(page.path("items").get(0).path("deviceName").asText()).isEqualTo("设备 batch-b");
         assertThat(page.path("items").get(0).path("status").asText()).isEqualTo("read");
         assertThat(page.path("items").get(0).path("receivedAt").asText()).isNotBlank();
         assertThat(page.path("items").get(0).path("displayedAt").asText()).isNotBlank();
