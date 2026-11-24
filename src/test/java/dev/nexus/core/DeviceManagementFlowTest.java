@@ -63,7 +63,7 @@ class DeviceManagementFlowTest {
             pattern write nexus/v1/devices/%u/config_acks
             pattern write nexus/v1/devices/%u/telemetry
             """),"/mosquitto/config/acl")
-        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network dodo-disconnects dodo-settings; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
+        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network dodo-disconnects dodo-settings dodo-screen; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);
@@ -399,6 +399,41 @@ class DeviceManagementFlowTest {
                 assertThat(view.path("observedAt").asLong()).withFailMessage("坏配置不该入库: "+broken).isEqualTo(barrier);
                 assertThat(view.path("config").path("screen").path("timeoutS").asInt()).isEqualTo(120);
             }
+            d.disconnect();
+        }
+    }
+    @Test void configurationRequestCarriesScreenAndSoundSettings()throws Exception {
+        String id="dodo-screen",path="devices/"+id+"/management",rid=UUID.randomUUID().toString();
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"屏幕设置\"}",TOKEN).statusCode()).isEqualTo(201);
+        try(var d=device(id)) {
+            waitForCore();var wire=new LinkedBlockingQueue<MqttMessage>();
+            d.subscribe("nexus/v1/devices/"+id+"/config",1,(topic,message)->wire.add(message));
+            String reported=CONFIG.replace("\"muted\":false",
+                "\"muted\":false,\"sfxVolume\":35,\"screen\":{\"timeoutS\":120,\"idleBrightness\":50}");
+            d.publish("nexus/v1/devices/"+id+"/telemetry",telemetry(id,0,reported).getBytes(StandardCharsets.UTF_8),1,true);
+            var current=awaitTelemetry(id).path("telemetry").path("config");
+            assertThat(current.path("sfxVolume").asInt()).isEqualTo(35);
+            assertThat(current.path("screen").path("timeoutS").asInt()).isEqualTo(120);
+            String desired=reported.replace("\"volume\":25","\"volume\":30").replace("\"timeoutS\":120","\"timeoutS\":300");
+            // 越界与未知键在 HTTP 边界直接 400，不进入下发队列。
+            for(String broken:new String[]{
+                desired.replace("\"sfxVolume\":35","\"sfxVolume\":101"),
+                desired.replace("\"idleBrightness\":50","\"idleBrightness\":101"),
+                desired.replace("\"timeoutS\":300","\"timeoutS\":3601"),
+                desired.replace("\"idleBrightness\":50","\"idleBrightness\":50,\"ghost\":1")}) {
+                var bad=request("POST",path+"/config-requests","{\"requestId\":\""+UUID.randomUUID()+"\",\"expectedRevision\":0,\"config\":"+broken+"}",TOKEN);
+                assertThat(bad.statusCode()).withFailMessage(broken+" "+bad.body()).isEqualTo(400);
+            }
+            String body="{\"requestId\":\""+rid+"\",\"expectedRevision\":0,\"config\":"+desired+"}";
+            var created=request("POST",path+"/config-requests",body,TOKEN);
+            assertThat(created.statusCode()).withFailMessage(created.body()).isEqualTo(202);
+            var packet=wire.poll(8,TimeUnit.SECONDS);assertThat(packet).isNotNull();
+            var sent=json.readTree(packet.getPayload()).path("config");
+            assertThat(sent.path("volume").asInt()).isEqualTo(30);
+            assertThat(sent.path("timeoutS").isMissingNode()).isTrue();
+            assertThat(sent.path("screen").path("timeoutS").asInt()).isEqualTo(300);
+            assertThat(sent.path("screen").path("idleBrightness").asInt()).isEqualTo(50);
+            assertThat(sent.path("sfxVolume").asInt()).isEqualTo(35);
             d.disconnect();
         }
     }

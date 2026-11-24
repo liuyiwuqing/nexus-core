@@ -20,6 +20,21 @@ const data = ref<DeviceManagement | null>(null), form = ref<DeviceConfig | null>
 // 复合控件允许编辑中暂时为空；API 仍只接收有效分钟数与毫秒数。
 const timeDraft = ref({ startMinute: '', endMinute: '' }), duration = ref<number | null>(null);
 const durationSummary = computed(() => duration.value == null ? '时长未知' : `${duration.value} 秒上限`);
+// 屏幕与提示音是设备 settings 切片后的可选字段：只有设备上报过才显示并允许编辑，写回时仍落回完整配置。
+const hasScreen = computed(() => !!form.value?.screen), hasSfx = computed(() => form.value?.sfxVolume !== undefined);
+const screenTimeout = computed({
+  get: () => form.value?.screen?.timeoutS ?? 0,
+  set: (value: number | null) => { if (form.value?.screen && typeof value === 'number') form.value.screen.timeoutS = value },
+});
+const screenIdle = computed({
+  get: () => form.value?.screen?.idleBrightness ?? 0,
+  set: (value: number) => { if (form.value?.screen) form.value.screen.idleBrightness = value },
+});
+const sfxVolume = computed({
+  get: () => form.value?.sfxVolume ?? 0,
+  set: (value: number) => { if (form.value) form.value.sfxVolume = value },
+});
+const screenSummary = computed(() => !hasScreen.value ? '' : ` · 息屏 ${screenTimeout.value === 0 ? '常亮' : screenTimeout.value + ' 秒'}`);
 const loading = ref(false), sending = ref(false), loadError = ref(''), submitError = ref(''), notice = ref('');
 const baseline = ref(''), formRevision = ref(0);
 type Submission = { requestId: string; expectedRevision: number; config: DeviceConfig };
@@ -370,7 +385,7 @@ onUnmounted(() => {
             <NCheckbox class="checkbox-label" v-model:checked="form.dnd.allowCritical" :disabled="disabled" :aria-disabled="disabled">免打扰时允许紧急提醒</NCheckbox>
           </div>
           <ConsoleDisclosure label="更多设置" class="management-options" :level="3"
-            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${durationSummary}${form.dnd.enabled ? ' · 定时免打扰' : ''}`"
+            :summary="`${form.timezone} · ${form.message.queueDepth} 条 · ${durationSummary}${form.dnd.enabled ? ' · 定时免打扰' : ''}${screenSummary}`"
             :force-open="!!uncertain || !!submitError || staleDraft">
           <NCheckbox class="checkbox-label" v-model:checked="form.dnd.enabled" :disabled="disabled" :aria-disabled="disabled">定时免打扰</NCheckbox>
           <div v-if="form.dnd.enabled" class="form-columns">
@@ -479,6 +494,48 @@ onUnmounted(() => {
               />
             </ConsoleField>
           </div>
+          <div v-if="hasScreen" class="form-columns">
+            <ConsoleField
+              path="field-8"
+              :rule="fieldRule(() => screenTimeout, { required: true, min: 0, max: 3600, step: '1', number: true, disabled: () => disabled })"
+              :label-props="{ id: 'devicemanagementpanel-field-8' + '-label', for: 'devicemanagementpanel-field-8' }"
+            >
+              <template #label>息屏超时（秒）</template>
+              <NInputNumber
+                v-model:value="screenTimeout"
+                :disabled="disabled"
+                :min="0"
+                :max="3600"
+                :step="30"
+                :input-props="{ required: true, id: 'devicemanagementpanel-field-8', 'aria-label': '息屏超时（秒）' }"
+              />
+              <small>0 表示永不息屏；无输入、语音或消息达到该秒数后关背光。</small>
+            </ConsoleField>
+            <ConsoleField
+              path="field-9"
+              :label-props="{ id: 'devicemanagementpanel-field-9' + '-label', for: 'devicemanagementpanel-field-9' }"
+            >
+              <template #label>待机亮度 · {{ screenIdle }}%</template>
+              <NSlider v-model:value="screenIdle" :disabled="disabled" :min="0" :max="100" />
+              <small>静置后降到该亮度，只有不高于亮度时才生效。</small>
+            </ConsoleField>
+          </div>
+          <p v-if="hasScreen && screenIdle > form.brightness" class="management-hint">
+            待机亮度高于当前亮度，设备不会降亮度。
+          </p>
+          <div v-if="hasSfx" class="form-columns">
+            <ConsoleField
+              path="field-10"
+              :label-props="{ id: 'devicemanagementpanel-field-10' + '-label', for: 'devicemanagementpanel-field-10' }"
+            >
+              <template #label>提示音音量 · {{ sfxVolume }}%</template>
+              <NSlider v-model:value="sfxVolume" :disabled="disabled" :min="0" :max="100" />
+              <small>消息等提示音音量，与语音音量分开。</small>
+            </ConsoleField>
+          </div>
+          <p v-if="!hasScreen && !hasSfx" class="management-hint">
+            当前设备未上报屏幕与提示音设置，固件升级后可在此调整。
+          </p>
           <p v-if="data.telemetry?.config && form.message.queueDepth < data.telemetry.config.message.queueDepth" class="management-hint">
             缩小容量不会删除已接收消息。
           </p>
@@ -590,7 +647,9 @@ onUnmounted(() => {
             <span class="badge" :class="item.status === 'applied' ? 'success' : ''">{{ stateNames[item.status] }}</span>
           </div>
           <p>
-            音量 {{ item.requestedConfig.volume }}% · 亮度 {{ item.requestedConfig.brightness }}%
+            音量 {{ item.requestedConfig.volume }}% · 亮度 {{ item.requestedConfig.brightness }}%<span
+              v-if="item.requestedConfig.sfxVolume !== undefined"> · 提示音 {{ item.requestedConfig.sfxVolume }}%</span><span
+              v-if="item.requestedConfig.screen"> · 息屏 {{ item.requestedConfig.screen.timeoutS === 0 ? '常亮' : item.requestedConfig.screen.timeoutS + ' 秒' }}</span>
             <span v-if="item.confirmationSource">· {{ item.confirmationSource === 'ack' ? '设备回执确认' : '配置回读确认' }}</span>
           </p>
           <p v-if="item.lastError" class="management-hint">
