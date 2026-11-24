@@ -24,6 +24,8 @@ export interface DeviceQueuePlan {
 export interface DevicePage extends Page<Device> { matched: number; state: string; q: string; sort: string; order: string; counts: DeviceCounts }
 export interface DeviceConfig {
   schemaVersion: 1; timezone: string; language: 'zh-CN'; volume: number; brightness: number; muted: boolean;
+  /* 可选：设备上报才存在。设置页不编辑这两项，提交时原样回传，避免用默认值覆盖设备端设置。 */
+  sfxVolume?: number; screen?: { timeoutS: number; idleBrightness: number };
   dnd: { enabled: boolean; manual: boolean; startMinute: number; endMinute: number; allowCritical: boolean };
   message: { queueDepth: number; durationMs: number };
 }

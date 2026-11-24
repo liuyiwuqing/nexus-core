@@ -164,6 +164,8 @@ python3 tools/provision_device.py --port /dev/cu.usbmodemXXXX
 
 `04-ai-desktop-pet` 新增 telemetry/config/config_acks，与原消息协议并列；03 设备不因升级 CORE 自动具有此能力。管理台设备卡片“设置与状态”读取完整设置，支持音量、亮度、静音、手动/定时免打扰、固定时区与消息设置。设备状态过期、存储只读、设置版本变化和配置结果未知时阻止覆盖；后台轮询保留草稿。亮度 0 的熄屏后果会在保存前显示。
 
+完整设置里的息屏超时/待机亮度（`screen`）与提示音音量（`sfxVolume`）是设备端 settings 切片新增的可选字段：CORE 按共享 `device-config.schema.json` 校验后原样保存，设置页暂不编辑，提交时原样回传，不会被默认值覆盖。2026-11-24 之前 CORE 只认必需字段，带这两项的遥测会被整条判为 `unknown_management_field` 丢弃（见 [ACC-01 §15](../04-ai-desktop-pet/docs/29-acc01-production-deployment-plan.md)）。
+
 设备卡片还支持“修改名称”，仅更新 CORE 显示名称。`PATCH /devices/{id}/name` 提交 `{name,expectedName}`，事务内核对旧名称；冲突返回 409，目标已匹配时允许安全重试。前端保留轮询中的草稿，冲突后显式加载当前名称；HTTP 结果未知时刷新核对，不自动重发。设备 ID、Broker 凭据及投递关系不变，无新增数据库迁移。流程和当前验证见同级 [14](../04-ai-desktop-pet/docs/14-recovery-and-device-names.md)。
 
 所有请求沿用管理员 Bearer 鉴权，单一共享令牌不提供多用户/RBAC。配置请求持久化后返回 202，不等于设备已保存；只有有效 ACK 或匹配完整回读才能确认。HTTP 中断保留原 requestId，重试不能换 ID。每设备最多一个 pending/sent/unconfirmed 请求，曾尝试发送后超时保留 unconfirmed，随后用新鲜配置核对。retained 遥测不把设备标为在线。详细状态与设备事务见 [管理契约](../04-ai-desktop-pet/integration/contracts/device-management-v1/README.md)。

@@ -63,7 +63,7 @@ class DeviceManagementFlowTest {
             pattern write nexus/v1/devices/%u/config_acks
             pattern write nexus/v1/devices/%u/telemetry
             """),"/mosquitto/config/acl")
-        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network dodo-disconnects; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
+        .withCommand("sh","-c","mosquitto_passwd -b -c /tmp/passwd nexus-core core-test-password && for device in dodo-management dodo-update dodo-reconcile dodo-invalid dodo-wire dodo-scoped dodo-spy dodo-history dodo-network dodo-disconnects dodo-settings; do mosquitto_passwd -b /tmp/passwd $device device-test-password; done && chmod 644 /tmp/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf")
         .waitingFor(Wait.forListeningPort()).withStartupTimeout(Duration.ofSeconds(60));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         p.add("spring.datasource.url",DB::getJdbcUrl);p.add("spring.datasource.username",DB::getUsername);
@@ -369,6 +369,51 @@ class DeviceManagementFlowTest {
             for(var item:devices)if(item.path("deviceId").asText().equals("dodo-management"))assertThat(item.path("online").asBoolean()).isFalse();
             d.disconnect();
         }
+    }
+    @Test void telemetryKeepsFirmwareSettingsFieldsAndRejectsBadOnes()throws Exception {
+        String id="dodo-settings";
+        assertThat(request("POST","devices","{\"deviceId\":\""+id+"\",\"name\":\"设置契约\"}",TOKEN).statusCode()).isEqualTo(201);
+        try(var d=device(id)) {
+            waitForCore();
+            // 04 固件 settings 切片后的真实格式：sfxVolume 与 screen 与共享 device-config.schema.json 一致。
+            String config="{\"schemaVersion\":1,\"timezone\":\"Asia/Shanghai\",\"language\":\"zh-CN\",\"volume\":25,\"brightness\":80,"
+                +"\"muted\":false,\"sfxVolume\":35,\"screen\":{\"timeoutS\":120,\"idleBrightness\":50},"
+                +"\"dnd\":{\"enabled\":false,\"manual\":false,\"startMinute\":1320,\"endMinute\":420,\"allowCritical\":true},"
+                +"\"message\":{\"queueDepth\":8,\"durationMs\":8000}}";
+            d.publish("nexus/v1/devices/"+id+"/telemetry",telemetry(id,0,config).getBytes(StandardCharsets.UTF_8),1,true);
+            var settings=awaitTelemetry(id).path("telemetry").path("config");
+            assertThat(settings.path("sfxVolume").asInt()).isEqualTo(35);
+            assertThat(settings.path("screen").path("timeoutS").asInt()).isEqualTo(120);
+            assertThat(settings.path("screen").path("idleBrightness").asInt()).isEqualTo(50);
+            // 处理屏障：先把快照推到确定值，坏样本之后才能断言“没有变更”，不靠猜测延迟。
+            long barrier=Instant.now().getEpochSecond()+1;
+            d.publish("nexus/v1/devices/"+id+"/telemetry",at(telemetry(id,0,config),barrier).getBytes(StandardCharsets.UTF_8),1,true);
+            awaitObserved(id,barrier);
+            for(String broken:new String[]{
+                config.replace("\"idleBrightness\":50","\"idleBrightness\":50,\"ghost\":1"),
+                config.replace("\"sfxVolume\":35","\"sfxVolume\":101"),
+                config.replace("\"timeoutS\":120","\"timeoutS\":3601")}) {
+                d.publish("nexus/v1/devices/"+id+"/telemetry",at(telemetry(id,0,broken),barrier+1).getBytes(StandardCharsets.UTF_8),1,true);
+                Thread.sleep(400);
+                var view=json.readTree(request("GET","devices/"+id+"/management","",TOKEN).body()).path("telemetry");
+                assertThat(view.path("observedAt").asLong()).withFailMessage("坏配置不该入库: "+broken).isEqualTo(barrier);
+                assertThat(view.path("config").path("screen").path("timeoutS").asInt()).isEqualTo(120);
+            }
+            d.disconnect();
+        }
+    }
+    String at(String telemetry,long observed) {
+        return telemetry.replaceFirst("\"observedAt\":[0-9]+","\"observedAt\":"+observed);
+    }
+    void awaitObserved(String device,long observed)throws Exception {
+        long until=System.nanoTime()+Duration.ofSeconds(8).toNanos();long seen=0;
+        while(System.nanoTime()<until) {
+            var value=json.readTree(request("GET","devices/"+device+"/management","",TOKEN).body()).path("telemetry");
+            seen=value.path("observedAt").asLong();
+            if(seen==observed)return;
+            Thread.sleep(40);
+        }
+        throw new AssertionError("Telemetry did not reach "+observed+", last="+seen);
     }
     @Test void telemetryHistoryRecordsChangesAndCapsStableHeartbeats()throws Exception {
         String id="dodo-history",path="devices/"+id+"/telemetry";

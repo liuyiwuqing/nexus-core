@@ -42,7 +42,7 @@ final class ManagementCodec {
         return value.asText();
     }
     static ObjectNode config(JsonNode input) {
-        fields(input,Set.of("schemaVersion","timezone","language","volume","brightness","dnd","message"),Set.of("muted"));
+        fields(input,Set.of("schemaVersion","timezone","language","volume","brightness","dnd","message"),Set.of("muted","screen","sfxVolume"));
         integer(input.get("schemaVersion"),1,1);integer(input.get("volume"),0,100);integer(input.get("brightness"),0,100);
         String timezone=text(input.get("timezone"),32);
         if(!Set.of("Asia/Shanghai","UTC","Etc/UTC").contains(timezone)) {
@@ -58,12 +58,25 @@ final class ManagementCodec {
         integer(dnd.get("startMinute"),0,1439);integer(dnd.get("endMinute"),0,1439);
         if(dnd.has("manual"))bool(dnd.get("manual"));
         if(input.has("muted"))bool(input.get("muted"));
+        // 04 固件 settings 切片新增的两项，与共享 device-config.schema.json 对齐。二者在契约里可选：
+        // 设备没上报就不补默认值，宁可缺字段也不替设备编造状态；上报了才校验并原样保留。
+        if(input.has("sfxVolume"))integer(input.get("sfxVolume"),0,100);
+        var screen=input.get("screen");
+        if(screen!=null) {
+            fields(screen,Set.of("timeoutS","idleBrightness"),Set.of());
+            integer(screen.get("timeoutS"),0,3600);integer(screen.get("idleBrightness"),0,100);
+        }
         var message=input.get("message");fields(message,Set.of("queueDepth","durationMs"),Set.of());
         integer(message.get("queueDepth"),1,8);integer(message.get("durationMs"),5000,30000);
         // Stable key order and explicit defaults make idempotency independent of JSON spelling.
         var out=JSON.createObjectNode();out.put("schemaVersion",1);out.put("timezone",timezone);out.put("language","zh-CN");
         out.put("volume",input.get("volume").asInt());out.put("brightness",input.get("brightness").asInt());
         out.put("muted",input.path("muted").asBoolean(false));
+        if(input.has("sfxVolume"))out.put("sfxVolume",input.get("sfxVolume").asInt());
+        if(screen!=null) {
+            var s=out.putObject("screen");
+            s.put("timeoutS",screen.get("timeoutS").asInt());s.put("idleBrightness",screen.get("idleBrightness").asInt());
+        }
         var d=out.putObject("dnd");d.put("enabled",dnd.get("enabled").asBoolean());d.put("manual",dnd.path("manual").asBoolean(false));
         d.put("startMinute",dnd.get("startMinute").asInt());d.put("endMinute",dnd.get("endMinute").asInt());
         d.put("allowCritical",dnd.get("allowCritical").asBoolean());
