@@ -12,6 +12,12 @@ HTTP GET `/api/v1/devices/{deviceId}/companion` 返回 enabled/online/fresh、�
 
 请求30秒有效，需设备启用、在线且90秒内状态、存档可写和版本匹配；断连后不继续排队。202只表示接收，pending/sent等待设备持久保存；applied才完成，rejected/expired明确失败，unconfirmed等待核对。丢失ACK可通过后续快照的持久命令身份与版本确认，不能仅凭外观相同确认。设备写失败不显示成功，不远程发币或解锁。有伙伴历史的设备只能停用。
 
+## 换装错误码（2026-11-24）
+
+400 不再把所有领域校验都折叠成 `invalid_request`。`ApiErrors` 只回传形如 `theme_locked` 的原因码（纯小写、至少一段下划线），其余异常消息（`NumberFormatException`、反序列化细节、裸英文单词等）仍折叠为 `invalid_request`，避免把实现细节漏给调用方。状态码未变，变的只是 `error` 字段从笼统值变精确值。
+
+客户端可据此分支：`theme_locked` / `outfit_not_owned` / `furnishing_not_owned` 是内容未拥有，应提示回设备侧解锁，而不是让用户改输入；`invalid_appearance_request_id` / `invalid_furnishing_slot` / `invalid_companion_array` / `invalid_management_*` 是请求体不合法，应修正输入。版本与排队问题仍走 409：`appearance_revision_conflict`、`appearance_result_pending`、`idempotency_conflict`、`companion_offline`、`companion_readonly`。这些原因码由 `src/test/java/dev/nexus/core/web/ApiErrorsTest` 固定，改动前先看那个用例。
+
 ## 本地验证与边界（2026-11-24）
 
 配套固件 `PET_HOST_SANITIZE=1 python3 tools/ci/test_companion_contract.py` 四项真实 C 服务/双槽逻辑、MQTT、PostgreSQL、HTTP 集成全部通过，含ACK丢失核对与重复命令不重复写。CORE `MAVEN_ARGS=-Dtest=CompanionFlowTest python3 tools/run_local.py test` 通过，独立执行时跨语言项按环境跳过；测试容器无真实库。`python3 tools/test_broker_policy.py` 4/4通过。固件完整主机回归及 full ESP-IDF 目标构建通过；构建中发现并修正私有网络函数误用。没有烧录、真实部署、真实消息或实物NVS验收。
