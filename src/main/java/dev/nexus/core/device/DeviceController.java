@@ -186,9 +186,12 @@ public class DeviceController {
                 OR EXISTS(SELECT 1 FROM device_ota_boots WHERE device_id=?)
                 OR EXISTS(SELECT 1 FROM device_growth_observations WHERE device_id=?)
                 OR EXISTS(SELECT 1 FROM device_growth_boots WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_companion_observations WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_companion_boots WHERE device_id=?)
+                OR EXISTS(SELECT 1 FROM device_appearance_requests WHERE device_id=?)
                 OR EXISTS(SELECT 1 FROM device_credentials WHERE device_id=?)
                 OR EXISTS(SELECT 1 FROM device_credential_events WHERE device_id=?)
-            """, Boolean.class, id, id, id, id, id, id, id, id, id, id, id));
+            """, Boolean.class, id, id, id, id, id, id, id, id, id, id, id, id, id, id));
         if (hasHistory) throw new ResponseStatusException(HttpStatus.CONFLICT, "device_has_history");
         boolean referenced = Boolean.TRUE.equals(db.queryForObject("""
             SELECT EXISTS(SELECT 1 FROM routing_rules WHERE NOT deleted AND definition->'deviceIds' @> to_jsonb(?::text))

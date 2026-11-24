@@ -2,6 +2,7 @@ package dev.nexus.core.delivery;
 
 import dev.nexus.core.device.DeviceManagementService;
 import dev.nexus.core.device.DeviceGrowthService;
+import dev.nexus.core.device.CompanionService;
 import dev.nexus.core.device.RemoteOtaService;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
@@ -28,9 +29,10 @@ public class MqttTransport {
     private volatile boolean ready;
     private final boolean otaEnabled;
     private final boolean growthEnabled;
+    private final boolean companionEnabled;
     private volatile String lastError = "not_connected";
 
-    public MqttTransport(DeliveryService delivery, DeviceManagementService management, RemoteOtaService ota, DeviceGrowthService growth, ObjectMapper json,
+    public MqttTransport(DeliveryService delivery, DeviceManagementService management, RemoteOtaService ota, DeviceGrowthService growth, CompanionService companion, ObjectMapper json,
         @Value("${nexus.mqtt.uri}") String uri,
         @Value("${nexus.mqtt.username}") String username,
         @Value("${nexus.mqtt.password}") String password,
@@ -39,6 +41,7 @@ public class MqttTransport {
         @Value("${nexus.mqtt.ca-cert:}") String caCert) throws Exception {
         otaEnabled=ota.enabled();
         growthEnabled=growth.enabled();
+        companionEnabled=companion.enabled();
         URI parsed = URI.create(uri);
         if ((!"ssl".equals(parsed.getScheme()) && !(allowInsecure && "tcp".equals(parsed.getScheme())))
             || parsed.getHost() == null || parsed.getUserInfo() != null || username.isBlank() || password.isBlank())
@@ -74,6 +77,8 @@ public class MqttTransport {
                 if (parts.length != 5 || !parts[0].equals("nexus") || !parts[1].equals("v1") || !parts[2].equals("devices")
                     || !parts[3].matches("[a-zA-Z0-9_-]{1,40}")) return;
                 try {
+                    if(parts[4].equals("companion_status")) {companion.observation(parts[3],message.getPayload(),message.isRetained());return;}
+                    if(parts[4].equals("appearance_acks")) {companion.acknowledge(parts[3],message.getPayload(),message.isRetained());return;}
                     if(parts[4].equals("growth_status")) { growth.observation(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("ota_status")) { ota.observation(parts[3],message.getPayload(),message.isRetained());return; }
                     if(parts[4].equals("ota_acks")) { ota.acknowledge(parts[3],message.getPayload(),message.isRetained());return; }
@@ -98,6 +103,7 @@ public class MqttTransport {
             if (!client.isConnected()) client.connect(options).waitForCompletion(4000);
             var topics=new java.util.ArrayList<>(java.util.List.of("nexus/v1/devices/+/acks","nexus/v1/devices/+/state","nexus/v1/devices/+/telemetry","nexus/v1/devices/+/config_acks"));
             if(otaEnabled)topics.addAll(java.util.List.of("nexus/v1/devices/+/ota_acks","nexus/v1/devices/+/ota_status"));
+            if(companionEnabled)topics.addAll(java.util.List.of("nexus/v1/devices/+/companion_status","nexus/v1/devices/+/appearance_acks"));
             if(growthEnabled)topics.add("nexus/v1/devices/+/growth_status");
             int[] qosValues=new int[topics.size()];java.util.Arrays.fill(qosValues,1);
             var token=client.subscribe(topics.toArray(String[]::new),qosValues);
@@ -128,6 +134,12 @@ public class MqttTransport {
         if(!otaEnabled||!device.matches("[a-zA-Z0-9_-]{1,40}")||payload.length>1024)throw new IllegalArgumentException("invalid_ota_envelope");
         if(!ready())throw new MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED);
         client.publish("nexus/v1/devices/"+device+"/ota",payload,1,false).waitForCompletion(3000);
+    }
+
+    public void publishAppearance(String device,byte[] payload)throws MqttException {
+        if(!companionEnabled||!device.matches("[a-zA-Z0-9_-]{1,40}")||payload.length>768)throw new IllegalArgumentException("invalid_appearance_envelope");
+        if(!ready())throw new MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED);
+        client.publish("nexus/v1/devices/"+device+"/appearance",payload,1,false).waitForCompletion(3000);
     }
 
     @PreDestroy

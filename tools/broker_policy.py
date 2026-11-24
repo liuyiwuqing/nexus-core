@@ -30,11 +30,15 @@ REMOTE_OTA_V1_ACL=MANAGEMENT_ACL
 MANAGEMENT_ACL=REMOTE_OTA_V1_ACL.replace("topic read nexus/v1/devices/+/ota_status\n",
     "topic read nexus/v1/devices/+/ota_status\ntopic read nexus/v1/devices/+/growth_status\n")+"pattern write nexus/v1/devices/%u/growth_status\n"
 
+GROWTH_V1_ACL=MANAGEMENT_ACL
+MANAGEMENT_ACL=GROWTH_V1_ACL.replace("topic read nexus/v1/devices/+/growth_status\n",
+    "topic read nexus/v1/devices/+/growth_status\ntopic read nexus/v1/devices/+/companion_status\ntopic read nexus/v1/devices/+/appearance_acks\ntopic write nexus/v1/devices/+/appearance\n")+"pattern write nexus/v1/devices/%u/companion_status\npattern write nexus/v1/devices/%u/appearance_acks\npattern read nexus/v1/devices/%u/appearance\n"
+
 def upgrade_acl(text):
     rules = lambda value: [line.strip() for line in value.splitlines() if line.strip() and not line.lstrip().startswith("#")]
     if rules(text) == rules(MANAGEMENT_ACL):
         return text
-    if rules(text) not in (rules(LEGACY_ACL),rules(MANAGEMENT_V1_ACL),rules(REMOTE_OTA_V1_ACL)):
+    if rules(text) not in (rules(LEGACY_ACL),rules(MANAGEMENT_V1_ACL),rules(REMOTE_OTA_V1_ACL),rules(GROWTH_V1_ACL)):
         raise ValueError("custom_acl_requires_manual_merge")
     return MANAGEMENT_ACL
 
@@ -43,7 +47,7 @@ def upgrade_config(text):
     anonymous = [line.split()[1:] for line in lines if line.strip().startswith("allow_anonymous ")]
     if not anonymous or any(value != ["false"] for value in anonymous):
         raise ValueError("broker_authentication_must_remain_enabled")
-    for key, minimum in (("message_size_limit", 2048), ("max_packet_size", 4096)):
+    for key, minimum in (("message_size_limit", 3072), ("max_packet_size", 4096)):
         found = [i for i, line in enumerate(lines) if line.strip().startswith(key + " ")]
         if len(found) > 1:
             raise ValueError("duplicate_broker_limit_requires_manual_merge")

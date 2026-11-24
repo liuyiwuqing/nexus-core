@@ -267,3 +267,5 @@ PostgreSQL 数据在 Compose 卷中，设备密钥/证书在 `data/`；两处均
 可选 `NEXUS_AUTH_TOKEN_FILE` 使用受保护 current/previous 文件，保留环境模式；文件模式拒绝旧环境后备，按请求重载，损坏返回固定 503。管理与 `/mcp/memory` 范围始终独立，工具任务归属保留初始化时的稳定身份；在途请求不被撤销中断。stdio 使用 `NEXUS_MEMORY_MCP_TOKEN_FILE` 独立客户端副本，每次 RPC 重读，不自动重试。初次切换模式需一次正常重启，后续文件更新不重启。
 
 `tools/credential_store.py` 提供 init/status/rotate/revoke/export-memory，使用本地文件锁/修订/原子写入、不输出秘密。格式、权限、命令与已执行验证见 [本仓文档](docs/credential-rotation.md)和配套 [20](../04-ai-desktop-pet/docs/20-credential-rotation.md)。仅验证隔离文件与服务，没有轮换真实凭据或改变设备/上游服务的凭据维护流程。
+
+伙伴外观协议、启用方式与确认语义见 [伙伴空间](docs/companion-space.md)。

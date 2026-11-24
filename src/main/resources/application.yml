@@ -25,6 +25,8 @@ spring:
 nexus:
   overview:
     timezone: ${NEXUS_OVERVIEW_TIMEZONE:UTC}
+  companion:
+    enabled: ${NEXUS_COMPANION_ENABLED:false}
   growth-sync:
     enabled: ${NEXUS_GROWTH_SYNC_ENABLED:false}
   auth:
