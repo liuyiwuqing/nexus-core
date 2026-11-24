@@ -9,7 +9,7 @@ export const navigation: { label: string; items: NavigationItem[] }[] = [
     { id: 'overview', label: '概览', icon: LayoutDashboard },
     { id: 'inbox', label: '消息', icon: Inbox },
     { id: 'devices', label: '设备', icon: Monitor },
-    { id: 'pet', label: '成长', icon: Sparkles },
+    { id: 'pet', label: '伙伴', icon: Sparkles },
   ] },
   { label: '消息与自动化', items: [
     { id: 'connectors', label: '接入', icon: Cable },

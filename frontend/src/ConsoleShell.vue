@@ -79,7 +79,7 @@ function resetDeviceSearch() {
 function selectDevice(value: string) {
   resetDeviceSearch();
   emit('update:selectedDevice', value);
-  void navigate('devices');
+  if (props.tab !== 'pet') void navigate('devices');
 }
 </script>
 

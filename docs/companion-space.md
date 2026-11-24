@@ -15,3 +15,13 @@ HTTP GET `/api/v1/devices/{deviceId}/companion` 返回 enabled/online/fresh、�
 ## 本地验证与边界（2026-11-24）
 
 配套固件 `PET_HOST_SANITIZE=1 python3 tools/ci/test_companion_contract.py` 四项真实 C 服务/双槽逻辑、MQTT、PostgreSQL、HTTP 集成全部通过，含ACK丢失核对与重复命令不重复写。CORE `MAVEN_ARGS=-Dtest=CompanionFlowTest python3 tools/run_local.py test` 通过，独立执行时跨语言项按环境跳过；测试容器无真实库。`python3 tools/test_broker_policy.py` 4/4通过。固件完整主机回归及 full ESP-IDF 目标构建通过；构建中发现并修正私有网络函数误用。没有烧录、真实部署、真实消息或实物NVS验收。
+
+## 控制台操作（PET-CONSOLE-01）
+
+「伙伴」分为伙伴空间、衣橱与小舱、回忆与收藏、CORE 专注档案。页面内设备选择器支持服务端名称/ID搜索，手机端同样可用；切换设备后草案按设备隔离，刷新不覆盖已有草案。小舱提供三主题、六穿戴、六摆件和三摆放位预览，未拥有内容可看效果但不能应用，购买/领取仍在设备上完成。网页招手是本地预览互动，不发送设备指令。
+
+管理员在线且有可写新鲜快照时才能应用；其他角色仍可预览。设备版本变化后加载最新外观再选择。提交结果不明确时保留同一请求身份供刷新核对或幂等重试；等待保存或结果不明确期间不另发新换装。页面草案保留至面板卸载，刷新整个网页会丢弃未提交草案。
+
+角色采用与设备相同的瓷白/墨绿/薄荷配色和轮廓，网页SVG显示实际穿戴与摆件；呼吸、眨眼和本地招手均支持系统减少动态。三游戏纪录和最近8条设备里程碑只读显示，未校时时不编造日期。
+
+验证：Vue类型与83个样式token检查、Vite构建通过。`python3 tools/run_local.py build` 全量196项测试0失败、6项按环境跳过；最终页面修改后再次检查构建并打包（`MAVEN_ARGS=-DskipTests python3 tools/run_local.py build`）通过。Playwright使用本机Chrome、隔离HTTP fixture与伙伴端点边界数据，验证1440×1000和390×844、在线/离线草案、CAS冲突、202等待与applied确认、回忆、原CORE专注入口、手机设备选择、键盘和减少动态；无页面运行异常。Browser插件未提供，采用现有Playwright依赖，未新增项目依赖。截图在 `/tmp/qitomo-desktop.png`、`/tmp/qitomo-mobile.png`，测试脚本 `/tmp/qitomo-browser.cjs`；页面测试不代表真实设备或部署验收。

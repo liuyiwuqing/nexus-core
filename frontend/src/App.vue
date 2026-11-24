@@ -868,7 +868,7 @@ onUnmounted(() => { authChanges?.close(); document.removeEventListener('visibili
         :uncertain="toolUncertain"
         :create="createTool"
       />
-      <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" />
+      <PetPanel v-else-if="tab === 'pet'" :api="api" :mutate="mutate" :busy="busy" :selected-device="selectedDevice" :devices="devices" :device-matches="deviceMatches" :selected-device-name="selectedDeviceName" :device-searching="deviceSearching" :device-search-failed="deviceSearchFailed" @select-device="pickDevice" @search-devices="searchDeviceMatches" />
       <MemoryPanel v-else-if="tab === 'memory'" :api="api" />
       <OverviewPanel v-else-if="tab === 'overview'" :api="api" @drill="drillAlert" />
       <AccessPanel v-else-if="tab === 'access' && role === 'admin'" :session="accessSession" :api="api" :busy="busy" :mutate="mutate" :replace-session="replaceSession" />

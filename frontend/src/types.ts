@@ -221,6 +221,7 @@ export const errorNames: Record<string, string> = {
   session_store_unavailable: '登录会话存储暂不可用，请稍后重试；若持续出现，请联系管理员核对私有目录。',
   csrf_required: '登录会话已变化，请刷新页面后重试。', session_capacity_reached: '登录会话已满，请稍后重试，或取消保持登录。', role_token_expired: '令牌已到期，请签发新的令牌。', role_token_not_found: '令牌不存在，请刷新列表。',
   admin_token_environment_managed: '管理员令牌由服务端环境配置管理，请先启用受保护凭据文件。', admin_token_readonly: '凭据文件不可写，请由服务端管理员更新。', invalid_admin_token: '新令牌需要 32 至 256 位可见 ASCII 字符，不能包含空白。', invalid_current_admin_token: '当前管理员令牌不正确。', admin_token_reused: '新令牌不能与现有凭据相同。', admin_token_version_conflict: '凭据已被其他操作修改，请刷新后重新核对。', credential_store_busy: '凭据正在更新，请稍后刷新核对。', authentication_configuration_unavailable: '认证配置暂不可用，请联系管理员核对。',
+  companion_offline: '设备离线或状态已过期，请联网并刷新后应用。', companion_readonly: '设备存档不可写，请检查存储状态。', appearance_revision_conflict: '设备外观已变化，请加载设备外观后重新选择。', appearance_result_pending: '已有换装等待设备确认，请先核对结果。',
   forbidden: '当前角色无权执行此操作。', audit_unavailable: '审计存储暂时不可用，操作未开始。', invalid_role_token: '请检查令牌名称、角色和到期时间。', role_token_version_conflict: '令牌状态已变化，请刷新核对。',
   invalid_source: '请检查来源标识、名称、正文和设备范围。', source_version_conflict: '来源版本已变化，请核对当前来源后操作。', source_disabled: '来源已停用。', source_enabled: '请先停用来源，再轮换凭据。', source_rate_limited: '来源请求过于频繁，请稍后重试。',
   invalid_alert_thresholds: '阈值超出允许范围：失败率 0–100%，其余三项至少为 1。',
